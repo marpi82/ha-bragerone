@@ -1,0 +1,18 @@
+{
+    "name": "Brager One",
+    "content_in_root": false,
+    "filename": "habragerone",
+    "country": [
+        "PL",
+        "CZ",
+        "SK",
+        "HU",
+        "LT",
+        "LV",
+        "SI",
+        "RO"
+    ],
+    "homeassistant": "2025.5.0",
+    "render_readme": true,
+    "iot_class": "Cloud Push"
+}

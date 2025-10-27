@@ -1,0 +1,70 @@
+{
+    "name": "ha-bragerone",
+    "image": "python:3.13-slim-trixie",
+    "runArgs": [
+        "--pids-limit=-1",
+        "--ulimit=nofile=65536:65536",
+        "--init"
+    ],
+    "features": {
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "configureZshAsDefaultShell": true,
+            "username": "vscode",
+            "userUid": "automatic",
+            "userGid": "automatic",
+            "upgradePackages": true
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "python.defaultInterpreterPath": "/workspaces/ha-bragerone/.venv/bin/python"
+            },
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "matangover.mypy",
+                "charliermarsh.ruff",
+                "eamodio.gitlens",
+                "github.copilot",
+                "github.copilot-chat",
+                "esbenp.prettier-vscode",
+                "ms-vscode.vscode-json"
+            ]
+        }
+    },
+    "postStartCommand": "sudo chown -R vscode:vscode /home/vscode/.cache ${containerWorkspaceFolder}/.venv 2>/dev/null || true",
+    "postCreateCommand": "bash .devcontainer/setup.sh",
+    "remoteEnv": {
+        "UV_PROJECT_ENVIRONMENT": ".venv",
+        "UV_LINK_MODE": "copy",
+        "RUFF_NUM_THREADS": "1",
+        "DEBUGPY_PORT": "5678",
+        "HASS_CONFIG": "./config",
+        "HASS_LOG_LEVEL": "info",
+        "PATH": "${containerEnv:HOME}/.local/bin:${containerEnv:PATH}"
+    },
+    "mounts": [
+        "source=${localEnv:HOME}${localEnv:USERPROFILE}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
+        "source=ha-bragerone-venv,target=${containerWorkspaceFolder}/.venv,type=volume",
+        "source=ha-bragerone-uv-cache,target=/home/vscode/.cache/uv,type=volume",
+        "source=ha-bragerone-hass-config,target=${containerWorkspaceFolder}/config,type=volume"
+    ],
+    "forwardPorts": [
+        8123,
+        5678
+    ],
+    "portsAttributes": {
+        "8123": {
+            "label": "Home Assistant",
+            "onAutoForward": "notify"
+        },
+        "5678": {
+            "label": "Python Debugger",
+            "onAutoForward": "silent"
+        }
+    },
+    "remoteUser": "vscode"
+}

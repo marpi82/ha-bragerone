@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Brager One — Sign in",
+        "description": "Provide your Brager One credentials.",
+        "data": {
+          "email": "E-mail",
+          "password": "Password"
+        }
+      },
+      "select_site": {
+        "title": "Select installation",
+        "description": "Choose installation (object_id) and modules (devid).",
+        "data": {
+          "object_id": "Installation ID (object_id)",
+          "modules": "Module codes (devid) — comma separated"
+        }
+      }
+    },
+    "error": {
+      "auth": "Invalid e-mail or password.",
+      "cannot_connect": "Cannot connect to Brager API.",
+      "invalid_response": "Invalid server response.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This user/installation combination is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Brager One settings",
+        "data": {
+          "object_id": "Installation ID (object_id)",
+          "modules": "Module codes (devid) — comma separated"
+        }
+      }
+    }
+  }
+}

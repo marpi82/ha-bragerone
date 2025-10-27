@@ -1,0 +1,21 @@
+{
+  "domain": "habragerone",
+  "name": "Brager One",
+  "version": "2025a1",
+  "documentation": "https://github.com/marpi82/ha-bragerone",
+  "issue_tracker": "https://github.com/marpi82/ha-bragerone/issues",
+  "requirements": [
+    "py-bragerone>=2025.0.0"
+  ],
+  "dependencies": [],
+  "codeowners": [
+    "@marpi82"
+  ],
+  "config_flow": true,
+  "iot_class": "cloud_push",
+  "loggers": [
+    "custom_components.habragerone"
+  ],
+  "after_dependencies": [],
+  "homeassistant": "2025.5.0"
+}

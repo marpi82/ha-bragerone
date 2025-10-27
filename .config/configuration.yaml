@@ -1,0 +1,18 @@
+# Home Assistant development configuration for ha-bragerone
+default_config:
+
+# Enable frontend
+frontend:
+
+# Logger configuration
+logger:
+  default: info
+  logs:
+    custom_components.habragerone: debug
+# Development configuration
+# Uncomment for demo data
+# demo:
+
+# Your ha-bragerone integration configuration
+# habragerone:
+#   # Add your configuration here when implemented

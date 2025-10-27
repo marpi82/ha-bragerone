@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Brager One — Logowanie",
+        "description": "Podaj poświadczenia do Brager One.",
+        "data": {
+          "email": "E-mail",
+          "password": "Hasło"
+        }
+      },
+      "select_site": {
+        "title": "Wybór instalacji",
+        "description": "Wybierz instalację (object_id) i moduły (devid).",
+        "data": {
+          "object_id": "ID instalacji (object_id)",
+          "modules": "Kody modułów (devid) — lista rozdzielona przecinkami"
+        }
+      }
+    },
+    "error": {
+      "auth": "Błędny e-mail lub hasło.",
+      "cannot_connect": "Nie można połączyć z API Brager.",
+      "invalid_response": "Nieprawidłowa odpowiedź serwera.",
+      "unknown": "Niespodziewany błąd."
+    },
+    "abort": {
+      "already_configured": "Ta kombinacja użytkownika i instalacji jest już skonfigurowana."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ustawienia Brager One",
+        "data": {
+          "object_id": "ID instalacji (object_id)",
+          "modules": "Kody modułów (devid) — lista rozdzielona przecinkami"
+        }
+      }
+    }
+  }
+}

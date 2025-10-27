@@ -1,0 +1,86 @@
+# All-in-one development environment with Home Assistant
+FROM python:3.13-slim-trixie
+
+# Install system dependencies for both development and Home Assistant
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    ca-certificates \
+    libjpeg-dev \
+    zlib1g-dev \
+    libtiff5-dev \
+    libfreetype6-dev \
+    liblcms2-dev \
+    libwebp-dev \
+    tcl8.6-dev \
+    tk8.6-dev \
+    python3-tk \
+    libssl-dev \
+    libffi-dev \
+    libbz2-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    libncurses5-dev \
+    libncursesw5-dev \
+    xz-utils \
+    llvm \
+    libxml2-dev \
+    libxmlsec1-dev \
+    sudo \
+    # Home Assistant specific dependencies
+    gcc \
+    g++ \
+    autoconf \
+    libtool \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create vscode user
+RUN groupadd --gid 1000 vscode \
+    && useradd --uid 1000 --gid vscode --shell /bin/bash --create-home vscode \
+    && echo 'vscode ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+# Install uv
+USER vscode
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/home/vscode/.local/bin:$PATH"
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy project files
+COPY --chown=vscode:vscode . .
+
+# Add py-bragerone if available
+RUN if [ -d "../py-bragerone" ]; then \
+        uv add ../py-bragerone --editable; \
+    fi
+
+# Install dependencies
+RUN uv sync --group dev --group test --group docs
+
+# Install Home Assistant
+RUN uv add homeassistant>=2025.5.0
+
+# Install pre-commit hooks
+RUN uv run --group dev pre-commit install || true
+
+# Setup Home Assistant config
+RUN mkdir -p config && \
+    if [ -f ".config/configuration.yaml" ]; then \
+        cp .config/configuration.yaml config/configuration.yaml; \
+    else \
+        echo "default_config:" > config/configuration.yaml && \
+        echo "frontend:" >> config/configuration.yaml && \
+        echo "logger:" >> config/configuration.yaml && \
+        echo "  default: info" >> config/configuration.yaml && \
+        echo "  logs:" >> config/configuration.yaml && \
+        echo "    custom_components.habragerone: debug" >> config/configuration.yaml; \
+    fi
+
+# Expose ports
+EXPOSE 8123 5678
+
+# Default command starts Home Assistant
+CMD ["uv", "run", "python", "-m", "homeassistant", "--config", "config", "--debug"]

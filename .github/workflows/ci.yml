@@ -1,0 +1,205 @@
+name: CI
+
+on:
+    push:
+        branches: [main, develop]
+    pull_request:
+        branches: [main]
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    quality:
+        name: Code Quality
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v3
+              with:
+                  version: "latest"
+
+            - name: Set up Python
+              run: uv python install 3.13
+
+            - name: Install dependencies
+              run: uv sync --group dev --group test
+
+            - name: Lint with Ruff
+              run: uv run --group dev ruff check --output-format=github .
+
+            - name: Check formatting with Ruff
+              run: uv run --group dev ruff format --check .
+
+            - name: Type check with mypy
+              run: uv run --group dev mypy
+
+            - name: Security check with Bandit
+              run: uv run --group dev bandit -r custom_components -f json -o bandit-report.json
+              continue-on-error: true
+
+            - name: Upload Bandit results
+              uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: bandit-results
+                  path: bandit-report.json
+
+    hassfest:
+        name: Hassfest (HA Integration Validation)
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Hassfest validation
+              uses: home-assistant/actions/hassfest@master
+
+    test:
+        name: Tests
+        runs-on: ubuntu-latest
+        strategy:
+            matrix:
+                python-version: ["3.13"]
+                home-assistant-version: ["2025.1.0", "2025.5.0"]
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v3
+              with:
+                  version: "latest"
+
+            - name: Set up Python ${{ matrix.python-version }}
+              run: uv python install ${{ matrix.python-version }}
+
+            - name: Install dependencies
+              run: uv sync --group dev --group test
+
+            - name: Install Home Assistant ${{ matrix.home-assistant-version }}
+              run: uv add homeassistant==${{ matrix.home-assistant-version }}
+
+            - name: Run tests
+              run: uv run --group test pytest --cov=custom_components.habragerone --cov-report=xml --cov-report=term-missing
+
+            - name: Upload coverage reports to Codecov
+              uses: codecov/codecov-action@v4
+              with:
+                  file: ./coverage.xml
+                  flags: unittests
+                  name: codecov-umbrella
+                  token: ${{ secrets.CODECOV_TOKEN }}
+
+    validate-ha:
+        name: Validate Home Assistant Integration
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Validate manifest.json
+              run: |
+                  python -c "
+                  import json
+                  manifest = json.load(open('custom_components/habragerone/manifest.json'))
+                  required_keys = ['domain', 'name', 'version', 'documentation', 'issue_tracker', 'codeowners']
+                  missing = [key for key in required_keys if key not in manifest]
+                  if missing:
+                      raise ValueError(f'Missing required keys in manifest.json: {missing}')
+                  print('✅ manifest.json is valid')
+                  "
+
+            - name: Validate strings.json
+              run: |
+                  python -c "
+                  import json
+                  strings = json.load(open('custom_components/habragerone/strings.json'))
+                  print('✅ strings.json is valid')
+                  "
+
+            - name: Check for required files
+              run: |
+                  required_files=(
+                    "custom_components/habragerone/__init__.py"
+                    "custom_components/habragerone/manifest.json"
+                    "custom_components/habragerone/strings.json"
+                  )
+                  for file in "${required_files[@]}"; do
+                    if [[ ! -f "$file" ]]; then
+                      echo "❌ Missing required file: $file"
+                      exit 1
+                    fi
+                  done
+                  echo "✅ All required files present"
+
+    security:
+        name: Security Audit
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v3
+              with:
+                  version: "latest"
+
+            - name: Set up Python
+              run: uv python install 3.13
+
+            - name: Install dependencies
+              run: uv sync --group dev --group test
+
+            - name: Run pip-audit
+              run: |
+                  uv pip freeze --exclude-editable > requirements-audit.txt
+                  uv run --group dev pip-audit --requirement requirements-audit.txt --format=json --output=pip-audit-report.json
+              continue-on-error: true
+
+            - name: Upload pip-audit results
+              uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: pip-audit-results
+                  path: pip-audit-report.json
+
+            - name: Run Gitleaks
+              uses: gitleaks/gitleaks-action@v2
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+    build:
+        name: Build Package
+        runs-on: ubuntu-latest
+        needs: [quality, test, validate-ha]
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0 # Full history for version tags
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v3
+              with:
+                  version: "latest"
+
+            - name: Set up Python
+              run: uv python install 3.13
+
+            - name: Install dependencies
+              run: uv sync --group dev
+
+            - name: Build package
+              run: uv run --group dev hatch build
+
+            - name: Upload build artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: dist
+                  path: dist/

@@ -1,0 +1,123 @@
+minimum_pre_commit_version: "4.3.0"
+
+exclude: |
+  (?x)^(
+    config/|
+    .venv/|
+    dist/|
+    build/|
+    .*/migrations/|
+    .*/node_modules/
+  )
+
+repos:
+  # Ruff → linter + formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.1
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  # Mypy → type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+        args: ["--strict", "--show-column-numbers", "--show-error-codes"]
+        files: ^(custom_components/|tests/)
+        additional_dependencies:
+          [
+            "homeassistant>=2025.5.0",
+            "pydantic>=2.0",
+            "aioresponses",
+            "pytest-asyncio",
+            "packaging",
+          ]
+
+  # Secrets scanning with Gitleaks
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
+    hooks:
+      - id: gitleaks
+        name: gitleaks (protect staged)
+        entry: gitleaks protect --staged --redact
+        language: golang
+        pass_filenames: false
+
+  # Useful generic checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+        exclude: ^(.devcontainer/devcontainer\.json|.*\.yaml\.j2)$
+      - id: check-json
+        exclude: ^(.devcontainer/devcontainer\.json)$
+
+  # --- SECURITY: code (SAST) ---
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.6
+    hooks:
+      - id: bandit
+        name: bandit (scan custom_components/)
+        args: ["-r", "custom_components", "-q"]
+        pass_filenames: false
+
+  # --- SECURITY: dependencies (SCA) with uv export + pip-audit ---
+  - repo: local
+    hooks:
+      - id: uv-export
+        name: uv pip freeze requirements snapshot
+        language: system
+        entry: bash -c 'uv pip freeze --exclude-editable > requirements-pip-audit.txt'
+        pass_filenames: false
+        stages: [pre-commit]
+        always_run: true
+
+  - repo: https://github.com/pypa/pip-audit
+    rev: v2.9.0
+    hooks:
+      - id: pip-audit
+        name: pip-audit (scan requirements snapshot)
+        args:
+          [
+            "--requirement",
+            "requirements-pip-audit.txt",
+            "--progress-spinner",
+            "off",
+          ]
+        stages: [pre-commit]
+        always_run: true
+
+  # --- Home Assistant specific validations ---
+  - repo: local
+    hooks:
+      - id: ha-manifest-validation
+        name: Validate Home Assistant manifest.json
+        language: system
+        entry: bash -c 'python -c "import json; json.load(open(\"custom_components/habragerone/manifest.json\"))"'
+        files: ^custom_components/.*/manifest\.json$
+        pass_filenames: false
+
+      - id: ha-strings-validation
+        name: Validate Home Assistant strings.json
+        language: system
+        entry: bash -c 'python -c "import json; json.load(open(\"custom_components/habragerone/strings.json\"))"'
+        files: ^custom_components/.*/strings\.json$
+        pass_filenames: false
+
+  # --- Tests on pre-push with coverage gate ---
+  - repo: local
+    hooks:
+      - id: pytest-pre-push
+        name: pytest (coverage gate on push)
+        language: system
+        entry: bash -lc 'uv run --group test pytest --maxfail=1 --disable-warnings -q --cov=custom_components.habragerone --cov-report=term-missing --cov-fail-under=70'
+        pass_filenames: false
+        stages: [pre-push]

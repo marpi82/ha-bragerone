@@ -1,0 +1,112 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v*"
+            - "[0-9][0-9][0-9][0-9]*" # CalVer tags like 2025, 2025.1, etc.
+
+jobs:
+    release:
+        name: Create Release
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            id-token: write
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v3
+              with:
+                  version: "latest"
+
+            - name: Set up Python
+              run: uv python install 3.13
+
+            - name: Install dependencies
+              run: uv sync --group dev
+
+            - name: Build package
+              run: uv run --group dev hatch build
+
+            - name: Create HACS archive
+              run: |
+                  mkdir -p hacs-release
+                  cp -r custom_components hacs-release/
+                  cp README.md hacs-release/
+                  cp LICENSE hacs-release/
+                  cd hacs-release
+                  zip -r ../ha-bragerone-hacs.zip .
+                  cd ..
+
+            - name: Generate changelog
+              id: changelog
+              run: |
+                  # Extract version from tag
+                  VERSION=${GITHUB_REF#refs/tags/}
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+                  # Generate simple changelog from git commits since last tag
+                  LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+                  if [ -n "$LAST_TAG" ]; then
+                    CHANGELOG=$(git log --pretty=format:"- %s" $LAST_TAG..HEAD)
+                  else
+                    CHANGELOG=$(git log --pretty=format:"- %s" HEAD~10..HEAD)
+                  fi
+
+                  echo "changelog<<EOF" >> $GITHUB_OUTPUT
+                  echo "$CHANGELOG" >> $GITHUB_OUTPUT
+                  echo "EOF" >> $GITHUB_OUTPUT
+
+            - name: Create Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ github.ref_name }}
+                  name: Release ${{ steps.changelog.outputs.version }}
+                  body: |
+                      ## Changes in ${{ steps.changelog.outputs.version }}
+
+                      ${{ steps.changelog.outputs.changelog }}
+
+                      ## Installation
+
+                      ### HACS (Recommended)
+                      1. Download `ha-bragerone-hacs.zip` 
+                      2. Extract to your `custom_components` directory
+                      3. Restart Home Assistant
+
+                      ### Manual Installation
+                      1. Download the wheel file from PyPI or use the source distribution
+                      2. Copy `custom_components/habragerone` to your Home Assistant `custom_components` directory
+                      3. Restart Home Assistant
+
+                      ## Requirements
+                      - Python >= 3.13.2
+                      - Home Assistant >= 2025.5.0
+                  draft: false
+                  prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') }}
+                  files: |
+                      ha-bragerone-hacs.zip
+                      dist/*
+
+            # Publish to TestPyPI for pre-releases (alpha/beta/rc)
+            - name: Publish to TestPyPI
+              if: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') }}
+              uses: pypa/gh-action-pypi-publish@release/v1
+              with:
+                  repository-url: https://test.pypi.org/legacy/
+                  print-hash: true
+                  verbose: true
+
+            # Publish to PyPI for stable releases (Trusted Publisher)
+            - name: Publish to PyPI
+              if: ${{ !contains(github.ref_name, 'a') && !contains(github.ref_name, 'b') && !contains(github.ref_name, 'rc') }}
+              uses: pypa/gh-action-pypi-publish@release/v1
+              with:
+                  print-hash: true
+                  verbose: true

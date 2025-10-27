@@ -1,0 +1,166 @@
+[build-system]
+requires = ["hatchling>=1.27.0", "hatch-vcs>=0.4.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ha-bragerone"
+description = "Home Assistant integration for BragerOne web service"
+readme = "README.md"
+authors = [{ name = "MarPi82", email = "marpi82.dev@google.com" }]
+maintainers = [{ name = "MarPi82", email = "marpi82.dev@google.com" }]
+license = "MIT"
+requires-python = ">=3.13.2,<4"
+keywords = [
+  "home",
+  "automation",
+  "brager",
+  "bragerone",
+  "home-assistant",
+  "custom-component",
+]
+dependencies = ["homeassistant>=2025.5.0"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3 :: Only",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Developers",
+  "Topic :: Home Automation",
+  "Typing :: Typed",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/marpi82/ha-bragerone"
+Documentation = "https://github.com/marpi82/ha-bragerone"
+Repository = "https://github.com/marpi82/ha-bragerone"
+Issues = "https://github.com/marpi82/ha-bragerone/issues"
+Changelog = "https://github.com/marpi82/ha-bragerone/blob/main/CHANGELOG.md"
+
+[project.scripts]
+hass-dev = "homeassistant.__main__:main"
+
+[tool.hatch.version]
+source = "vcs"
+tag-pattern = '^(?:v)?(?P<version>\d{4}(?:\.\d{1,2}(?:\.\d{1,2})?)?(?:(?:a|b|rc)\d+)?)$'
+tag-format = "{version}"
+
+[tool.hatch.build.targets.wheel]
+packages = ["custom_components"]
+include = ["custom_components/habragerone/py.typed"]
+
+[tool.hatch.build.targets.sdist]
+include = ["custom_components/habragerone", "README.md", "LICENSE"]
+
+
+[dependency-groups]
+dev = [
+  "poethepoet>=0.37.0,<0.38.0",
+  "ruff>=0.14.2,<0.15.0",
+  "mypy[dmypy]>=1.18.1,<2.0.0",
+  "pre-commit>=4.3.0,<5.0.0",
+  "python-dotenv>=1.1.1,<2.0.0",
+  "debugpy>=1.8.17,<2.0.0",
+  "pip-audit>=2.4.0,<3.0.0",
+  "bandit>=1.8.4,<2.0.0",
+  "hatch>=1.12.0,<2.0.0",
+]
+test = [
+  "pytest>=8.3.3,<9.0.0",
+  "pytest-asyncio>=1.2.0,<2.0.0",
+  "pytest-cov>=7.0.0,<8.0.0",
+  "aioresponses>=0.7.8,<0.8.0",
+  "packaging>=24.1,<25.0.0",
+  "pytest-homeassistant-custom-component",
+]
+docs = [
+  "sphinx>=8.0.2,<9.0.0",
+  "furo>=2025.9.25,<2026.0.0",
+  "myst-parser>=4.0.0,<5.0.0",
+  "sphinx-autodoc-typehints>=3.2.0,<4.0.0",
+  "sphinx-copybutton>=0.5.2,<0.6.0",
+  "sphinxcontrib-mermaid>=1.0.0,<2.0.0",
+]
+
+# ---------------- Ruff (formatter + linter) ----------------
+[tool.ruff]
+target-version = "py313"
+line-length = 130
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "D", "UP", "RUF", "SIM", "B"]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+"custom_components/habragerone/__init__.py" = ["D104"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# ---------------- mypy (strict) ----------------
+[tool.mypy]
+python_version = "3.13"
+files = ["custom_components/habragerone", "tests"]
+strict = true
+exclude = ["scripts/"]
+
+# Additional strictness to match Pylance
+warn_return_any = true
+warn_unreachable = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+plugins = ["pydantic.mypy"]
+
+# ---------------- pytest ----------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-q"
+# or with coverage:
+# addopts = "-q --cov=custom_components.habragerone --cov-report=term-missing"
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+markers = [
+  "slow: potentially slower tests (network)",
+  "needs_internet: tests that require internet access",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["custom_components/habragerone"]
+
+# ---------------- POE tasks ----------------
+[tool.poe.tasks]
+bootstrap = { cmd = "uv sync --group dev --group test --group docs --locked" }
+# format/lint/typecheck
+fmt = "ruff format"
+lint = "ruff check . --fix"
+fix = ["lint", "fmt"]
+typecheck = "mypy"
+all = ["fmt", "lint", "typecheck"]
+# Security
+bandit = { cmd = "bandit -r custom_components -q" }
+semgrep = { cmd = "semgrep --config p/ci --error ." }
+pip-audit = { cmd = "pip-audit --skip-editable --progress-spinner off" }
+security = ["bandit", "semgrep", "pip-audit"]
+# Full validation (quality + security + tests)
+validate = ["fmt", "lint", "typecheck", "security", "test"]
+# Tests
+test = { cmd = "pytest -q" }
+cov = { cmd = "pytest -q --cov=custom_components.habragerone --cov-report=term-missing" }
+# HA Development
+hass = { shell = "python -m homeassistant --config config --debug" }
+hass-restart = { shell = "pkill -f homeassistant || true && python -m homeassistant --config config --debug" }
+# Docker commands  
+docker-up = { cmd = "docker-compose up -d" }
+docker-down = { cmd = "docker-compose down" }
+docker-logs = { cmd = "docker-compose logs -f homeassistant" }

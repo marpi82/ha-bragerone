@@ -1,0 +1,97 @@
+version: "3.8"
+
+services:
+  # Development environment
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/workspace:cached
+      - ha-bragerone-venv:/workspace/.venv
+      - ha-bragerone-uv-cache:/home/vscode/.cache/uv
+      - ~/.gitconfig:/home/vscode/.gitconfig:ro
+    working_dir: /workspace
+    environment:
+      - UV_PROJECT_ENVIRONMENT=.venv
+      - UV_LINK_MODE=copy
+      - RUFF_NUM_THREADS=1
+      - DEBUGPY_PORT=5678
+      - HASS_CONFIG=./config
+      - HASS_LOG_LEVEL=info
+    ports:
+      - "5678:5678" # Python debugger
+    profiles:
+      - dev
+    stdin_open: true
+    tty: true
+    user: vscode
+
+  # Home Assistant for integration testing
+  homeassistant:
+    image: homeassistant/home-assistant:2025.1
+    container_name: ha-bragerone-hass
+    restart: unless-stopped
+    privileged: true
+    environment:
+      - TZ=UTC
+    volumes:
+      - ha-hass-config:/config
+      - ./custom_components:/config/custom_components:ro
+      - ./config/configuration.yaml:/config/configuration.yaml:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "8123:8123"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8123"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      - dev
+    profiles:
+      - hass
+      - full
+
+  # Alternative: All-in-one development container with Home Assistant
+  devhass:
+    build:
+      context: .
+      dockerfile: Dockerfile.devhass
+    volumes:
+      - .:/workspace:cached
+      - ha-bragerone-venv:/workspace/.venv
+      - ha-bragerone-uv-cache:/home/vscode/.cache/uv
+      - ha-devhass-config:/workspace/config
+      - ~/.gitconfig:/home/vscode/.gitconfig:ro
+    working_dir: /workspace
+    environment:
+      - UV_PROJECT_ENVIRONMENT=.venv
+      - UV_LINK_MODE=copy
+      - RUFF_NUM_THREADS=1
+      - DEBUGPY_PORT=5678
+      - HASS_CONFIG=./config
+      - HASS_LOG_LEVEL=debug
+    ports:
+      - "8123:8123" # Home Assistant
+      - "5678:5678" # Python debugger
+    profiles:
+      - devhass
+    stdin_open: true
+    tty: true
+    user: vscode
+
+volumes:
+  ha-bragerone-venv:
+    name: ha-bragerone-venv
+  ha-bragerone-uv-cache:
+    name: ha-bragerone-uv-cache
+  ha-hass-config:
+    name: ha-hass-config
+  ha-devhass-config:
+    name: ha-devhass-config
+
+networks:
+  default:
+    name: ha-bragerone-net

@@ -1,0 +1,73 @@
+name: HACS Validation
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+    schedule:
+        # Run weekly to catch any HACS requirement changes
+        - cron: "0 6 * * 1"
+
+jobs:
+    hacs-validation:
+        name: HACS Validation
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: HACS Validation
+              uses: hacs/action@main
+              with:
+                  category: integration
+                  ignore: brands
+
+            - name: Validate HACS info file
+              run: |
+                  if [[ ! -f "hacs.json" ]]; then
+                    echo "❌ Missing hacs.json file"
+                    exit 1
+                  fi
+
+                  # Validate JSON syntax
+                  python -c "import json; json.load(open('hacs.json'))"
+                  echo "✅ hacs.json is valid JSON"
+
+            - name: Check integration structure
+              run: |
+                  # Check required files for HACS integration
+                  required_files=(
+                    "custom_components/habragerone/__init__.py"
+                    "custom_components/habragerone/manifest.json"
+                    "README.md"
+                  )
+
+                  for file in "${required_files[@]}"; do
+                    if [[ ! -f "$file" ]]; then
+                      echo "❌ Missing required file for HACS: $file"
+                      exit 1
+                    fi
+                  done
+
+                  echo "✅ All HACS required files present"
+
+            - name: Validate manifest for HACS
+              run: |
+                  python -c "
+                  import json
+                  manifest = json.load(open('custom_components/habragerone/manifest.json'))
+
+                  # HACS specific validations
+                  required_keys = ['domain', 'name', 'version', 'documentation', 'issue_tracker', 'codeowners']
+                  missing = [key for key in required_keys if key not in manifest]
+                  if missing:
+                      raise ValueError(f'Missing required keys for HACS: {missing}')
+
+                  # Check version format (should be CalVer compatible)
+                  version = manifest['version']
+                  if not version.replace('.', '').replace('a', '').replace('b', '').replace('rc', '').isdigit():
+                      print(f'Warning: Version {version} might not be CalVer compatible')
+
+                  print('✅ Manifest is HACS compatible')
+                  "

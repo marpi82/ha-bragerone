@@ -1,0 +1,56 @@
+# Development environment Dockerfile
+FROM python:3.13-slim-trixie
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    ca-certificates \
+    libjpeg-dev \
+    zlib1g-dev \
+    libtiff5-dev \
+    libfreetype6-dev \
+    liblcms2-dev \
+    libwebp-dev \
+    tcl8.6-dev \
+    tk8.6-dev \
+    python3-tk \
+    libssl-dev \
+    libffi-dev \
+    libbz2-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    libncurses5-dev \
+    libncursesw5-dev \
+    xz-utils \
+    llvm \
+    libxml2-dev \
+    libxmlsec1-dev \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create vscode user
+RUN groupadd --gid 1000 vscode \
+    && useradd --uid 1000 --gid vscode --shell /bin/bash --create-home vscode \
+    && echo 'vscode ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+# Install uv
+USER vscode
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/home/vscode/.local/bin:$PATH"
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy project files
+COPY --chown=vscode:vscode . .
+
+# Install dependencies
+RUN uv sync --group dev --group test --group docs
+
+# Install pre-commit hooks
+RUN uv run --group dev pre-commit install || true
+
+# Default command
+CMD ["/bin/bash"]
