@@ -16,6 +16,5 @@
   "loggers": [
     "custom_components.habragerone"
   ],
-  "after_dependencies": [],
-  "homeassistant": "2025.5.1"
+  "after_dependencies": []
 }
