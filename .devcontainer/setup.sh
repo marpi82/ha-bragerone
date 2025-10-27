@@ -60,7 +60,8 @@ else
         llvm \
         libxml2-dev \
         libxmlsec1-dev \
-        gh
+        gh \
+        mypy
 fi
 
 # Install uv for current user

@@ -18,7 +18,10 @@ keywords = [
   "home-assistant",
   "custom-component",
 ]
-dependencies = ["homeassistant>2025.5.0"]
+dependencies = [
+    "homeassistant>2025.5.0",
+    "py-bragerone",
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3.13",
@@ -164,3 +167,6 @@ hass-restart = { shell = "pkill -f homeassistant || true && python -m homeassist
 docker-up = { cmd = "docker-compose up -d" }
 docker-down = { cmd = "docker-compose down" }
 docker-logs = { cmd = "docker-compose logs -f homeassistant" }
+
+[tool.uv.sources]
+py-bragerone = { git = "https://github.com/marpi82/py-bragerone.git", rev = "main" }

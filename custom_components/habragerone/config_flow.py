@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-
-# Z Twojej biblioteki:
-from pybragerone.api import ApiClient, ApiError
+from pybragerone import BragerOneApiClient as ApiClient
 
 from .const import DOMAIN
+
+# Use httpx.HTTPError as it's what the underlying API client uses
+ApiError = httpx.HTTPError
 
 # from pybragerone.token_store import SharedTokenStore  # opcjonalnie, jeśli chcesz wspólny store tutaj
 
@@ -24,8 +26,8 @@ async def _fetch_objects(api: ApiClient) -> list[dict[str, Any]]:
     Oczekiwany kształt elementu: {"id": 439, "name": "Dom", ...}.
     """
     status, data, _ = await api._req("GET", "/v1/objects", auth=True)
-    if status != 200 or not isinstance(data, (list, dict)):
-        raise ApiError(status, {"message": "Invalid objects response"}, {})
+    if status != 200:
+        raise ApiError(f"Invalid objects response: HTTP {status}")
     # API bywa różne: czasem lista, czasem {"data":[...]}
     items = data if isinstance(data, list) else data.get("data", [])
     return [x for x in items if isinstance(x, dict) and "id" in x]
@@ -38,8 +40,8 @@ async def _fetch_modules_for_object(api: ApiClient, object_id: int) -> list[dict
     # Dopasuj do swojego wrappera/paramów – to wariant zgodny z wcześniejszymi przykładami.
     path = f"/v1/modules?page=1&limit=999&group_id={object_id}"
     status, data, _ = await api._req("GET", path, auth=True)
-    if status != 200 or not isinstance(data, dict) or "data" not in data:
-        raise ApiError(status, {"message": "Invalid modules response"}, {})
+    if status != 200:
+        raise ApiError(f"Invalid modules response: HTTP {status}")
     rows = data.get("data") or []
     return [x for x in rows if isinstance(x, dict) and ("devid" in x or "code" in x or "id" in x)]
 
