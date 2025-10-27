@@ -2,9 +2,9 @@
 
 ## Problem Statement
 
-You asked: *"myślę też nad moją biblioteką dodaną w requirements. czy ona jest widoczna, bo jest dopiero w testpypi a nie ma jej w pypi"*
+**Original Question (Polish):** *"myślę też nad moją biblioteką dodaną w requirements. czy ona jest widoczna, bo jest dopiero w testpypi a nie ma jej w pypi"*
 
-Translation: "I'm also thinking about my library added in requirements. Is it visible, because it's only in TestPyPI and not in PyPI?"
+**Translation:** "I'm also thinking about my library added in requirements. Is it visible, because it's only in TestPyPI and not in PyPI?"
 
 **Answer: No, your library is NOT visible to end users, which prevents your integration from being installable.**
 
@@ -55,7 +55,7 @@ Follow these steps:
 2. **Verify the package is ready:**
    ```bash
    # Check the version
-   cat pyproject.toml | grep version
+   grep version pyproject.toml
    
    # Build the package
    python -m build
