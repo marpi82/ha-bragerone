@@ -1,27 +1,27 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-
-from .const import DOMAIN
 
 # Z Twojej biblioteki:
 from pybragerone.api import ApiClient, ApiError
+
+from .const import DOMAIN
+
 # from pybragerone.token_store import SharedTokenStore  # opcjonalnie, jeśli chcesz wspólny store tutaj
 
 
 # ---- Pomocnicze funkcje do pobierania danych --------------------------------
 
 
-async def _fetch_objects(api: ApiClient) -> List[Dict[str, Any]]:
-    """
-    Zwróć listę obiektów (instalacji) dla zalogowanego użytkownika.
-    Oczekiwany kształt elementu: {"id": 439, "name": "Dom", ...}
+async def _fetch_objects(api: ApiClient) -> list[dict[str, Any]]:
+    """Zwróć listę obiektów (instalacji) dla zalogowanego użytkownika.
+    Oczekiwany kształt elementu: {"id": 439, "name": "Dom", ...}.
     """
     status, data, _ = await api._req("GET", "/v1/objects", auth=True)
     if status != 200 or not isinstance(data, (list, dict)):
@@ -31,10 +31,9 @@ async def _fetch_objects(api: ApiClient) -> List[Dict[str, Any]]:
     return [x for x in items if isinstance(x, dict) and "id" in x]
 
 
-async def _fetch_modules_for_object(api: ApiClient, object_id: int) -> List[Dict[str, Any]]:
-    """
-    Zwróć listę modułów dla obiektu (paginacja ustawiona „szeroko”).
-    Oczekiwany kształt elementu: {"devid": "FTTCTBSLCE", "name": "...", "moduleVersion": "...", ...}
+async def _fetch_modules_for_object(api: ApiClient, object_id: int) -> list[dict[str, Any]]:
+    """Zwróć listę modułów dla obiektu (paginacja ustawiona „szeroko”).
+    Oczekiwany kształt elementu: {"devid": "FTTCTBSLCE", "name": "...", "moduleVersion": "...", ...}.
     """
     # Dopasuj do swojego wrappera/paramów – to wariant zgodny z wcześniejszymi przykładami.
     path = f"/v1/modules?page=1&limit=999&group_id={object_id}"
@@ -45,13 +44,12 @@ async def _fetch_modules_for_object(api: ApiClient, object_id: int) -> List[Dict
     return [x for x in rows if isinstance(x, dict) and ("devid" in x or "code" in x or "id" in x)]
 
 
-def _modules_choices(mods: List[Dict[str, Any]]) -> List[Tuple[str, str]]:
-    """
-    Utwórz listę (value,label) do HA form.
+def _modules_choices(mods: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    """Utwórz listę (value,label) do HA form.
     value = devid (preferowane) / code / id
-    label = "Name  code=DEVID  ver=Vx"
+    label = "Name  code=DEVID  ver=Vx".
     """
-    out: List[Tuple[str, str]] = []
+    out: list[tuple[str, str]] = []
     for m in mods:
         code = m.get("devid") or m.get("code") or str(m.get("id"))
         if not code:
@@ -72,17 +70,17 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
-        self._email: Optional[str] = None
-        self._password: Optional[str] = None
+        self._email: str | None = None
+        self._password: str | None = None
 
-        self._objects: List[Dict[str, Any]] = []
-        self._modules: List[Dict[str, Any]] = []
+        self._objects: list[dict[str, Any]] = []
+        self._modules: list[dict[str, Any]] = []
 
-        self._selected_object_id: Optional[int] = None
-        self._selected_modules: List[str] = []
+        self._selected_object_id: int | None = None
+        self._selected_modules: list[str] = []
 
         # API trzymamy tymczasowo na czas flow; właściwą instancję budujesz w __init__.py integracji
-        self._api: Optional[ApiClient] = None
+        self._api: ApiClient | None = None
 
     async def _get_api(self) -> ApiClient:
         """Daj tymczasowy ApiClient (bez token cache’a – lub z, jeśli podłączysz SharedTokenStore)."""
@@ -98,7 +96,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     # ---- Krok 1: logowanie ---------------------------------------------------
 
-    async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is None:
             return self.async_show_form(
                 step_id="user",
@@ -137,7 +135,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     # ---- Krok 2: wybór obiektu i modułów ------------------------------------
 
-    async def async_step_select_site(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_select_site(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         api = await self._get_api()
 
         # jeśli to pierwsze wyświetlenie form – wczytaj listę obiektów
@@ -148,7 +146,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="cannot_connect")
 
         # budowa mapy id->label
-        object_choices: List[Tuple[int, str]] = []
+        object_choices: list[tuple[int, str]] = []
         for obj in self._objects:
             oid = obj.get("id")
             name = obj.get("name") or f"Object {oid}"
@@ -166,9 +164,9 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors={"base": "invalid_response"},
                     data_schema=vol.Schema(
                         {
-                            vol.Required(
-                                "object_id", default=selected_oid
-                            ): vol.In({oid: label for oid, label in object_choices}),
+                            vol.Required("object_id", default=selected_oid): vol.In(
+                                {oid: label for oid, label in object_choices}
+                            ),
                             vol.Optional("modules"): str,
                         }
                     ),
@@ -190,9 +188,9 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors={"base": "invalid_response"},
                         data_schema=vol.Schema(
                             {
-                                vol.Required(
-                                    "object_id", default=selected_oid
-                                ): vol.In({oid: label for oid, label in object_choices}),
+                                vol.Required("object_id", default=selected_oid): vol.In(
+                                    {oid: label for oid, label in object_choices}
+                                ),
                                 vol.Optional(
                                     "modules",
                                     description={"suggested_value": ",".join(existing_codes)},
@@ -213,9 +211,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 step_id="select_site",
                 data_schema=vol.Schema(
                     {
-                        vol.Required(
-                            "object_id", default=selected_oid
-                        ): vol.In({oid: label for oid, label in object_choices}),
+                        vol.Required("object_id", default=selected_oid): vol.In({oid: label for oid, label in object_choices}),
                         vol.Optional(
                             "modules",
                             description={"suggested_value": ",".join([v for v, _ in mod_choices])},
@@ -233,9 +229,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="select_site",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        "object_id", default=default_oid
-                    ): vol.In({oid: label for oid, label in object_choices}),
+                    vol.Required("object_id", default=default_oid): vol.In({oid: label for oid, label in object_choices}),
                     vol.Optional("modules"): str,
                 }
             ),
@@ -260,12 +254,12 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     # ---- Reauth --------------------------------------------------------------
 
-    async def async_step_reauth(self, entry_data: Dict[str, Any]) -> FlowResult:
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> FlowResult:
         """Wejście w reauth po 401/403 z integracji."""
         self._email = entry_data.get(CONF_EMAIL)
         return await self.async_step_reauth_confirm()
 
-    async def async_step_reauth_confirm(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is None:
             return self.async_show_form(
                 step_id="reauth_confirm",
@@ -326,7 +320,7 @@ class BragerOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self.config_entry = config_entry
 
-    async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 

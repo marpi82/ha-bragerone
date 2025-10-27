@@ -59,7 +59,8 @@ else
         xz-utils \
         llvm \
         libxml2-dev \
-        libxmlsec1-dev
+        libxmlsec1-dev \
+        gh
 fi
 
 # Install uv for current user
@@ -69,8 +70,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # Fix permissions for mounted volumes (they may be owned by root)
 echo "🔧 Fixing volume permissions..."
-if [ -d "$HOME/.cache/uv" ]; then
-    sudo chown -R vscode:vscode "$HOME/.cache/uv" 2>/dev/null || true
+if [ -d "$HOME/.cache" ]; then
+    sudo chown -R vscode:vscode "$HOME/.cache" 2>/dev/null || true
 fi
 if [ -d "${VIRTUAL_ENV:-$PWD/.venv}" ]; then
     sudo chown -R vscode:vscode "${VIRTUAL_ENV:-$PWD/.venv}" 2>/dev/null || true
@@ -108,7 +109,7 @@ default_config:
 # Enable frontend
 frontend:
 
-# Logger configuration  
+# Logger configuration
 logger:
   default: info
   logs:

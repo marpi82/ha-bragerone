@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-
 from pybragerone.api import ApiClient
 from pybragerone.gateway import Gateway
 from pybragerone.token_store import SharedTokenStore
@@ -34,7 +34,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await gw.start()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {"api": api, "token_store": store, "gw": gw, "email": email}
-    
+
     return True
 
 

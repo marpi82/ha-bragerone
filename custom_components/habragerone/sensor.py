@@ -1,16 +1,19 @@
 from __future__ import annotations
+
 from datetime import timedelta
+
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.const import UnitOfTemperature
-from .const import DOMAIN, DEFAULT_NAME
 
 SCAN_INTERVAL = timedelta(seconds=30)
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     async_add_entities([ExampleTemperatureSensor(entry)])
+
 
 class ExampleTemperatureSensor(SensorEntity):
     _attr_has_entity_name = True

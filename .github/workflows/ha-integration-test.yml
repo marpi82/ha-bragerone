@@ -16,12 +16,12 @@ jobs:
         strategy:
             matrix:
                 home-assistant-version:
-                    - "2025.1.0"
                     - "2025.5.0"
+                    - "latest"
                     - "dev" # Latest development version
         services:
             homeassistant:
-                image: homeassistant/home-assistant:${{ matrix.home-assistant-version == 'dev' && 'dev' || matrix.home-assistant-version }}
+                image: homeassistant/home-assistant:${{ matrix.home-assistant-version == 'dev' && 'dev' || (matrix.home-assistant-version == 'latest' && 'stable' || matrix.home-assistant-version) }}
                 options: >-
                     --health-cmd="curl -f http://localhost:8123 || exit 1"
                     --health-interval=30s
@@ -50,7 +50,12 @@ jobs:
 
             - name: Install Home Assistant ${{ matrix.home-assistant-version }}
               if: matrix.home-assistant-version != 'dev'
-              run: uv add homeassistant==${{ matrix.home-assistant-version }}
+              run: |
+                  if [[ "${{ matrix.home-assistant-version }}" == "latest" ]]; then
+                    uv add homeassistant
+                  else
+                    uv add homeassistant==${{ matrix.home-assistant-version }}
+                  fi
 
             - name: Install Home Assistant dev
               if: matrix.home-assistant-version == 'dev'

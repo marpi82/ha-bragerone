@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Optional
 import asyncio
-from homeassistant.helpers.storage import Store
-from homeassistant.core import HomeAssistant
+from dataclasses import dataclass
+from typing import Any
 
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 from pybragerone.api import Token
 
 
 @dataclass
 class HATokenStore:
     """HA-persistent token store (per entry)."""
+
     hass: HomeAssistant
     entry_id: str
     _lock: asyncio.Lock
@@ -25,7 +26,7 @@ class HATokenStore:
         # Klucz per-config-entry, plik w .storage
         return Store(self.hass, version=1, key=f"bragerone_token_{self.entry_id}")
 
-    async def load(self) -> Optional[Token]:
+    async def load(self) -> Token | None:
         async with self._lock:
             data = await self._store().async_load()
             if not isinstance(data, dict):
