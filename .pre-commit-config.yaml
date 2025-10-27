@@ -28,7 +28,7 @@ repos:
         files: ^(custom_components/|tests/)
         additional_dependencies:
           [
-            "homeassistant>=2025.5.0",
+            "homeassistant>2025.5.0",
             "pydantic>=2.0",
             "aioresponses",
             "pytest-asyncio",

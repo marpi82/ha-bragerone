@@ -76,7 +76,7 @@ jobs:
                       ## Installation
 
                       ### HACS (Recommended)
-                      1. Download `ha-bragerone-hacs.zip` 
+                      1. Download `ha-bragerone-hacs.zip`
                       2. Extract to your `custom_components` directory
                       3. Restart Home Assistant
 
@@ -87,7 +87,7 @@ jobs:
 
                       ## Requirements
                       - Python >= 3.13.2
-                      - Home Assistant >= 2025.5.0
+                      - Home Assistant > 2025.5.0
                   draft: false
                   prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') }}
                   files: |

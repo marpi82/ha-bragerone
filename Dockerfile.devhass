@@ -61,7 +61,7 @@ RUN if [ -d "../py-bragerone" ]; then \
 RUN uv sync --group dev --group test --group docs
 
 # Install Home Assistant
-RUN uv add homeassistant>=2025.5.0
+RUN uv add homeassistant>2025.5.0
 
 # Install pre-commit hooks
 RUN uv run --group dev pre-commit install || true

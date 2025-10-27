@@ -12,7 +12,7 @@
         "SI",
         "RO"
     ],
-    "homeassistant": "2025.5.0",
+    "homeassistant": "2025.5.1",
     "render_readme": true,
     "iot_class": "Cloud Push"
 }

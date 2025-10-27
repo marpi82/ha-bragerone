@@ -65,7 +65,7 @@ jobs:
         strategy:
             matrix:
                 python-version: ["3.13"]
-                home-assistant-version: ["2025.5.0", "latest"]
+                home-assistant-version: ["2025.5.1", "latest"]
         steps:
             - name: Checkout
               uses: actions/checkout@v4

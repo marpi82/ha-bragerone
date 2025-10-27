@@ -237,7 +237,8 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _create_entry(self) -> FlowResult:
         """Zapisz wpis konfiguracyjny."""
-        assert self._email and self._password and self._selected_object_id is not None
+        if not (self._email and self._password and self._selected_object_id is not None):
+            raise ValueError("Missing required configuration data")
         title = f"{self._email} (obj {self._selected_object_id})"
         data = {
             CONF_EMAIL: self._email,
@@ -290,7 +291,8 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         # Zaktualizuj istniejący wpis
-        assert self.source == config_entries.SOURCE_REAUTH
+        if self.source != config_entries.SOURCE_REAUTH:
+            raise ValueError("Invalid source for reauth flow")
         entry = await self.async_set_unique_id(f"{email}:{self._selected_object_id or ''}", raise_on_progress=False)
         if entry:
             new_data = dict(entry.data)

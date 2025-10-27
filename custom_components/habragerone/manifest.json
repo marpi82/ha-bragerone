@@ -17,5 +17,5 @@
     "custom_components.habragerone"
   ],
   "after_dependencies": [],
-  "homeassistant": "2025.5.0"
+  "homeassistant": "2025.5.1"
 }
