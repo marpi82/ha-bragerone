@@ -15,6 +15,15 @@ This custom component provides integration between Home Assistant and the Brager
 
 ## Installation
 
+> **⚠️ Important: Dependency Requirement**
+> 
+> This integration requires the `py-bragerone` library. Currently, this library is only available on TestPyPI, which means:
+> - **End users cannot install this integration yet** (it will fail during installation)
+> - **You must publish `py-bragerone` to PyPI** before releasing this integration
+> - See [DEPENDENCY_GUIDE.md](DEPENDENCY_GUIDE.md) for detailed instructions on publishing to PyPI
+>
+> The CI workflows are configured to use TestPyPI temporarily for testing purposes only.
+
 ### Manual Installation
 
 1. Copy the `custom_components/habragerone` directory to your Home Assistant `custom_components` directory

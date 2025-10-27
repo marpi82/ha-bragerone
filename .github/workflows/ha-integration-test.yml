@@ -48,6 +48,14 @@ jobs:
             - name: Install dependencies
               run: uv sync --group dev --group test
 
+            - name: Install py-bragerone from TestPyPI (temporary workaround)
+              run: |
+                  # TEMPORARY: Install from TestPyPI until py-bragerone is published to PyPI
+                  # See DEPENDENCY_GUIDE.md for permanent solution
+                  uv pip install --index-url https://test.pypi.org/simple/ \
+                    --extra-index-url https://pypi.org/simple/ \
+                    "py-bragerone>=2025.0.0" || echo "Warning: py-bragerone not found on TestPyPI"
+
             - name: Install Home Assistant ${{ matrix.home-assistant-version }}
               if: matrix.home-assistant-version != 'dev'
               run: |

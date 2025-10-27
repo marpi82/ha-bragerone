@@ -1,20 +1,20 @@
 {
   "domain": "habragerone",
   "name": "Brager One",
-  "version": "2025a1",
-  "documentation": "https://github.com/marpi82/ha-bragerone",
-  "issue_tracker": "https://github.com/marpi82/ha-bragerone/issues",
-  "requirements": [
-    "py-bragerone>=2025.0.0"
-  ],
-  "dependencies": ["diagnostics"],
+  "after_dependencies": [],
   "codeowners": [
     "@marpi82"
   ],
   "config_flow": true,
+  "dependencies": ["diagnostics"],
+  "documentation": "https://github.com/marpi82/ha-bragerone",
   "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/marpi82/ha-bragerone/issues",
   "loggers": [
     "custom_components.habragerone"
   ],
-  "after_dependencies": []
+  "requirements": [
+    "py-bragerone>=2025.0.0"
+  ],
+  "version": "2025a1"
 }
