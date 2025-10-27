@@ -9,7 +9,7 @@ readme = "README.md"
 authors = [{ name = "MarPi82", email = "marpi82.dev@google.com" }]
 maintainers = [{ name = "MarPi82", email = "marpi82.dev@google.com" }]
 license = "MIT"
-requires-python = ">=3.13.2,<4"
+requires-python = ">=3.13.2,<3.14"
 keywords = [
   "home",
   "automation",
