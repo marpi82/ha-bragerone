@@ -148,6 +148,8 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0 # Full history for gitleaks
 
             - name: Install uv
               uses: astral-sh/setup-uv@v3
@@ -178,6 +180,8 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+              with:
+                  args: 'detect --source=. --verbose --redact --exit-code=2'
 
     build:
         name: Build Package
