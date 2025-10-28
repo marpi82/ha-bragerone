@@ -78,11 +78,11 @@ jobs:
             - name: Set up Python ${{ matrix.python-version }}
               run: uv python install ${{ matrix.python-version }}
 
-            - name: Install dependencies
-              run: uv sync --group dev --group test
-
-            - name: Install Home Assistant ${{ matrix.home-assistant-version }}
+            - name: Install dependencies and Home Assistant ${{ matrix.home-assistant-version }}
               run: |
+                  # Install base dependencies first (without homeassistant from pyproject.toml resolution)
+                  uv sync --group dev --group test
+                  # Then install specific HA version
                   if [[ "${{ matrix.home-assistant-version }}" == "latest" ]]; then
                     uv add homeassistant
                   else

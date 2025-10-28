@@ -48,19 +48,6 @@ jobs:
             - name: Install dependencies
               run: uv sync --group dev --group test
 
-            - name: Install Home Assistant ${{ matrix.home-assistant-version }}
-              if: matrix.home-assistant-version != 'dev'
-              run: |
-                  if [[ "${{ matrix.home-assistant-version }}" == "latest" ]]; then
-                    uv add homeassistant
-                  else
-                    uv add homeassistant==${{ matrix.home-assistant-version }}
-                  fi
-
-            - name: Install Home Assistant dev
-              if: matrix.home-assistant-version == 'dev'
-              run: uv add git+https://github.com/home-assistant/core.git
-
             - name: Setup Home Assistant config
               run: |
                   sudo mkdir -p /tmp/homeassistant/custom_components
