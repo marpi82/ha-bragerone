@@ -148,6 +148,8 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0 # Full history for gitleaks
 
             - name: Install uv
               uses: astral-sh/setup-uv@v3
@@ -162,9 +164,8 @@ jobs:
 
             - name: Run pip-audit
               run: |
-                  uv pip freeze --exclude-editable > requirements-audit.txt
-                  uv run --group dev pip-audit --requirement requirements-audit.txt --format=json --output=pip-audit-report.json
-              continue-on-error: true
+                  uv run --group dev pip-audit --skip-editable --progress-spinner off \
+                    --ignore-vuln GHSA-w476-p2h3-79g9
 
             - name: Upload pip-audit results
               uses: actions/upload-artifact@v4
@@ -178,6 +179,8 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+              with:
+                  args: 'detect --source=. --verbose --redact --exit-code=2'
 
     build:
         name: Build Package

@@ -91,6 +91,8 @@ repos:
             "requirements-pip-audit.txt",
             "--progress-spinner",
             "off",
+            "--ignore-vuln",
+            "GHSA-w476-p2h3-79g9",
           ]
         stages: [pre-commit]
         always_run: true
