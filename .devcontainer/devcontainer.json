@@ -20,7 +20,15 @@
     "customizations": {
         "vscode": {
             "settings": {
-                "python.defaultInterpreterPath": "/workspaces/ha-bragerone/.venv/bin/python"
+                "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+                "mypy-type-checker.executable": "${containerWorkspaceFolder}/.venv/bin/mypy",
+                "mypy-type-checker.importStrategy": "fromEnvironment",
+                "mypy-type-checker.args": [
+                    "--config-file=${containerWorkspaceFolder}/pyproject.toml",
+                    "--strict",
+                    "--show-column-numbers",
+                    "--show-error-codes"
+                ]
             },
             "extensions": [
                 "ms-python.python",

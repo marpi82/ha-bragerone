@@ -19,7 +19,7 @@ keywords = [
   "custom-component",
 ]
 dependencies = [
-    "homeassistant>2025.5.0",
+    "homeassistant>=2025.5.1",
     "py-bragerone",
 ]
 classifiers = [
@@ -69,12 +69,12 @@ dev = [
   "hatch>=1.12.0,<2.0.0",
 ]
 test = [
-  "pytest>=8.3.3,<9.0.0",
-  "pytest-asyncio>=1.2.0,<2.0.0",
-  "pytest-cov>=7.0.0,<8.0.0",
+  "pytest>=6.0.0,<9.0.0",
+  "pytest-asyncio>=0.18.0,<2.0.0",
+  "pytest-cov>=2.0.0,<8.0.0",
   "aioresponses>=0.7.8,<0.8.0",
   "packaging>=24.1,<25.0.0",
-  "pytest-homeassistant-custom-component",
+  "pytest-homeassistant-custom-component==0.11.26",
 ]
 docs = [
   "sphinx>=8.0.2,<9.0.0",
