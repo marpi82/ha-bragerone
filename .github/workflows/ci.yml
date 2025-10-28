@@ -164,20 +164,8 @@ jobs:
 
             - name: Run pip-audit
               run: |
-                  uv pip freeze --exclude-editable > requirements-audit.txt
-                  # Ignore known vulnerabilities in HA 2025.5.1 dependencies (expected with older HA version)
-                  uv run --group dev pip-audit \
-                    --requirement requirements-audit.txt \
-                    --format=json \
-                    --output=pip-audit-report.json \
-                    --ignore-vuln GHSA-9548-qrrj-x5pj \
-                    --ignore-vuln GHSA-pq67-6m6q-mj2v \
-                    --ignore-vuln GHSA-mq77-rv97-285m \
-                    --ignore-vuln PYSEC-2025-61 \
-                    --ignore-vuln GHSA-9hjg-9r4m-mvj7 \
-                    --ignore-vuln GHSA-8qf3-x8v5-2pj8 \
+                  uv run --group dev pip-audit --skip-editable --progress-spinner off \
                     --ignore-vuln GHSA-w476-p2h3-79g9
-              continue-on-error: true
 
             - name: Upload pip-audit results
               uses: actions/upload-artifact@v4
