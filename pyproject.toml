@@ -19,7 +19,7 @@ keywords = [
   "custom-component",
 ]
 dependencies = [
-    "homeassistant>=2025.5.1",
+    "homeassistant==2025.5.1",
     "py-bragerone",
 ]
 classifiers = [
