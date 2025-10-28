@@ -9,6 +9,9 @@ on:
         # Test against latest HA dev every night
         - cron: "0 2 * * *"
 
+permissions:
+    contents: read
+
 jobs:
     integration-test:
         name: HA Integration Test

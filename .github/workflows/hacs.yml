@@ -9,6 +9,9 @@ on:
         # Run weekly to catch any HACS requirement changes
         - cron: "0 6 * * 1"
 
+permissions:
+    contents: read
+
 jobs:
     hacs-validation:
         name: HACS Validation
