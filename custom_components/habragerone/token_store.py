@@ -1,3 +1,5 @@
+"""Token persistence helper bound to Home Assistant storage."""
+
 from __future__ import annotations
 
 import asyncio
@@ -6,7 +8,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
-from pybragerone.api import Token
+from pybragerone.models.token import Token
 
 
 @dataclass
@@ -18,15 +20,17 @@ class HATokenStore:
     _lock: asyncio.Lock
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
+        """Initialize token store for a specific config entry."""
         self.hass = hass
         self.entry_id = entry_id
         self._lock = asyncio.Lock()
 
     def _store(self) -> Store[dict[str, Any]]:
-        # Klucz per-config-entry, plik w .storage
+        """Return HA storage wrapper bound to one config entry."""
         return Store(self.hass, version=1, key=f"bragerone_token_{self.entry_id}")
 
     async def load(self) -> Token | None:
+        """Load token from HA storage."""
         async with self._lock:
             data = await self._store().async_load()
             if not isinstance(data, dict):
@@ -43,6 +47,7 @@ class HATokenStore:
                 return None
 
     async def save(self, token: Token) -> None:
+        """Persist token to HA storage."""
         async with self._lock:
             await self._store().async_save(
                 {
@@ -55,5 +60,6 @@ class HATokenStore:
             )
 
     async def clear(self) -> None:
+        """Remove persisted token from HA storage."""
         async with self._lock:
             await self._store().async_remove()
