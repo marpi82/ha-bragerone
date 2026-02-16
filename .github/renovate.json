@@ -88,11 +88,25 @@
       "matchPackageNames": [
         "homeassistant"
       ],
-      "automerge": false,
-      "labels": [
-        "dependencies",
-        "homeassistant"
-      ]
+      "enabled": false
+    },
+    {
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchDepTypes": [
+        "requires-python"
+      ],
+      "enabled": false
+    },
+    {
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "enabled": false
     },
     {
       "matchManagers": [
