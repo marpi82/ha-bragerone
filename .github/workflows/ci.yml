@@ -41,6 +41,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout py-bragerone
+        uses: actions/checkout@v6
+        with:
+          repository: marpi82/py-bragerone
+          ref: main
+          path: py-bragerone
+
+      - name: Link py-bragerone for uv editable source
+        run: ln -sfn "$GITHUB_WORKSPACE/py-bragerone" "$GITHUB_WORKSPACE/../py-bragerone"
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -70,6 +80,16 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Checkout py-bragerone
+        uses: actions/checkout@v6
+        with:
+          repository: marpi82/py-bragerone
+          ref: main
+          path: py-bragerone
+
+      - name: Link py-bragerone for uv editable source
+        run: ln -sfn "$GITHUB_WORKSPACE/py-bragerone" "$GITHUB_WORKSPACE/../py-bragerone"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -151,6 +171,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout py-bragerone
+        uses: actions/checkout@v6
+        with:
+          repository: marpi82/py-bragerone
+          ref: main
+          path: py-bragerone
+
+      - name: Link py-bragerone for uv editable source
+        run: ln -sfn "$GITHUB_WORKSPACE/py-bragerone" "$GITHUB_WORKSPACE/../py-bragerone"
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -184,6 +214,16 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Checkout py-bragerone
+        uses: actions/checkout@v6
+        with:
+          repository: marpi82/py-bragerone
+          ref: main
+          path: py-bragerone
+
+      - name: Link py-bragerone for uv editable source
+        run: ln -sfn "$GITHUB_WORKSPACE/py-bragerone" "$GITHUB_WORKSPACE/../py-bragerone"
 
       - name: Set up Python
         uses: actions/setup-python@v6
