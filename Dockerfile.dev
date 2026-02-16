@@ -33,7 +33,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create vscode user
 RUN groupadd --gid 1000 vscode \
     && useradd --uid 1000 --gid vscode --shell /bin/bash --create-home vscode \
-    && echo 'vscode ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+    && echo 'vscode ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers \
+    && mkdir -p /py-bragerone \
+    && chown -R vscode:vscode /py-bragerone
 
 # Install uv
 USER vscode
@@ -46,8 +48,13 @@ WORKDIR /workspace
 # Copy project files
 COPY --chown=vscode:vscode . .
 
+# Ensure local path dependency ../py-bragerone is available inside image
+RUN if [ ! -d "/py-bragerone/.git" ]; then \
+    git clone --depth 1 https://github.com/marpi82/py-bragerone /py-bragerone; \
+    fi
+
 # Install dependencies
-RUN uv sync --group dev --group test --group docs
+RUN uv sync --group dev --group test
 
 # Install pre-commit hooks
 RUN uv run --group dev pre-commit install || true

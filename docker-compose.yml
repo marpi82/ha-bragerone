@@ -8,6 +8,7 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - .:/workspace:cached
+      - ../py-bragerone:/py-bragerone:cached
       - ha-bragerone-venv:/workspace/.venv
       - ha-bragerone-uv-cache:/home/vscode/.cache/uv
       - ~/.gitconfig:/home/vscode/.gitconfig:ro
@@ -60,6 +61,7 @@ services:
       dockerfile: Dockerfile.devhass
     volumes:
       - .:/workspace:cached
+      - ../py-bragerone:/py-bragerone:cached
       - ha-bragerone-venv:/workspace/.venv
       - ha-bragerone-uv-cache:/home/vscode/.cache/uv
       - ha-devhass-config:/workspace/config

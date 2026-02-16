@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -8,12 +9,15 @@ from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from pybragerone import BragerOneApiClient, BragerOneGateway
+from pybragerone.api.server import Platform, server_for
 from pybragerone.models.param import ParamStore
 from pybragerone.models.param_resolver import ParamResolver
 
-from .bootstrap import async_build_bootstrap_payload
+from .bootstrap import async_build_bootstrap_payload, normalize_cached_descriptors
 from .const import (
+    CONF_BACKEND_PLATFORM,
     CONF_ENTITY_DESCRIPTORS,
+    CONF_LANGUAGE,
     CONF_MODULES,
     CONF_MODULES_META,
     CONF_OBJECT_ID,
@@ -34,27 +38,75 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up BragerOne from a config entry."""
     email = str(entry.data[CONF_EMAIL])
     password = str(entry.data[CONF_PASSWORD])
-    object_id = int(entry.data[CONF_OBJECT_ID])
-    modules = [str(module) for module in entry.data.get(CONF_MODULES, [])]
+    object_id = int(entry.options.get(CONF_OBJECT_ID, entry.data[CONF_OBJECT_ID]))
+    modules_raw = entry.options.get(CONF_MODULES, entry.data.get(CONF_MODULES, []))
+    modules = [str(module) for module in modules_raw] if isinstance(modules_raw, list) else []
+    platform_raw = str(entry.data.get(CONF_BACKEND_PLATFORM, Platform.BRAGERONE.value)).strip().lower()
+    language = str(entry.data.get(CONF_LANGUAGE, "")).strip().lower() or None
 
-    api = BragerOneApiClient()
+    try:
+        server = server_for(platform_raw)
+    except Exception as err:
+        raise ConfigEntryNotReady(f"Unsupported backend platform '{platform_raw}'") from err
+
+    api = BragerOneApiClient(server=server)
     try:
         await api.ensure_auth(email, password)
     except Exception as err:
         raise ConfigEntryNotReady(f"Authentication failed for BragerOne entry {entry.entry_id}") from err
 
+    data_object_id = int(entry.data[CONF_OBJECT_ID])
+    data_modules_raw = entry.data.get(CONF_MODULES, [])
+    data_modules = [str(module) for module in data_modules_raw] if isinstance(data_modules_raw, list) else []
+    options_changed = object_id != data_object_id or modules != data_modules
+    missing_cached_payload = not isinstance(entry.data.get(CONF_MODULES_META), dict) or not isinstance(
+        entry.data.get(CONF_ENTITY_DESCRIPTORS), list
+    )
+
     modules_meta = entry.data.get(CONF_MODULES_META)
     descriptors = entry.data.get(CONF_ENTITY_DESCRIPTORS)
-    if not isinstance(modules_meta, dict) or not isinstance(descriptors, list):
-        bootstrap_payload = await async_build_bootstrap_payload(api=api, object_id=object_id, modules=modules)
+    if options_changed or missing_cached_payload:
+        LOGGER.debug(
+            "Refreshing bootstrap for entry %s (options_changed=%s, missing_cached_payload=%s, object_id=%s, modules=%s)",
+            entry.entry_id,
+            options_changed,
+            missing_cached_payload,
+            object_id,
+            len(modules),
+        )
+        bootstrap_payload = await async_build_bootstrap_payload(
+            api=api,
+            object_id=object_id,
+            modules=modules,
+            language=language,
+        )
+        platform_counter: Counter[str] = Counter()
+        for descriptor in bootstrap_payload[CONF_ENTITY_DESCRIPTORS]:
+            if isinstance(descriptor, dict):
+                platform_counter[str(descriptor.get("platform", "sensor"))] += 1
+        LOGGER.debug(
+            "Bootstrap refresh completed for entry %s (descriptors_total=%s, platform_breakdown=%s)",
+            entry.entry_id,
+            len(bootstrap_payload[CONF_ENTITY_DESCRIPTORS]),
+            dict(sorted(platform_counter.items())),
+        )
         updated_data = dict(entry.data)
+        updated_data[CONF_OBJECT_ID] = object_id
+        updated_data[CONF_MODULES] = modules
         updated_data.update(bootstrap_payload)
         hass.config_entries.async_update_entry(entry, data=updated_data)
         modules_meta = bootstrap_payload[CONF_MODULES_META]
         descriptors = bootstrap_payload[CONF_ENTITY_DESCRIPTORS]
+    else:
+        normalized_descriptors = normalize_cached_descriptors(descriptors)
+        if normalized_descriptors != descriptors:
+            updated_data = dict(entry.data)
+            updated_data[CONF_ENTITY_DESCRIPTORS] = normalized_descriptors
+            hass.config_entries.async_update_entry(entry, data=updated_data)
+            descriptors = normalized_descriptors
 
     store = ParamStore()
-    resolver = ParamResolver.from_api(api=api, store=store)
+    resolver = ParamResolver.from_api(api=api, store=store, lang=language)
     gateway = BragerOneGateway(api=api, object_id=object_id, modules=modules)
     runtime = BragerRuntime(
         api=api,
@@ -64,6 +116,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         modules_meta={str(k): dict(v) for k, v in modules_meta.items()} if isinstance(modules_meta, dict) else {},
     )
     await runtime.start()
+
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     domain_data = hass.data.setdefault(DOMAIN, {})
     domain_data[entry.entry_id] = {
@@ -98,6 +152,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data.pop(DOMAIN, None)
 
     return True
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload config entry after options update."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_migrate_entry(_hass: HomeAssistant, entry: ConfigEntry) -> bool:

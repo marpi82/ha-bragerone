@@ -12,7 +12,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from pybragerone.models.events import ParamUpdate
 
 from .const import DOMAIN
-from .entity_common import device_info_from_descriptor, get_runtime_and_descriptors, record_platform_entity_stats
+from .entity_common import (
+    descriptor_display_name,
+    descriptor_suggested_object_id,
+    device_info_from_descriptor,
+    get_runtime_and_descriptors,
+    record_platform_entity_stats,
+)
 from .runtime import BragerRuntime
 
 
@@ -48,11 +54,12 @@ class BragerSymbolSensor(SensorEntity):
 
         symbol = str(descriptor.get("symbol", ""))
         devid = str(descriptor.get("devid", ""))
-        label = str(descriptor.get("label") or symbol)
+        label = descriptor_display_name(descriptor)
 
         self._symbol = symbol
         self._devid = devid
         self._attr_name = label
+        self._attr_suggested_object_id = descriptor_suggested_object_id(descriptor)
         self._attr_unique_id = f"{entry.entry_id}_{devid}_{symbol}".lower().replace(" ", "_")
         self._attr_native_unit_of_measurement = self._normalize_unit(descriptor.get("unit"))
         self._attr_available = True

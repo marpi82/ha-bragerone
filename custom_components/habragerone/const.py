@@ -9,6 +9,8 @@ PLATFORMS: Final[list[str]] = ["sensor", "binary_sensor", "switch", "number", "s
 
 CONF_OBJECT_ID: Final = "object_id"
 CONF_MODULES: Final = "modules"
+CONF_BACKEND_PLATFORM: Final = "backend_platform"
+CONF_LANGUAGE: Final = "language"
 CONF_ENTITY_DESCRIPTORS: Final = "entity_descriptors"
 CONF_MODULES_META: Final = "modules_meta"
 CONF_PLATFORM: Final = "platform"

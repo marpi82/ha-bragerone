@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.util import slugify
 
 from .const import (
     CONF_ENTITY_DESCRIPTORS,
@@ -82,6 +83,22 @@ def descriptor_raw_to_label(descriptor: dict[str, Any]) -> dict[str, str]:
     if not isinstance(raw_to_label, dict):
         return {}
     return {str(key): str(value) for key, value in raw_to_label.items()}
+
+
+def descriptor_display_name(descriptor: dict[str, Any]) -> str:
+    """Build entity display label as ``Menu/Submenu - Label`` when available."""
+    label = str(descriptor.get("label") or descriptor.get("symbol") or "")
+    panel_path = str(descriptor.get("panel_path") or "").strip()
+    if panel_path:
+        return f"{panel_path} - {label}"
+    return label
+
+
+def descriptor_suggested_object_id(descriptor: dict[str, Any]) -> str:
+    """Build stable object id to avoid duplicate suffixes for repeated labels."""
+    module_name = str(descriptor.get("module_name") or descriptor.get("devid") or "device")
+    symbol = str(descriptor.get("symbol") or "entity")
+    return slugify(f"{module_name}_{symbol}")
 
 
 def record_platform_entity_stats(

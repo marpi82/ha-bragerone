@@ -9,12 +9,17 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import callback
+from homeassistant.helpers import config_validation as cv
 from pybragerone import BragerOneApiClient
 from pybragerone.api.client import ApiError
+from pybragerone.api.server import Platform, server_for
+from pybragerone.models.catalog import LiveAssetsCatalog
 
 from .bootstrap import async_build_bootstrap_payload
 from .const import (
+    CONF_BACKEND_PLATFORM,
     CONF_ENTITY_DESCRIPTORS,
+    CONF_LANGUAGE,
     CONF_MODULES,
     CONF_MODULES_META,
     CONF_OBJECT_ID,
@@ -44,29 +49,128 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize temporary flow state."""
         self._email: str | None = None
         self._password: str | None = None
+        self._platform: str = Platform.BRAGERONE.value
+        self._language: str | None = None
         self._object_choices: list[tuple[int, str]] = []
+        self._module_choices: list[tuple[str, str]] = []
+        self._selected_object_id: int | None = None
         self._api: BragerOneApiClient | None = None
+        self._language_cache: dict[str, dict[str, str]] = {}
 
     async def _api_client(self) -> BragerOneApiClient:
-        if self._api is None:
-            self._api = BragerOneApiClient()
+        if self._api is not None:
+            return self._api
+
+        self._api = BragerOneApiClient(server=server_for(self._platform))
         return self._api
+
+    async def _reset_api_client(self) -> None:
+        if self._api is not None:
+            await self._api.close()
+            self._api = None
+
+    @staticmethod
+    def _platform_values() -> dict[str, str]:
+        return {
+            Platform.BRAGERONE.value: "BragerOne",
+            Platform.TISCONNECT.value: "TisConnect",
+        }
+
+    async def _language_values(self, platform: str) -> dict[str, str]:
+        cached = self._language_cache.get(platform)
+        if cached is not None:
+            return cached
+
+        values: dict[str, str] = {}
+        api = BragerOneApiClient(server=server_for(platform))
+        try:
+            cfg = await LiveAssetsCatalog(api).list_language_config()
+        except Exception:
+            cfg = None
+        finally:
+            await api.close()
+
+        if cfg is not None:
+            for row in cfg.translations:
+                if not isinstance(row, dict):
+                    continue
+                lang_id = str(row.get("id") or "").strip().lower()
+                if not lang_id or lang_id == "dev":
+                    continue
+                label_base = str(row.get("name") or row.get("title") or row.get("label") or lang_id.upper())
+                flag = row.get("flag")
+                if isinstance(flag, str) and flag.strip():
+                    values[lang_id] = f"{flag} {label_base}"
+                else:
+                    values[lang_id] = label_base
+
+            default_lang = str(cfg.default_translation).strip().lower()
+            if default_lang and default_lang in values:
+                ordered = {default_lang: values[default_lang]}
+                for key, value in values.items():
+                    if key != default_lang:
+                        ordered[key] = value
+                values = ordered
+
+        if not values:
+            values = {"en": "English", "pl": "Polski"}
+
+        self._language_cache[platform] = values
+        return values
+
+    async def _user_form_schema(
+        self,
+        *,
+        default_email: str | None = None,
+        default_platform: str | None = None,
+        default_language: str | None = None,
+    ) -> vol.Schema:
+        platform = (default_platform or self._platform or Platform.BRAGERONE.value).strip().lower()
+        platform_values = self._platform_values()
+        if platform not in platform_values:
+            platform = Platform.BRAGERONE.value
+
+        language_values = await self._language_values(platform)
+        language_default = (default_language or self._language or "").strip().lower()
+        if language_default not in language_values:
+            language_default = next(iter(language_values.keys()))
+
+        email_default = (default_email or self._email or "").strip()
+        schema: dict[Any, Any] = {
+            vol.Required(CONF_EMAIL, default=email_default): str,
+            vol.Required(CONF_PASSWORD): str,
+            vol.Required(CONF_BACKEND_PLATFORM, default=platform): vol.In(platform_values),
+            vol.Required(CONF_LANGUAGE, default=language_default): vol.In(language_values),
+        }
+        return vol.Schema(schema)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Collect credentials and authenticate."""
         if user_input is None:
             return self.async_show_form(
                 step_id="user",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_EMAIL): str,
-                        vol.Required(CONF_PASSWORD): str,
-                    }
-                ),
+                data_schema=await self._user_form_schema(),
             )
 
         email = str(user_input[CONF_EMAIL]).strip()
         password = str(user_input[CONF_PASSWORD])
+        selected_platform = str(user_input.get(CONF_BACKEND_PLATFORM, Platform.BRAGERONE.value)).strip().lower()
+        selected_language = str(user_input.get(CONF_LANGUAGE, "")).strip().lower()
+
+        if selected_platform != self._platform:
+            self._platform = selected_platform
+            await self._reset_api_client()
+
+        language_values = await self._language_values(self._platform)
+        if selected_language not in language_values:
+            return self.async_show_form(
+                step_id="user",
+                errors={"base": "invalid_response"},
+                data_schema=await self._user_form_schema(
+                    default_email=email,
+                    default_platform=self._platform,
+                ),
+            )
 
         api = await self._api_client()
         try:
@@ -76,16 +180,16 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_show_form(
                 step_id="user",
                 errors={"base": "auth"},
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_EMAIL, default=email): str,
-                        vol.Required(CONF_PASSWORD): str,
-                    }
+                data_schema=await self._user_form_schema(
+                    default_email=email,
+                    default_platform=self._platform,
+                    default_language=selected_language,
                 ),
             )
 
         self._email = email
         self._password = password
+        self._language = selected_language
         self._object_choices = [(obj.id, f"{obj.name} (id={obj.id})") for obj in objects]
 
         if not self._object_choices:
@@ -94,7 +198,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_select_site()
 
     async def async_step_select_site(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Collect object and module scope for this entry."""
+        """Collect object scope for this entry from available list."""
         if self._email is None or self._password is None:
             return await self.async_step_user()
 
@@ -107,13 +211,11 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=vol.Schema(
                     {
                         vol.Required(CONF_OBJECT_ID, default=default_object_id): vol.In(object_values),
-                        vol.Optional(CONF_MODULES): str,
                     }
                 ),
             )
 
         selected_object_id = int(user_input[CONF_OBJECT_ID])
-        modules_csv = str(user_input.get(CONF_MODULES) or "").strip()
 
         api = await self._api_client()
         try:
@@ -125,57 +227,86 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=vol.Schema(
                     {
                         vol.Required(CONF_OBJECT_ID, default=selected_object_id): vol.In(object_values),
-                        vol.Optional(CONF_MODULES): str,
                     }
                 ),
             )
 
-        available_codes = {choice for choice, _ in _module_choices([m.model_dump(mode="json") for m in modules])}
-        if modules_csv:
-            selected_modules = [module.strip() for module in modules_csv.split(",") if module.strip()]
-        else:
-            selected_modules = sorted(available_codes)
-
-        unknown = [module for module in selected_modules if module not in available_codes]
-        if unknown:
+        self._selected_object_id = selected_object_id
+        self._module_choices = _module_choices([m.model_dump(mode="json") for m in modules])
+        if not self._module_choices:
             return self.async_show_form(
                 step_id="select_site",
                 errors={"base": "invalid_response"},
                 data_schema=vol.Schema(
                     {
                         vol.Required(CONF_OBJECT_ID, default=selected_object_id): vol.In(object_values),
-                        vol.Optional(
-                            CONF_MODULES,
-                            description={"suggested_value": ",".join(sorted(available_codes))},
-                        ): str,
                     }
                 ),
-                description_placeholders={"modules": ", ".join(sorted(available_codes))},
             )
 
-        await self.async_set_unique_id(f"{self._email}:{selected_object_id}")
+        return await self.async_step_select_modules()
+
+    async def async_step_select_modules(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Collect module scope for this entry from available list."""
+        if self._email is None or self._password is None or self._selected_object_id is None:
+            return await self.async_step_user()
+        if not self._module_choices:
+            return await self.async_step_select_site()
+
+        module_values = {module_id: label for module_id, label in self._module_choices}
+        default_modules = [module_id for module_id, _ in self._module_choices]
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="select_modules",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
+                    }
+                ),
+            )
+
+        selected_modules = [str(module) for module in user_input.get(CONF_MODULES, [])]
+        available_codes = set(module_values)
+        if not selected_modules or any(module not in available_codes for module in selected_modules):
+            return self.async_show_form(
+                step_id="select_modules",
+                errors={"base": "invalid_response"},
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
+                    }
+                ),
+            )
+
+        await self.async_set_unique_id(f"{self._platform}:{self._email}:{self._selected_object_id}")
         self._abort_if_unique_id_configured()
 
         bootstrap = await async_build_bootstrap_payload(
-            api=api,
-            object_id=selected_object_id,
+            api=await self._api_client(),
+            object_id=self._selected_object_id,
             modules=selected_modules,
+            language=self._language,
         )
 
         data = {
             CONF_EMAIL: self._email,
             CONF_PASSWORD: self._password,
-            CONF_OBJECT_ID: selected_object_id,
+            CONF_BACKEND_PLATFORM: self._platform,
+            CONF_LANGUAGE: self._language,
+            CONF_OBJECT_ID: self._selected_object_id,
             CONF_MODULES: selected_modules,
             CONF_ENTITY_DESCRIPTORS: bootstrap[CONF_ENTITY_DESCRIPTORS],
             CONF_MODULES_META: bootstrap[CONF_MODULES_META],
         }
 
-        return self.async_create_entry(title=f"{self._email} (id={selected_object_id})", data=data)
+        return self.async_create_entry(title=f"{self._email} ({self._platform}, id={self._selected_object_id})", data=data)
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Start re-authentication flow."""
         self._email = str(entry_data.get(CONF_EMAIL, ""))
+        self._platform = str(entry_data.get(CONF_BACKEND_PLATFORM, Platform.BRAGERONE.value)).strip().lower()
+        await self._reset_api_client()
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -236,30 +367,118 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Store the config entry reference used by options flow."""
         self._config_entry = config_entry
+        self._selected_object_id: int | None = None
+        self._module_choices: list[tuple[str, str]] = []
+
+    async def _fetch_object_choices(self) -> list[tuple[int, str]]:
+        email = str(self._config_entry.data.get(CONF_EMAIL, "")).strip()
+        password = str(self._config_entry.data.get(CONF_PASSWORD, ""))
+        platform = str(self._config_entry.data.get(CONF_BACKEND_PLATFORM, Platform.BRAGERONE.value)).strip().lower()
+
+        api = BragerOneApiClient(server=server_for(platform))
+        try:
+            await api.ensure_auth(email, password)
+            objects = await api.get_objects()
+        finally:
+            await api.close()
+
+        return [(obj.id, f"{obj.name} (id={obj.id})") for obj in objects]
+
+    async def _fetch_module_choices(self, object_id: int) -> list[tuple[str, str]]:
+        email = str(self._config_entry.data.get(CONF_EMAIL, "")).strip()
+        password = str(self._config_entry.data.get(CONF_PASSWORD, ""))
+        platform = str(self._config_entry.data.get(CONF_BACKEND_PLATFORM, Platform.BRAGERONE.value)).strip().lower()
+
+        api = BragerOneApiClient(server=server_for(platform))
+        try:
+            await api.ensure_auth(email, password)
+            modules = await api.get_modules(object_id)
+        finally:
+            await api.close()
+
+        return _module_choices([m.model_dump(mode="json") for m in modules])
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Render and handle options form."""
-        if user_input is not None:
-            modules_csv = str(user_input.get(CONF_MODULES, "")).strip()
-            modules = [module.strip() for module in modules_csv.split(",") if module.strip()]
-            return self.async_create_entry(
-                title="",
-                data={
-                    CONF_OBJECT_ID: int(user_input[CONF_OBJECT_ID]),
-                    CONF_MODULES: modules,
-                },
+        """Select object scope from available objects list."""
+        object_choices = await self._fetch_object_choices()
+        if not object_choices:
+            return self.async_abort(reason="invalid_response")
+
+        object_values = {obj_id: label for obj_id, label in object_choices}
+        default_object = int(
+            self._config_entry.options.get(
+                CONF_OBJECT_ID,
+                self._config_entry.data.get(CONF_OBJECT_ID, object_choices[0][0]),
+            )
+        )
+        if default_object not in object_values:
+            default_object = object_choices[0][0]
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="init",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_OBJECT_ID, default=default_object): vol.In(object_values),
+                    }
+                ),
             )
 
-        default_object = int(self._config_entry.data.get(CONF_OBJECT_ID, 0))
-        current_modules = self._config_entry.data.get(CONF_MODULES, [])
-        modules_csv = ",".join(current_modules) if isinstance(current_modules, list) else ""
+        self._selected_object_id = int(user_input[CONF_OBJECT_ID])
+        self._module_choices = await self._fetch_module_choices(self._selected_object_id)
+        if not self._module_choices:
+            return self.async_show_form(
+                step_id="init",
+                errors={"base": "invalid_response"},
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_OBJECT_ID, default=default_object): vol.In(object_values),
+                    }
+                ),
+            )
 
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_OBJECT_ID, default=default_object): int,
-                    vol.Optional(CONF_MODULES, default=modules_csv): str,
-                }
-            ),
+        return await self.async_step_modules()
+
+    async def async_step_modules(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Select module scope from available modules list."""
+        if self._selected_object_id is None:
+            return await self.async_step_init()
+        if not self._module_choices:
+            self._module_choices = await self._fetch_module_choices(self._selected_object_id)
+
+        module_values = {module_id: label for module_id, label in self._module_choices}
+        existing_modules_raw = self._config_entry.options.get(CONF_MODULES, self._config_entry.data.get(CONF_MODULES, []))
+        existing_modules = [str(module) for module in existing_modules_raw] if isinstance(existing_modules_raw, list) else []
+        default_modules = [module_id for module_id, _ in self._module_choices if module_id in set(existing_modules)]
+        if not default_modules:
+            default_modules = [module_id for module_id, _ in self._module_choices]
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="modules",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
+                    }
+                ),
+            )
+
+        selected_modules = [str(module) for module in user_input.get(CONF_MODULES, [])]
+        if not selected_modules or any(module not in module_values for module in selected_modules):
+            return self.async_show_form(
+                step_id="modules",
+                errors={"base": "invalid_response"},
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
+                    }
+                ),
+            )
+
+        return self.async_create_entry(
+            title="",
+            data={
+                CONF_OBJECT_ID: self._selected_object_id,
+                CONF_MODULES: selected_modules,
+            },
         )
