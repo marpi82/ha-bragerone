@@ -1,0 +1,115 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "Europe/Warsaw",
+  "dependencyDashboard": true,
+  "prConcurrentLimit": 4,
+  "prHourlyLimit": 2,
+  "enabledManagers": [
+    "pep621",
+    "github-actions",
+    "dockerfile",
+    "docker-compose"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true,
+    "schedule": [
+      "every weekend"
+    ]
+  },
+  "packageRules": [
+    {
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchDepTypes": [
+        "project.dependencies"
+      ],
+      "groupName": "python runtime deps",
+      "groupSlug": "python-runtime-deps"
+    },
+    {
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchDepTypes": [
+        "dependency-groups",
+        "build-system.requires"
+      ],
+      "groupName": "python dev/tooling deps",
+      "groupSlug": "python-dev-tooling-deps"
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose"
+      ],
+      "groupName": "docker images",
+      "groupSlug": "docker-images"
+    },
+    {
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchDepTypes": [
+        "dependency-groups",
+        "build-system.requires"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "automerge": true
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "automerge": true
+    },
+    {
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchPackageNames": [
+        "homeassistant"
+      ],
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "homeassistant"
+      ]
+    },
+    {
+      "matchManagers": [
+        "docker-compose"
+      ],
+      "matchPackageNames": [
+        "homeassistant/home-assistant"
+      ],
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "homeassistant"
+      ]
+    }
+  ],
+  "labels": [
+    "dependencies",
+    "renovate"
+  ]
+}
