@@ -29,7 +29,7 @@ services:
 
   # Home Assistant for integration testing
   homeassistant:
-    image: homeassistant/home-assistant:2025.1
+    image: homeassistant/home-assistant:2026.2
     container_name: ha-bragerone-hass
     restart: unless-stopped
     environment:
