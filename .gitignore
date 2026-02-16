@@ -73,7 +73,6 @@ known_devices.yaml
 # Development files
 requirements-*.txt
 *.json.bak
-uv.lock
 
 # IDE
 .vscode/

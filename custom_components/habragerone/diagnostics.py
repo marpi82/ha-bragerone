@@ -46,9 +46,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
 
     platform_breakdown = {platform: platform_counter.get(platform, 0) for platform in PLATFORMS}
     unknown_platforms = {
-        platform: count
-        for platform, count in sorted(platform_counter.items())
-        if platform not in set(PLATFORMS)
+        platform: count for platform, count in sorted(platform_counter.items()) if platform not in set(PLATFORMS)
     }
 
     sample_symbols_by_platform: dict[str, list[str]] = {}
@@ -99,11 +97,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
         or any(delta != 0 for delta in platform_creation_deltas.values())
     )
 
-    mismatched_platforms = [
-        platform
-        for platform, delta in sorted(platform_creation_deltas.items())
-        if delta != 0
-    ]
+    mismatched_platforms = [platform for platform, delta in sorted(platform_creation_deltas.items()) if delta != 0]
 
     total_missing = sum(delta for delta in platform_creation_deltas.values() if delta > 0)
     total_extra = sum(-delta for delta in platform_creation_deltas.values() if delta < 0)
@@ -178,9 +172,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
                 previous_health_status = prev_health
             if isinstance(prev_deltas, dict):
                 previous_platform_creation_deltas = {
-                    str(platform): int(delta)
-                    for platform, delta in prev_deltas.items()
-                    if isinstance(delta, int)
+                    str(platform): int(delta) for platform, delta in prev_deltas.items() if isinstance(delta, int)
                 }
 
         runtime[DATA_DIAGNOSTIC_TREND] = {

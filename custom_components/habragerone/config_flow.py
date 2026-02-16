@@ -235,7 +235,7 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Store the config entry reference used by options flow."""
-        self.config_entry = config_entry
+        self._config_entry = config_entry
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Render and handle options form."""
@@ -250,8 +250,8 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
                 },
             )
 
-        default_object = int(self.config_entry.data.get(CONF_OBJECT_ID, 0))
-        current_modules = self.config_entry.data.get(CONF_MODULES, [])
+        default_object = int(self._config_entry.data.get(CONF_OBJECT_ID, 0))
+        current_modules = self._config_entry.data.get(CONF_MODULES, [])
         modules_csv = ",".join(current_modules) if isinstance(current_modules, list) else ""
 
         return self.async_show_form(

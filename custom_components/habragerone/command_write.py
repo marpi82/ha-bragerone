@@ -72,9 +72,7 @@ def enum_display_to_raw(display_value: RawValue, enum_mapping: Mapping[str, RawV
         return display_value
 
     labels = ", ".join(sorted(enum_mapping.keys()))
-    raise WriteValidationError(
-        f"Invalid enum value '{display_value}'. Allowed labels: [{labels}] or matching raw mapped value."
-    )
+    raise WriteValidationError(f"Invalid enum value '{display_value}'. Allowed labels: [{labels}] or matching raw mapped value.")
 
 
 def enum_raw_to_display(raw_value: RawValue, enum_mapping: Mapping[str, RawValue]) -> RawValue:
