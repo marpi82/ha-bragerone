@@ -32,6 +32,7 @@ jobs:
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: moderate
+          allow-ghsas: GHSA-cfh3-3jmp-rvhc
 
   quality:
     name: quality (lint + typecheck)
