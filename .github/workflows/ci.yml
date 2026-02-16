@@ -1,216 +1,250 @@
 name: CI
 
 on:
-    push:
-        branches: [main, develop]
-    pull_request:
-        branches: [main]
-
-concurrency:
-    group: ${{ github.workflow }}-${{ github.ref }}
-    cancel-in-progress: true
+  push:
+  pull_request:
 
 permissions:
-    contents: read
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-    quality:
-        name: Code Quality
-        runs-on: ubuntu-latest
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+  secrets:
+    name: secrets (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Install uv
-              uses: astral-sh/setup-uv@v3
-              with:
-                  version: "latest"
+  dependency-review:
+    name: dependency
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          allow-ghsas: GHSA-cfh3-3jmp-rvhc
 
-            - name: Set up Python
-              run: uv python install 3.13
+  quality:
+    name: quality (lint + typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-            - name: Install dependencies
-              run: uv sync --group dev --group test
+      - name: Checkout py-bragerone
+        uses: actions/checkout@v6
+        with:
+          repository: marpi82/py-bragerone
+          ref: main
+          path: py-bragerone
 
-            - name: Lint with Ruff
-              run: uv run --group dev ruff check --output-format=github .
+      - name: Link py-bragerone for uv editable source
+        run: ln -sfn "$GITHUB_WORKSPACE/py-bragerone" "$GITHUB_WORKSPACE/../py-bragerone"
 
-            - name: Check formatting with Ruff
-              run: uv run --group dev ruff format --check .
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
 
-            - name: Type check with mypy
-              run: uv run --group dev mypy
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: true
 
-            - name: Security check with Bandit
-              run: uv run --group dev bandit -r custom_components -f json -o bandit-report.json
-              continue-on-error: true
+      - name: Install dependencies
+        run: uv sync --locked --group dev --group test
 
-            - name: Upload Bandit results
-              uses: actions/upload-artifact@v4
-              if: always()
-              with:
-                  name: bandit-results
-                  path: bandit-report.json
+      - name: Ruff (lint)
+        run: uv run --group dev ruff check .
 
-    hassfest:
-        name: Hassfest (HA Integration Validation)
-        runs-on: ubuntu-latest
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+      - name: Ruff (format)
+        run: uv run --group dev ruff format --check
 
-            - name: Hassfest validation
-              uses: home-assistant/actions/hassfest@master
+      - name: mypy (typecheck)
+        run: uv run --group dev mypy
 
-    test:
-        name: Tests
-        runs-on: ubuntu-latest
-        strategy:
-            matrix:
-                python-version: ["3.13"]
-                home-assistant-version: ["2025.5.1", "latest"]
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+  security:
+    name: security (bandit + semgrep + pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-            - name: Install uv
-              uses: astral-sh/setup-uv@v3
-              with:
-                  version: "latest"
+      - name: Checkout py-bragerone
+        uses: actions/checkout@v6
+        with:
+          repository: marpi82/py-bragerone
+          ref: main
+          path: py-bragerone
 
-            - name: Set up Python ${{ matrix.python-version }}
-              run: uv python install ${{ matrix.python-version }}
+      - name: Link py-bragerone for uv editable source
+        run: ln -sfn "$GITHUB_WORKSPACE/py-bragerone" "$GITHUB_WORKSPACE/../py-bragerone"
 
-            - name: Install dependencies and Home Assistant ${{ matrix.home-assistant-version }}
-              run: |
-                  # Install base dependencies first (without homeassistant from pyproject.toml resolution)
-                  uv sync --group dev --group test
-                  # Then install specific HA version
-                  if [[ "${{ matrix.home-assistant-version }}" == "latest" ]]; then
-                    uv add homeassistant
-                  else
-                    uv add homeassistant==${{ matrix.home-assistant-version }}
-                  fi
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
 
-            - name: Run tests
-              run: uv run --group test pytest --cov=custom_components.habragerone --cov-report=xml --cov-report=term-missing
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: true
 
-            - name: Upload coverage reports to Codecov
-              uses: codecov/codecov-action@v4
-              with:
-                  file: ./coverage.xml
-                  flags: unittests
-                  name: codecov-umbrella
-                  token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Install dependencies
+        run: uv sync --locked --group dev --group test
 
-    validate-ha:
-        name: Validate Home Assistant Integration
-        runs-on: ubuntu-latest
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+      - name: Run Bandit
+        run: uv run --group dev bandit -r custom_components -q -f json -o bandit-report.json
+        continue-on-error: true
 
-            - name: Validate manifest.json
-              run: |
-                  python -c "
-                  import json
-                  manifest = json.load(open('custom_components/habragerone/manifest.json'))
-                  required_keys = ['domain', 'name', 'version', 'documentation', 'issue_tracker', 'codeowners']
-                  missing = [key for key in required_keys if key not in manifest]
-                  if missing:
-                      raise ValueError(f'Missing required keys in manifest.json: {missing}')
-                  print('✅ manifest.json is valid')
-                  "
+      - name: Run Semgrep
+        run: uv run --group dev semgrep --config p/ci --error .
 
-            - name: Validate strings.json
-              run: |
-                  python -c "
-                  import json
-                  strings = json.load(open('custom_components/habragerone/strings.json'))
-                  print('✅ strings.json is valid')
-                  "
+      - name: Run pip-audit
+        run: |
+          uv run --group dev pip-audit \
+            --format=json \
+            --output=pip-audit-results.json \
+            --progress-spinner=off \
+            --skip-editable
+        continue-on-error: true
 
-            - name: Check for required files
-              run: |
-                  required_files=(
-                    "custom_components/habragerone/__init__.py"
-                    "custom_components/habragerone/manifest.json"
-                    "custom_components/habragerone/strings.json"
-                  )
-                  for file in "${required_files[@]}"; do
-                    if [[ ! -f "$file" ]]; then
-                      echo "❌ Missing required file: $file"
-                      exit 1
-                    fi
-                  done
-                  echo "✅ All required files present"
+      - name: Upload security artifacts
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: security-results-${{ github.sha }}
+          path: |
+            bandit-report.json
+            pip-audit-results.json
+          retention-days: 30
 
-    security:
-        name: Security Audit
-        runs-on: ubuntu-latest
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
-              with:
-                  fetch-depth: 0 # Full history for gitleaks
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: home-assistant/actions/hassfest@master
 
-            - name: Install uv
-              uses: astral-sh/setup-uv@v3
-              with:
-                  version: "latest"
+  validate-ha:
+    name: validate-ha
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
 
-            - name: Set up Python
-              run: uv python install 3.13
+      - name: Validate manifest.json
+        run: |
+          python -c "
+          import json
+          manifest = json.load(open('custom_components/habragerone/manifest.json'))
+          required_keys = ['domain', 'name', 'version', 'documentation', 'issue_tracker', 'codeowners']
+          missing = [key for key in required_keys if key not in manifest]
+          if missing:
+              raise ValueError(f'Missing required keys in manifest.json: {missing}')
+          print('manifest.json is valid')
+          "
 
-            - name: Install dependencies
-              run: uv sync --group dev --group test
+      - name: Validate strings.json
+        run: |
+          python -c "
+          import json
+          json.load(open('custom_components/habragerone/strings.json'))
+          print('strings.json is valid')
+          "
 
-            - name: Run pip-audit
-              run: |
-                  uv run --group dev pip-audit --skip-editable --progress-spinner off \
-                    --ignore-vuln GHSA-w476-p2h3-79g9
+  tests:
+    name: tests (3.13)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-            - name: Upload pip-audit results
-              uses: actions/upload-artifact@v4
-              if: always()
-              with:
-                  name: pip-audit-results
-                  path: pip-audit-report.json
+      - name: Checkout py-bragerone
+        uses: actions/checkout@v6
+        with:
+          repository: marpi82/py-bragerone
+          ref: main
+          path: py-bragerone
 
-            - name: Run Gitleaks
-              uses: gitleaks/gitleaks-action@v2
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                  GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-              with:
-                  args: 'detect --source=. --verbose --redact --exit-code=2'
+      - name: Link py-bragerone for uv editable source
+        run: ln -sfn "$GITHUB_WORKSPACE/py-bragerone" "$GITHUB_WORKSPACE/../py-bragerone"
 
-    build:
-        name: Build Package
-        runs-on: ubuntu-latest
-        needs: [quality, test, validate-ha]
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
-              with:
-                  fetch-depth: 0 # Full history for version tags
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
 
-            - name: Install uv
-              uses: astral-sh/setup-uv@v3
-              with:
-                  version: "latest"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: true
 
-            - name: Set up Python
-              run: uv python install 3.13
+      - name: Install dependencies
+        run: uv sync --locked --group dev --group test
 
-            - name: Install dependencies
-              run: uv sync --group dev
+      - name: Run pytest
+        run: uv run --group test pytest -q --maxfail=1 --disable-warnings --cov=custom_components.habragerone --cov-report=xml --cov-report=term-missing
 
-            - name: Build package
-              run: uv run --group dev hatch build
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: ha-bragerone
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-            - name: Upload build artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                  name: dist
-                  path: dist/
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    needs: [secrets, dependency-review, quality, security, hassfest, validate-ha, tests]
+    if: always() && needs.quality.result == 'success' && needs.hassfest.result == 'success' && needs.validate-ha.result == 'success' && needs.tests.result == 'success' && needs.secrets.result == 'success'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Checkout py-bragerone
+        uses: actions/checkout@v6
+        with:
+          repository: marpi82/py-bragerone
+          ref: main
+          path: py-bragerone
+
+      - name: Link py-bragerone for uv editable source
+        run: ln -sfn "$GITHUB_WORKSPACE/py-bragerone" "$GITHUB_WORKSPACE/../py-bragerone"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --group dev
+
+      - name: Build package
+        run: uv run --group dev hatch build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/*
+          retention-days: 7

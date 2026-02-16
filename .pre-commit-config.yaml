@@ -13,7 +13,7 @@ exclude: |
 repos:
   # Ruff → linter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.1
+    rev: v0.15.0
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -24,16 +24,12 @@ repos:
     rev: v1.18.2
     hooks:
       - id: mypy
-        args: ["--strict", "--show-column-numbers", "--show-error-codes"]
+        name: mypy
+        entry: uv run mypy
+        language: system
+        types: [python]
         files: ^(custom_components/|tests/)
-        additional_dependencies:
-          [
-            "homeassistant>2025.5.0",
-            "pydantic>=2.0",
-            "aioresponses",
-            "pytest-asyncio",
-            "packaging",
-          ]
+        pass_filenames: false
 
   # Secrets scanning with Gitleaks
   - repo: https://github.com/gitleaks/gitleaks
@@ -69,33 +65,42 @@ repos:
         args: ["-r", "custom_components", "-q"]
         pass_filenames: false
 
-  # --- SECURITY: dependencies (SCA) with uv export + pip-audit ---
+  # --- SECURITY: Semgrep ---
+  # NOTE: Use the uv-managed dev environment instead of pre-commit's isolated venv.
   - repo: local
     hooks:
-      - id: uv-export
-        name: uv pip freeze requirements snapshot
+      - id: semgrep
+        name: semgrep (p/ci rules)
         language: system
-        entry: bash -c 'uv pip freeze --exclude-editable > requirements-pip-audit.txt'
-        pass_filenames: false
-        stages: [pre-commit]
-        always_run: true
+        entry: bash -lc 'uv run --group dev semgrep --config p/ci --error "$@"'
+        pass_filenames: true
 
-  - repo: https://github.com/pypa/pip-audit
-    rev: v2.9.0
-    hooks:
-      - id: pip-audit
-        name: pip-audit (scan requirements snapshot)
-        args:
-          [
-            "--requirement",
-            "requirements-pip-audit.txt",
-            "--progress-spinner",
-            "off",
-            "--ignore-vuln",
-            "GHSA-w476-p2h3-79g9",
-          ]
-        stages: [pre-commit]
-        always_run: true
+  # --- SECURITY: dependencies (SCA) with uv export + pip-audit ---
+  # NOTE: Disabled for faster commits. Runs in CI.
+  # - repo: local
+  #   hooks:
+  #     - id: uv-export
+  #       name: uv pip freeze requirements snapshot
+  #       language: system
+  #       entry: bash -c 'uv pip freeze --exclude-editable > requirements-pip-audit.txt'
+  #       pass_filenames: false
+  #       stages: [pre-commit]
+  #       always_run: true
+
+  # - repo: https://github.com/pypa/pip-audit
+  #   rev: v2.9.0
+  #   hooks:
+  #     - id: pip-audit
+  #       name: pip-audit (scan requirements snapshot)
+  #       args:
+  #         [
+  #           "--requirement",
+  #           "requirements-pip-audit.txt",
+  #           "--progress-spinner",
+  #           "off",
+  #         ]
+  #       stages: [pre-commit]
+  #       always_run: true
 
   # --- Home Assistant specific validations ---
   - repo: local

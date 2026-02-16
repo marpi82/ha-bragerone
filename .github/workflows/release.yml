@@ -19,6 +19,16 @@ jobs:
               with:
                   fetch-depth: 0
 
+            - name: Checkout py-bragerone
+              uses: actions/checkout@v4
+              with:
+                  repository: marpi82/py-bragerone
+                  ref: main
+                  path: py-bragerone
+
+            - name: Link py-bragerone for uv editable source
+              run: ln -sfn "$GITHUB_WORKSPACE/py-bragerone" "$GITHUB_WORKSPACE/../py-bragerone"
+
             - name: Install uv
               uses: astral-sh/setup-uv@v3
               with:
