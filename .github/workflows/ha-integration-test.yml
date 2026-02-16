@@ -2,9 +2,7 @@ name: Home Assistant Integration Test
 
 on:
     push:
-        branches: [main, develop]
     pull_request:
-        branches: [main]
     schedule:
         # Test against latest HA dev every night
         - cron: "0 2 * * *"
