@@ -120,6 +120,16 @@
         "dependencies",
         "homeassistant"
       ]
+    },
+    {
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "allowedVersions": "/^3\\.13([.-].*)?$/"
     }
   ],
   "labels": [
