@@ -58,31 +58,24 @@ include = ["custom_components/habragerone", "README.md", "LICENSE"]
 
 [dependency-groups]
 dev = [
-  "poethepoet>=0.37.0,<0.38.0",
-  "ruff>=0.14.2,<0.15.0",
+  "poethepoet>=0.41.0,<0.42.0",
+  "ruff>=0.15.0,<0.16.0",
   "mypy[dmypy]>=1.18.1,<2.0.0",
   "pre-commit>=4.3.0,<5.0.0",
   "python-dotenv>=1.1.1,<2.0.0",
   "debugpy>=1.8.17,<2.0.0",
   "pip-audit>=2.4.0,<3.0.0",
   "bandit>=1.8.4,<2.0.0",
+  "semgrep>=1.89",
   "hatch>=1.12.0,<2.0.0",
 ]
 test = [
-  "pytest>=6.0.0,<9.0.0",
-  "pytest-asyncio>=0.18.0,<2.0.0",
-  "pytest-cov>=2.0.0,<8.0.0",
+  "pytest>=8.3.3,<10.0.0",
+  "pytest-asyncio>=1.2.0,<2.0.0",
+  "pytest-cov>=7.0.0,<8.0.0",
   "aioresponses>=0.7.8,<0.8.0",
-  "packaging>=24.1,<25.0.0",
+  "packaging>=24.1,<27.0.0",
   "pytest-homeassistant-custom-component>=0.13.205",
-]
-docs = [
-  "sphinx>=8.0.2,<9.0.0",
-  "furo>=2025.9.25,<2026.0.0",
-  "myst-parser>=4.0.0,<5.0.0",
-  "sphinx-autodoc-typehints>=3.2.0,<4.0.0",
-  "sphinx-copybutton>=0.5.2,<0.6.0",
-  "sphinxcontrib-mermaid>=1.0.0,<2.0.0",
 ]
 
 # ---------------- Ruff (formatter + linter) ----------------
@@ -143,7 +136,7 @@ source = ["custom_components/habragerone"]
 
 # ---------------- POE tasks ----------------
 [tool.poe.tasks]
-bootstrap = { cmd = "uv sync --group dev --group test --group docs --locked" }
+bootstrap = { cmd = "uv sync --group dev --group test --locked" }
 # format/lint/typecheck
 fmt = "ruff format"
 lint = "ruff check . --fix"
@@ -169,4 +162,4 @@ docker-down = { cmd = "docker-compose down" }
 docker-logs = { cmd = "docker-compose logs -f homeassistant" }
 
 [tool.uv.sources]
-py-bragerone = { git = "https://github.com/marpi82/py-bragerone.git", rev = "main" }
+py-bragerone = { path = "../py-bragerone", editable = true }

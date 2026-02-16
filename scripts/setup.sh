@@ -33,7 +33,7 @@ fi
 
 # Sync dependencies
 echo "📦 Syncing dependencies..."
-uv sync --group dev --group test --group docs
+uv sync --group dev --group test
 
 # Install pre-commit hooks
 echo "🪝 Installing pre-commit hooks..."
