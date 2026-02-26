@@ -41,7 +41,16 @@ class BragerRuntime:
         self._first_update_logged = False
         self._tasks.append(asyncio.create_task(self.store.run_with_bus(self.gateway.bus), name="habragerone-store-sync"))
         self._tasks.append(asyncio.create_task(self._dispatch_updates(), name="habragerone-update-dispatch"))
-        await self.gateway.start()
+        try:
+            await self.gateway.start()
+        except Exception:
+            for task in self._tasks:
+                task.cancel()
+            for task in self._tasks:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            self._tasks.clear()
+            raise
         if self._start_monotonic is not None:
             LOGGER.debug(
                 "Runtime gateway.start completed in %.3fs (modules=%s)",
