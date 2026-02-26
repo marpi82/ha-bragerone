@@ -14,7 +14,7 @@
     "custom_components.habragerone"
   ],
   "requirements": [
-    "py-bragerone"
+    "py-bragerone@https://github.com/marpi82/py-bragerone/archive/refs/tags/2026.2.0b1.zip"
   ],
-  "version": "2026a1"
+  "version": "2026a2"
 }

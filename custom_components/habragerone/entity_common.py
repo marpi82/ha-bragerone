@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.util import slugify
 
 from .const import (
     CONF_ENTITY_DESCRIPTORS,
@@ -19,6 +20,30 @@ from .const import (
     DOMAIN,
 )
 from .runtime import BragerRuntime
+
+
+def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
+    """Return address keys that should trigger entity refresh for a descriptor."""
+    keys: set[str] = set()
+
+    pool = descriptor.get("pool")
+    chan = descriptor.get("chan")
+    idx = descriptor.get("idx")
+    if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
+        keys.add(f"{pool}.{chan}{idx}")
+
+    mapping = descriptor.get("mapping")
+    if isinstance(mapping, dict):
+        inputs = mapping.get("inputs")
+        if isinstance(inputs, list):
+            for candidate in inputs:
+                if not isinstance(candidate, dict):
+                    continue
+                address = candidate.get("address")
+                if isinstance(address, str) and address.strip():
+                    keys.add(address.strip())
+
+    return keys
 
 
 def get_runtime_and_descriptors(
@@ -82,6 +107,22 @@ def descriptor_raw_to_label(descriptor: dict[str, Any]) -> dict[str, str]:
     if not isinstance(raw_to_label, dict):
         return {}
     return {str(key): str(value) for key, value in raw_to_label.items()}
+
+
+def descriptor_display_name(descriptor: dict[str, Any]) -> str:
+    """Build entity display label as ``Menu/Submenu - Label`` when available."""
+    label = str(descriptor.get("label") or descriptor.get("symbol") or "")
+    panel_path = str(descriptor.get("panel_path") or "").strip()
+    if panel_path:
+        return f"{panel_path} - {label}"
+    return label
+
+
+def descriptor_suggested_object_id(descriptor: dict[str, Any]) -> str:
+    """Build stable object id to avoid duplicate suffixes for repeated labels."""
+    module_name = str(descriptor.get("module_name") or descriptor.get("devid") or "device")
+    symbol = str(descriptor.get("symbol") or "entity")
+    return slugify(f"{module_name}_{symbol}")
 
 
 def record_platform_entity_stats(
