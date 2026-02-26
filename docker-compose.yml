@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # Development environment
   dev:
@@ -86,6 +84,7 @@ services:
 volumes:
   ha-bragerone-venv:
     name: ha-bragerone-venv
+    external: true
   ha-bragerone-uv-cache:
     name: ha-bragerone-uv-cache
   ha-hass-config:

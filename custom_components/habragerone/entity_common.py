@@ -22,6 +22,30 @@ from .const import (
 from .runtime import BragerRuntime
 
 
+def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
+    """Return address keys that should trigger entity refresh for a descriptor."""
+    keys: set[str] = set()
+
+    pool = descriptor.get("pool")
+    chan = descriptor.get("chan")
+    idx = descriptor.get("idx")
+    if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
+        keys.add(f"{pool}.{chan}{idx}")
+
+    mapping = descriptor.get("mapping")
+    if isinstance(mapping, dict):
+        inputs = mapping.get("inputs")
+        if isinstance(inputs, list):
+            for candidate in inputs:
+                if not isinstance(candidate, dict):
+                    continue
+                address = candidate.get("address")
+                if isinstance(address, str) and address.strip():
+                    keys.add(address.strip())
+
+    return keys
+
+
 def get_runtime_and_descriptors(
     hass: Any,
     entry: ConfigEntry,

@@ -48,6 +48,7 @@ class EntityDescriptor(TypedDict, total=False):
 
 
 _SWITCHISH_RULE_VALUES = {"0", "1", "true", "false", "on", "off", "enabled", "disabled", "yes", "no"}
+_NON_ENTITY_COMPONENT_MARKERS = ("password", "menu", "view", "separator", "title")
 
 
 def _coerce_raw(value: Any) -> str | int | float | bool:
@@ -111,7 +112,11 @@ def _is_exposable_descriptor(
     pool: Any,
     chan: Any,
     idx: Any,
+    mapping: dict[str, Any] | None,
 ) -> bool:
+    component_type = str(mapping.get("component_type") if isinstance(mapping, dict) else "").strip().lower()
+    if component_type and any(marker in component_type for marker in _NON_ENTITY_COMPONENT_MARKERS):
+        return False
     return writable or _has_direct_address(pool=pool, chan=chan, idx=idx)
 
 
@@ -217,7 +222,7 @@ def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescr
         mapping = descriptor.get("mapping") if isinstance(descriptor.get("mapping"), dict) else None
         writable = bool(descriptor.get("writable")) or bool(mapping and mapping.get("command_rules"))
 
-        if not _is_exposable_descriptor(writable=writable, pool=pool, chan=chan, idx=idx):
+        if not _is_exposable_descriptor(writable=writable, pool=pool, chan=chan, idx=idx, mapping=mapping):
             continue
 
         enum_map, raw_to_label = _enum_maps(mapping)
@@ -395,6 +400,7 @@ async def async_build_bootstrap_payload(
                 pool=descriptor.get("pool"),
                 chan=descriptor.get("chan"),
                 idx=descriptor.get("idx"),
+                mapping=mapping,
             ):
                 continue
 

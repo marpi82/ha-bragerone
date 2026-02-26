@@ -161,3 +161,23 @@ def test_normalize_cached_descriptors_classifies_write_without_address_as_button
 
     assert len(normalized) == 1
     assert normalized[0]["platform"] == "button"
+
+
+def test_normalize_cached_descriptors_filters_ui_only_component_types() -> None:
+    descriptors = [
+        {
+            "symbol": "PASSWORD_MENU",
+            "devid": "MOD1",
+            "pool": "P4",
+            "chan": "v",
+            "idx": 90,
+            "mapping": {
+                "component_type": "password_menu",
+            },
+            "writable": False,
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert normalized == []

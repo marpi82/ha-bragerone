@@ -16,6 +16,7 @@ from .entity_common import (
     descriptor_display_name,
     descriptor_enum_map,
     descriptor_options,
+    descriptor_refresh_keys,
     descriptor_raw_to_label,
     descriptor_suggested_object_id,
     device_info_from_descriptor,
@@ -47,7 +48,7 @@ class BragerSymbolSelect(SelectEntity):
     """Select entity for enum-like writable BragerOne symbols."""
 
     _attr_has_entity_name = True
-    _attr_should_poll = True
+    _attr_should_poll = False
 
     def __init__(self, *, entry: ConfigEntry, runtime: BragerRuntime, descriptor: dict[str, Any]) -> None:
         """Initialize select entity from one cached descriptor."""
@@ -66,6 +67,7 @@ class BragerSymbolSelect(SelectEntity):
         self._attr_options = descriptor_options(descriptor)
         self._attr_current_option = self._attr_options[0] if self._attr_options else None
         self._attr_available = True
+        self._refresh_keys = descriptor_refresh_keys(descriptor)
         self._unsubscribe_listener: Any = None
 
     @property
@@ -76,6 +78,7 @@ class BragerSymbolSelect(SelectEntity):
     async def async_added_to_hass(self) -> None:
         """Attach runtime listener when entity is added."""
         self._unsubscribe_listener = self._runtime.add_listener(self._on_runtime_update)
+        await self.async_update()
 
     async def async_will_remove_from_hass(self) -> None:
         """Detach runtime listener before entity removal."""
@@ -108,4 +111,7 @@ class BragerSymbolSelect(SelectEntity):
         self._attr_current_option = option
 
     def _on_runtime_update(self, _update: ParamUpdate) -> None:
+        update_key = f"{_update.pool}.{_update.chan}{_update.idx}"
+        if self._refresh_keys and update_key not in self._refresh_keys:
+            return
         self.async_schedule_update_ha_state(True)

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,6 +19,7 @@ from pybragerone.models.param_resolver import ParamResolver
 from .command_write import WriteContext, WriteValidationError, prepare_write
 
 UpdateCallback = Callable[[ParamUpdate], None]
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -31,10 +34,20 @@ class BragerRuntime:
 
     _tasks: list[asyncio.Task[Any]] = field(default_factory=list)
     _listeners: set[UpdateCallback] = field(default_factory=set)
+    _start_monotonic: float | None = None
+    _first_update_logged: bool = False
 
     async def start(self) -> None:
         """Start gateway, state store ingestion and update dispatcher."""
+        self._start_monotonic = time.monotonic()
+        self._first_update_logged = False
         await self.gateway.start()
+        if self._start_monotonic is not None:
+            LOGGER.debug(
+                "Runtime gateway.start completed in %.3fs (modules=%s)",
+                time.monotonic() - self._start_monotonic,
+                len(self.gateway.modules),
+            )
         self._tasks.append(asyncio.create_task(self.store.run_with_bus(self.gateway.bus), name="habragerone-store-sync"))
         self._tasks.append(asyncio.create_task(self._dispatch_updates(), name="habragerone-update-dispatch"))
 
@@ -123,6 +136,18 @@ class BragerRuntime:
 
     async def _dispatch_updates(self) -> None:
         async for update in self.gateway.bus.subscribe():
+            if not self._first_update_logged and self._start_monotonic is not None:
+                source = update.meta.get("_source") if isinstance(update.meta, dict) else None
+                LOGGER.debug(
+                    "First runtime update after %.3fs (source=%s, devid=%s, key=%s.%s%s)",
+                    time.monotonic() - self._start_monotonic,
+                    source,
+                    update.devid,
+                    update.pool,
+                    update.chan,
+                    update.idx,
+                )
+                self._first_update_logged = True
             for callback in tuple(self._listeners):
                 callback(update)
 

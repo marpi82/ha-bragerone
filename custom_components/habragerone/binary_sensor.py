@@ -14,6 +14,7 @@ from pybragerone.models.events import ParamUpdate
 from .const import DOMAIN
 from .entity_common import (
     descriptor_display_name,
+    descriptor_refresh_keys,
     descriptor_suggested_object_id,
     device_info_from_descriptor,
     get_runtime_and_descriptors,
@@ -44,7 +45,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
     """Binary sensor for status-like symbols."""
 
     _attr_has_entity_name = True
-    _attr_should_poll = True
+    _attr_should_poll = False
 
     def __init__(self, *, entry: ConfigEntry, runtime: BragerRuntime, descriptor: dict[str, Any]) -> None:
         """Initialize binary sensor entity from one cached descriptor."""
@@ -59,6 +60,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_{self._devid}_{self._symbol}_binary".lower().replace(" ", "_")
         self._attr_is_on = False
         self._attr_available = True
+        self._refresh_keys = descriptor_refresh_keys(descriptor)
         self._unsubscribe_listener: Any = None
 
     @property
@@ -69,6 +71,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
     async def async_added_to_hass(self) -> None:
         """Attach runtime listener when entity is added."""
         self._unsubscribe_listener = self._runtime.add_listener(self._on_runtime_update)
+        await self.async_update()
 
     async def async_will_remove_from_hass(self) -> None:
         """Detach runtime listener before entity removal."""
@@ -89,6 +92,9 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         self._attr_is_on = _to_bool(val)
 
     def _on_runtime_update(self, _update: ParamUpdate) -> None:
+        update_key = f"{_update.pool}.{_update.chan}{_update.idx}"
+        if self._refresh_keys and update_key not in self._refresh_keys:
+            return
         self.async_schedule_update_ha_state(True)
 
 
