@@ -13,6 +13,7 @@ from pybragerone.models.events import ParamUpdate
 
 from .const import DOMAIN
 from .entity_common import (
+    descriptor_current_raw_value,
     descriptor_display_name,
     descriptor_enum_map,
     descriptor_options,
@@ -87,17 +88,16 @@ class BragerSymbolSelect(SelectEntity):
             self._unsubscribe_listener = None
 
     async def async_update(self) -> None:
-        """Refresh current option from resolved symbol value."""
-        try:
-            resolved = await self._runtime.resolver.resolve_value(self._symbol)
-        except Exception:
+        """Refresh current option from ParamStore value."""
+        raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
+        if raw_value is None:
             self._attr_available = False
             return
 
         self._attr_available = True
-        candidate = resolved.value_label if isinstance(resolved.value_label, str) else self._raw_to_label.get(str(resolved.value))
+        candidate = self._raw_to_label.get(str(raw_value))
         if candidate is None:
-            candidate = str(resolved.value)
+            candidate = str(raw_value)
         if candidate in self._attr_options:
             self._attr_current_option = candidate
 

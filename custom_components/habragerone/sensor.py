@@ -13,7 +13,9 @@ from pybragerone.models.events import ParamUpdate
 
 from .const import DOMAIN
 from .entity_common import (
+    descriptor_current_raw_value,
     descriptor_display_name,
+    descriptor_raw_to_label,
     descriptor_refresh_keys,
     descriptor_suggested_object_id,
     device_info_from_descriptor,
@@ -64,6 +66,7 @@ class BragerSymbolSensor(SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_{devid}_{symbol}".lower().replace(" ", "_")
         self._attr_native_unit_of_measurement = self._normalize_unit(descriptor.get("unit"))
         self._attr_available = True
+        self._raw_to_label = descriptor_raw_to_label(descriptor)
         self._refresh_keys = descriptor_refresh_keys(descriptor)
 
         self._unsubscribe_listener: Any = None
@@ -85,18 +88,14 @@ class BragerSymbolSensor(SensorEntity):
         return device_info_from_descriptor(self._descriptor, domain=DOMAIN)
 
     async def async_update(self) -> None:
-        """Fetch latest resolved value from ParamResolver."""
-        try:
-            resolved = await self._runtime.resolver.resolve_value(self._symbol)
-        except Exception:
+        """Fetch latest value from ParamStore (no heavy resolver call)."""
+        raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
+        if raw_value is None:
             self._attr_available = False
             return
 
         self._attr_available = True
-        self._attr_native_value = resolved.value_label or resolved.value
-        unit = self._normalize_unit(resolved.unit)
-        if isinstance(unit, str):
-            self._attr_native_unit_of_measurement = unit
+        self._attr_native_value = self._raw_to_label.get(str(raw_value), raw_value)
 
     def _on_runtime_update(self, _update: ParamUpdate) -> None:
         update_key = f"{_update.pool}.{_update.chan}{_update.idx}"

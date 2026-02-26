@@ -8,6 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import slugify
+from pybragerone.models.param import ParamStore
 
 from .const import (
     CONF_ENTITY_DESCRIPTORS,
@@ -44,6 +45,54 @@ def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
                     keys.add(address.strip())
 
     return keys
+
+
+def store_value_for_address(store: ParamStore, address: str) -> Any | None:
+    """Read one value from ParamStore using ``P<n>.<chan><idx>`` address syntax."""
+    try:
+        pool, rest = address.split(".", 1)
+        chan = rest[0]
+        idx = int(rest[1:])
+    except Exception:
+        return None
+
+    family = store.get_family(pool, idx)
+    if family is None:
+        return None
+    return family.get(chan)
+
+
+def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) -> Any | None:
+    """Return current raw value for descriptor from ParamStore.
+
+    Prefers direct ``pool/chan/idx`` mapping, then falls back to first mapping input
+    address when available.
+    """
+    pool = descriptor.get("pool")
+    chan = descriptor.get("chan")
+    idx = descriptor.get("idx")
+    if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
+        direct = store_value_for_address(store, f"{pool}.{chan}{idx}")
+        if direct is not None:
+            return direct
+
+    mapping = descriptor.get("mapping")
+    if not isinstance(mapping, dict):
+        return None
+    inputs = mapping.get("inputs")
+    if not isinstance(inputs, list):
+        return None
+
+    for candidate in inputs:
+        if not isinstance(candidate, dict):
+            continue
+        address = candidate.get("address")
+        if not isinstance(address, str) or not address.strip():
+            continue
+        value = store_value_for_address(store, address.strip())
+        if value is not None:
+            return value
+    return None
 
 
 def get_runtime_and_descriptors(

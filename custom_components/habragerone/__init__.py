@@ -12,7 +12,6 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from pybragerone import BragerOneApiClient, BragerOneGateway
 from pybragerone.api.server import Platform, server_for
 from pybragerone.models.param import ParamStore
-from pybragerone.models.param_resolver import ParamResolver
 
 from .bootstrap import async_build_bootstrap_payload, normalize_cached_descriptors
 from .const import (
@@ -24,7 +23,6 @@ from .const import (
     CONF_OBJECT_ID,
     DATA_API,
     DATA_GATEWAY,
-    DATA_RESOLVER,
     DATA_RUNTIME,
     DATA_STORE,
     DOMAIN,
@@ -114,13 +112,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             descriptors = normalized_descriptors
 
     store = ParamStore()
-    resolver = ParamResolver.from_api(api=api, store=store, lang=language)
     gateway = BragerOneGateway(api=api, object_id=object_id, modules=modules)
     runtime = BragerRuntime(
         api=api,
         gateway=gateway,
         store=store,
-        resolver=resolver,
         modules_meta={str(k): dict(v) for k, v in modules_meta.items()} if isinstance(modules_meta, dict) else {},
     )
     await runtime.start()
@@ -132,7 +128,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DATA_API: api,
         DATA_GATEWAY: gateway,
         DATA_STORE: store,
-        DATA_RESOLVER: resolver,
         DATA_RUNTIME: runtime,
         CONF_ENTITY_DESCRIPTORS: descriptors,
     }

@@ -13,6 +13,7 @@ from pybragerone.models.events import ParamUpdate
 
 from .const import DOMAIN
 from .entity_common import (
+    descriptor_current_raw_value,
     descriptor_display_name,
     descriptor_refresh_keys,
     descriptor_suggested_object_id,
@@ -80,16 +81,14 @@ class BragerStatusBinarySensor(BinarySensorEntity):
             self._unsubscribe_listener = None
 
     async def async_update(self) -> None:
-        """Refresh state from resolved symbol value."""
-        try:
-            resolved = await self._runtime.resolver.resolve_value(self._symbol)
-        except Exception:
+        """Refresh state from ParamStore value."""
+        raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
+        if raw_value is None:
             self._attr_available = False
             return
 
         self._attr_available = True
-        val = resolved.value_label if resolved.value_label is not None else resolved.value
-        self._attr_is_on = _to_bool(val)
+        self._attr_is_on = _to_bool(raw_value)
 
     def _on_runtime_update(self, _update: ParamUpdate) -> None:
         update_key = f"{_update.pool}.{_update.chan}{_update.idx}"

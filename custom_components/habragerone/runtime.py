@@ -14,7 +14,6 @@ from homeassistant.exceptions import HomeAssistantError
 from pybragerone import BragerOneApiClient, BragerOneGateway
 from pybragerone.models.events import ParamUpdate
 from pybragerone.models.param import ParamStore
-from pybragerone.models.param_resolver import ParamResolver
 
 from .command_write import WriteContext, WriteValidationError, prepare_write
 
@@ -29,7 +28,6 @@ class BragerRuntime:
     api: BragerOneApiClient
     gateway: BragerOneGateway
     store: ParamStore
-    resolver: ParamResolver
     modules_meta: dict[str, dict[str, Any]]
 
     _tasks: list[asyncio.Task[Any]] = field(default_factory=list)
@@ -41,6 +39,8 @@ class BragerRuntime:
         """Start gateway, state store ingestion and update dispatcher."""
         self._start_monotonic = time.monotonic()
         self._first_update_logged = False
+        self._tasks.append(asyncio.create_task(self.store.run_with_bus(self.gateway.bus), name="habragerone-store-sync"))
+        self._tasks.append(asyncio.create_task(self._dispatch_updates(), name="habragerone-update-dispatch"))
         await self.gateway.start()
         if self._start_monotonic is not None:
             LOGGER.debug(
@@ -48,8 +48,6 @@ class BragerRuntime:
                 time.monotonic() - self._start_monotonic,
                 len(self.gateway.modules),
             )
-        self._tasks.append(asyncio.create_task(self.store.run_with_bus(self.gateway.bus), name="habragerone-store-sync"))
-        self._tasks.append(asyncio.create_task(self._dispatch_updates(), name="habragerone-update-dispatch"))
 
     async def stop(self) -> None:
         """Stop tasks and gateway resources."""
