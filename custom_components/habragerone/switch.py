@@ -13,6 +13,7 @@ from pybragerone.models.events import ParamUpdate
 
 from .const import DOMAIN
 from .entity_common import (
+    descriptor_current_raw_value,
     descriptor_display_name,
     descriptor_refresh_keys,
     descriptor_suggested_object_id,
@@ -81,15 +82,14 @@ class BragerSymbolSwitch(SwitchEntity):
             self._unsubscribe_listener = None
 
     async def async_update(self) -> None:
-        """Refresh switch state from resolved symbol value."""
-        try:
-            resolved = await self._runtime.resolver.resolve_value(self._symbol)
-        except Exception:
+        """Refresh switch state from ParamStore value."""
+        raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
+        if raw_value is None:
             self._attr_available = False
             return
 
         self._attr_available = True
-        self._attr_is_on = _coerce_bool(resolved.value_label if resolved.value_label is not None else resolved.value)
+        self._attr_is_on = _coerce_bool(raw_value)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn switch on by dispatching a write command."""

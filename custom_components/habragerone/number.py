@@ -13,6 +13,7 @@ from pybragerone.models.events import ParamUpdate
 
 from .const import DOMAIN
 from .entity_common import (
+    descriptor_current_raw_value,
     descriptor_display_name,
     descriptor_refresh_keys,
     descriptor_suggested_object_id,
@@ -88,17 +89,15 @@ class BragerSymbolNumber(NumberEntity):
             self._unsubscribe_listener = None
 
     async def async_update(self) -> None:
-        """Refresh numeric value from resolved symbol value."""
-        try:
-            resolved = await self._runtime.resolver.resolve_value(self._symbol)
-        except Exception:
+        """Refresh numeric value from ParamStore."""
+        raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
+        if raw_value is None:
             self._attr_available = False
             return
 
         self._attr_available = True
-        value = resolved.value
-        if isinstance(value, int | float) and not isinstance(value, bool):
-            self._attr_native_value = float(value)
+        if isinstance(raw_value, int | float) and not isinstance(raw_value, bool):
+            self._attr_native_value = float(raw_value)
 
     async def async_set_native_value(self, value: float) -> None:
         """Write a new numeric value to backend."""
