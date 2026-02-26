@@ -105,7 +105,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         modules_meta = bootstrap_payload[CONF_MODULES_META]
         descriptors = bootstrap_payload[CONF_ENTITY_DESCRIPTORS]
     else:
-        normalized_descriptors = normalize_cached_descriptors(descriptors)
+        descriptors_list = descriptors if isinstance(descriptors, list) else []
+        normalized_descriptors = normalize_cached_descriptors(descriptors_list)
         if normalized_descriptors != descriptors:
             updated_data = dict(entry.data)
             updated_data[CONF_ENTITY_DESCRIPTORS] = normalized_descriptors

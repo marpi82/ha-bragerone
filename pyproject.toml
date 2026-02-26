@@ -104,8 +104,10 @@ line-ending = "lf"
 # ---------------- mypy (strict) ----------------
 [tool.mypy]
 python_version = "3.13"
-files = ["custom_components/habragerone", "tests"]
+files = ["custom_components/habragerone"]
 strict = true
+namespace_packages = true
+explicit_package_bases = true
 exclude = ["scripts/"]
 
 # Additional strictness to match Pylance

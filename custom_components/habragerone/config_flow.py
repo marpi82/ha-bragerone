@@ -92,8 +92,6 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if cfg is not None:
             for row in cfg.translations:
-                if not isinstance(row, dict):
-                    continue
                 lang_id = str(row.get("id") or "").strip().lower()
                 if not lang_id or lang_id == "dev":
                     continue

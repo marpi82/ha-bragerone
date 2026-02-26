@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from .const import (
     CONF_ENTITY_DESCRIPTORS,
@@ -214,7 +214,7 @@ def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescr
         if not isinstance(descriptor_raw, dict):
             continue
 
-        descriptor: EntityDescriptor = dict(descriptor_raw)
+        descriptor = cast(EntityDescriptor, dict(descriptor_raw))
         symbol = str(descriptor.get("symbol") or "")
         pool = descriptor.get("pool")
         chan = descriptor.get("chan")
@@ -315,20 +315,17 @@ async def async_build_bootstrap_payload(
 
     for module in effective_modules:
         module_symbols: set[str] = set()
-        if module.devid is not None:
-            devid_text = str(module.devid)
-            resolver.set_runtime_context(
-                {
-                    "devid": devid_text,
-                    "modulesMap": {
-                        devid_text: {
-                            "connectedAt": module.connectedAt,
-                        }
-                    },
-                }
-            )
-        else:
-            resolver.set_runtime_context(None)
+        devid_text = str(module.devid)
+        resolver.set_runtime_context(
+            {
+                "devid": devid_text,
+                "modulesMap": {
+                    devid_text: {
+                        "connectedAt": module.connectedAt,
+                    }
+                },
+            }
+        )
 
         for symbol in per_module_candidate_symbols.get(module.devid, set()):
             payload = details.get(symbol)
