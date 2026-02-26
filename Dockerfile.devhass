@@ -51,12 +51,14 @@ ENV PATH="/home/vscode/.local/bin:$PATH"
 # Set working directory
 WORKDIR /workspace
 
+ARG PY_BRAGERONE_REF=2026.2.0b1
+
 # Copy project files
 COPY --chown=vscode:vscode . .
 
 # Ensure local path dependency ../py-bragerone is available inside image
 RUN if [ ! -d "/py-bragerone/.git" ]; then \
-    git clone --depth 1 https://github.com/marpi82/py-bragerone /py-bragerone; \
+    git clone --depth 1 --branch "$PY_BRAGERONE_REF" https://github.com/marpi82/py-bragerone /py-bragerone; \
     fi
 
 # Install dependencies
