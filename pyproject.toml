@@ -165,3 +165,8 @@ docker-logs = { cmd = "docker-compose logs -f homeassistant" }
 
 [tool.uv.sources]
 py-bragerone = { path = "../py-bragerone", editable = true }
+
+[tool.uv]
+override-dependencies = [
+  "pillow>=12.1.1",
+]
