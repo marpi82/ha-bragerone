@@ -345,7 +345,6 @@ async def async_build_bootstrap_payload(
     all_candidate_symbols: set[str] = set()
 
     for module in effective_modules:
-        module_mode = normalized_module_modes.get(str(module.devid), filter_mode)
         module_permissions = [str(perm) for perm in getattr(module, "permissions", []) or []]
         symbols: set[str] = set()
         panel_paths: dict[str, str] = {}
@@ -384,6 +383,7 @@ async def async_build_bootstrap_payload(
     for module in effective_modules:
         module_symbols: set[str] = set()
         devid_text = str(module.devid)
+        module_mode = normalized_module_modes.get(devid_text, filter_mode)
         resolver.set_runtime_context(
             {
                 "devid": devid_text,
