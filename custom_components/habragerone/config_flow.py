@@ -19,11 +19,16 @@ from .bootstrap import async_build_bootstrap_payload
 from .const import (
     CONF_BACKEND_PLATFORM,
     CONF_ENTITY_DESCRIPTORS,
+    CONF_ENTITY_FILTER_MODE,
     CONF_LANGUAGE,
+    CONF_MODULE_FILTER_MODES,
     CONF_MODULES,
     CONF_MODULES_META,
     CONF_OBJECT_ID,
+    DEFAULT_ENTITY_FILTER_MODE,
     DOMAIN,
+    FILTER_MODE_PERMISSIONS,
+    FILTER_MODE_UI,
 )
 
 
@@ -40,6 +45,102 @@ def _module_choices(modules: list[dict[str, Any]]) -> list[tuple[str, str]]:
     return choices
 
 
+def _entity_filter_mode_values() -> dict[str, str]:
+    return {
+        FILTER_MODE_UI: "UI menu filtering",
+        FILTER_MODE_PERMISSIONS: "Permission filtering",
+    }
+
+
+def _module_filter_mode_field(module_id: str) -> str:
+    return f"{CONF_ENTITY_FILTER_MODE}__{module_id}"
+
+
+def _extract_selected_module_filter_modes(
+    *,
+    user_input: dict[str, Any],
+    module_ids: list[str],
+    default_mode: str,
+) -> dict[str, str] | None:
+    values = _entity_filter_mode_values()
+    selected: dict[str, str] = {}
+    for module_id in module_ids:
+        field = _module_filter_mode_field(module_id)
+        mode = str(user_input.get(field, default_mode)).strip().lower()
+        if mode not in values:
+            return None
+        selected[module_id] = mode
+    return selected
+
+
+def _build_modules_step_schema(
+    *,
+    module_choices: list[tuple[str, str]],
+    module_values: dict[str, str],
+    default_modules: list[str],
+    module_filter_defaults: dict[str, str],
+    filter_values: dict[str, str],
+) -> vol.Schema:
+    data_schema: dict[Any, Any] = {
+        vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
+    }
+    for module_id, _ in module_choices:
+        field = vol.Required(
+            _module_filter_mode_field(module_id),
+            default=module_filter_defaults[module_id],
+        )
+        data_schema[field] = vol.In(filter_values)
+    return vol.Schema(data_schema)
+
+
+def _extract_language_label(value: Any, *, lang_id: str) -> str | None:
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    if isinstance(value, dict):
+        preferred = value.get(lang_id) or value.get(lang_id.lower()) or value.get(lang_id.upper())
+        if isinstance(preferred, str) and preferred.strip():
+            return preferred.strip()
+        for candidate in value.values():
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+    return None
+
+
+def _looks_like_language_code_label(label: str, *, lang_id: str) -> bool:
+    text = " ".join(label.strip().split())
+    if not text:
+        return True
+
+    lang = lang_id.strip().lower()
+    text_lower = text.lower()
+    compact = text_lower.replace("-", " ").replace("_", " ")
+    parts = [part for part in compact.split(" ") if part]
+
+    if text_lower in {lang, lang.upper(), lang.capitalize()}:
+        return True
+    return len(parts) == 2 and parts[0] == lang and len(parts[1]) == 2
+
+
+def _language_label_from_row(row: dict[str, Any], *, lang_id: str) -> str:
+    candidates = [
+        row.get("nativeName"),
+        row.get("autonym"),
+        row.get("displayName"),
+        row.get("localName"),
+        row.get("name"),
+        row.get("title"),
+        row.get("label"),
+    ]
+    labels = [label for candidate in candidates if (label := _extract_language_label(candidate, lang_id=lang_id))]
+    for label in labels:
+        if not _looks_like_language_code_label(label, lang_id=lang_id):
+            return label
+    if labels:
+        return labels[0]
+    return lang_id.upper()
+
+
 class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Login + installation/module selection flow."""
 
@@ -51,6 +152,8 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._password: str | None = None
         self._platform: str = Platform.BRAGERONE.value
         self._language: str | None = None
+        self._entity_filter_mode: str = DEFAULT_ENTITY_FILTER_MODE
+        self._module_filter_modes: dict[str, str] = {}
         self._object_choices: list[tuple[int, str]] = []
         self._module_choices: list[tuple[str, str]] = []
         self._selected_object_id: int | None = None
@@ -95,7 +198,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 lang_id = str(row.get("id") or "").strip().lower()
                 if not lang_id or lang_id == "dev":
                     continue
-                label_base = str(row.get("name") or row.get("title") or row.get("label") or lang_id.upper())
+                label_base = _language_label_from_row(row, lang_id=lang_id)
                 flag = row.get("flag")
                 if isinstance(flag, str) and flag.strip():
                     values[lang_id] = f"{flag} {label_base}"
@@ -253,29 +356,65 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         module_values = {module_id: label for module_id, label in self._module_choices}
         default_modules = [module_id for module_id, _ in self._module_choices]
+        filter_values = _entity_filter_mode_values()
+        default_mode = str(self._entity_filter_mode or DEFAULT_ENTITY_FILTER_MODE).strip().lower()
+        if default_mode not in filter_values:
+            default_mode = DEFAULT_ENTITY_FILTER_MODE
+
+        module_filter_defaults = {
+            module_id: str(self._module_filter_modes.get(module_id, default_mode)).strip().lower()
+            for module_id, _ in self._module_choices
+        }
+        for module_id, mode in list(module_filter_defaults.items()):
+            if mode not in filter_values:
+                module_filter_defaults[module_id] = default_mode
 
         if user_input is None:
             return self.async_show_form(
                 step_id="select_modules",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
-                    }
+                data_schema=_build_modules_step_schema(
+                    module_choices=self._module_choices,
+                    module_values=module_values,
+                    default_modules=default_modules,
+                    module_filter_defaults=module_filter_defaults,
+                    filter_values=filter_values,
                 ),
             )
 
         selected_modules = [str(module) for module in user_input.get(CONF_MODULES, [])]
         available_codes = set(module_values)
+        selected_filter_modes = _extract_selected_module_filter_modes(
+            user_input=user_input,
+            module_ids=selected_modules,
+            default_mode=default_mode,
+        )
         if not selected_modules or any(module not in available_codes for module in selected_modules):
             return self.async_show_form(
                 step_id="select_modules",
                 errors={"base": "invalid_response"},
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
-                    }
+                data_schema=_build_modules_step_schema(
+                    module_choices=self._module_choices,
+                    module_values=module_values,
+                    default_modules=default_modules,
+                    module_filter_defaults=module_filter_defaults,
+                    filter_values=filter_values,
                 ),
             )
+        if selected_filter_modes is None:
+            return self.async_show_form(
+                step_id="select_modules",
+                errors={"base": "invalid_response"},
+                data_schema=_build_modules_step_schema(
+                    module_choices=self._module_choices,
+                    module_values=module_values,
+                    default_modules=selected_modules,
+                    module_filter_defaults=module_filter_defaults,
+                    filter_values=filter_values,
+                ),
+            )
+
+        self._module_filter_modes = selected_filter_modes
+        self._entity_filter_mode = next(iter(selected_filter_modes.values()), default_mode)
 
         await self.async_set_unique_id(f"{self._platform}:{self._email}:{self._selected_object_id}")
         self._abort_if_unique_id_configured()
@@ -285,6 +424,8 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             object_id=self._selected_object_id,
             modules=selected_modules,
             language=self._language,
+            entity_filter_mode=self._entity_filter_mode,
+            module_filter_modes=self._module_filter_modes,
         )
 
         data = {
@@ -292,6 +433,8 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_PASSWORD: self._password,
             CONF_BACKEND_PLATFORM: self._platform,
             CONF_LANGUAGE: self._language,
+            CONF_ENTITY_FILTER_MODE: self._entity_filter_mode,
+            CONF_MODULE_FILTER_MODES: bootstrap.get(CONF_MODULE_FILTER_MODES, self._module_filter_modes),
             CONF_OBJECT_ID: self._selected_object_id,
             CONF_MODULES: selected_modules,
             CONF_ENTITY_DESCRIPTORS: bootstrap[CONF_ENTITY_DESCRIPTORS],
@@ -451,32 +594,80 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
         if not default_modules:
             default_modules = [module_id for module_id, _ in self._module_choices]
 
+        filter_values = _entity_filter_mode_values()
+        default_filter_mode = str(
+            self._config_entry.options.get(
+                CONF_ENTITY_FILTER_MODE,
+                self._config_entry.data.get(CONF_ENTITY_FILTER_MODE, DEFAULT_ENTITY_FILTER_MODE),
+            )
+        ).strip().lower()
+        if default_filter_mode not in filter_values:
+            default_filter_mode = DEFAULT_ENTITY_FILTER_MODE
+
+        existing_module_modes_raw = self._config_entry.options.get(
+            CONF_MODULE_FILTER_MODES,
+            self._config_entry.data.get(CONF_MODULE_FILTER_MODES, {}),
+        )
+        existing_module_modes = existing_module_modes_raw if isinstance(existing_module_modes_raw, dict) else {}
+        module_filter_defaults = {
+            module_id: str(existing_module_modes.get(module_id, default_filter_mode)).strip().lower()
+            for module_id, _ in self._module_choices
+        }
+        for module_id, mode in list(module_filter_defaults.items()):
+            if mode not in filter_values:
+                module_filter_defaults[module_id] = default_filter_mode
+
         if user_input is None:
             return self.async_show_form(
                 step_id="modules",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
-                    }
+                data_schema=_build_modules_step_schema(
+                    module_choices=self._module_choices,
+                    module_values=module_values,
+                    default_modules=default_modules,
+                    module_filter_defaults=module_filter_defaults,
+                    filter_values=filter_values,
                 ),
             )
 
         selected_modules = [str(module) for module in user_input.get(CONF_MODULES, [])]
+        selected_filter_modes = _extract_selected_module_filter_modes(
+            user_input=user_input,
+            module_ids=selected_modules,
+            default_mode=default_filter_mode,
+        )
         if not selected_modules or any(module not in module_values for module in selected_modules):
             return self.async_show_form(
                 step_id="modules",
                 errors={"base": "invalid_response"},
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
-                    }
+                data_schema=_build_modules_step_schema(
+                    module_choices=self._module_choices,
+                    module_values=module_values,
+                    default_modules=default_modules,
+                    module_filter_defaults=module_filter_defaults,
+                    filter_values=filter_values,
                 ),
             )
+        if selected_filter_modes is None:
+            return self.async_show_form(
+                step_id="modules",
+                errors={"base": "invalid_response"},
+                data_schema=_build_modules_step_schema(
+                    module_choices=self._module_choices,
+                    module_values=module_values,
+                    default_modules=selected_modules,
+                    module_filter_defaults=module_filter_defaults,
+                    filter_values=filter_values,
+                ),
+            )
+
+        selected_filter_mode = next(iter(selected_filter_modes.values()), default_filter_mode)
 
         return self.async_create_entry(
             title="",
             data={
                 CONF_OBJECT_ID: self._selected_object_id,
                 CONF_MODULES: selected_modules,
+                CONF_ENTITY_FILTER_MODE: selected_filter_mode,
+                CONF_MODULE_FILTER_MODES: selected_filter_modes,
             },
         )
