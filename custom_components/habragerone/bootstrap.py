@@ -331,9 +331,7 @@ async def async_build_bootstrap_payload(
     resolver = ParamResolver.from_api(api=api, store=store, lang=language)
     filter_mode = _normalize_filter_mode(entity_filter_mode)
     normalized_module_modes = {
-        str(devid): _normalize_filter_mode(mode)
-        for devid, mode in (module_filter_modes or {}).items()
-        if str(devid).strip()
+        str(devid): _normalize_filter_mode(mode) for devid, mode in (module_filter_modes or {}).items() if str(devid).strip()
     }
 
     prime_result = await api.modules_parameters_prime([module.devid for module in effective_modules], return_data=True)

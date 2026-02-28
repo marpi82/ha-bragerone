@@ -50,21 +50,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     modules = [str(module) for module in modules_raw] if isinstance(modules_raw, list) else []
     platform_raw = str(entry.data.get(CONF_BACKEND_PLATFORM, Platform.BRAGERONE.value)).strip().lower()
     language = str(entry.data.get(CONF_LANGUAGE, "")).strip().lower() or None
-    entity_filter_mode = str(
-        entry.options.get(
-            CONF_ENTITY_FILTER_MODE,
-            entry.data.get(CONF_ENTITY_FILTER_MODE, DEFAULT_ENTITY_FILTER_MODE),
+    entity_filter_mode = (
+        str(
+            entry.options.get(
+                CONF_ENTITY_FILTER_MODE,
+                entry.data.get(CONF_ENTITY_FILTER_MODE, DEFAULT_ENTITY_FILTER_MODE),
+            )
         )
-    ).strip().lower() or DEFAULT_ENTITY_FILTER_MODE
+        .strip()
+        .lower()
+        or DEFAULT_ENTITY_FILTER_MODE
+    )
     module_filter_modes_raw = entry.options.get(
         CONF_MODULE_FILTER_MODES,
         entry.data.get(CONF_MODULE_FILTER_MODES, {}),
     )
     module_filter_modes_source = module_filter_modes_raw if isinstance(module_filter_modes_raw, dict) else {}
     module_filter_modes = {
-        str(devid): str(mode).strip().lower()
-        for devid, mode in module_filter_modes_source.items()
-        if str(devid).strip()
+        str(devid): str(mode).strip().lower() for devid, mode in module_filter_modes_source.items() if str(devid).strip()
     }
 
     try:
@@ -86,9 +89,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data_module_filter_modes_raw = entry.data.get(CONF_MODULE_FILTER_MODES, {})
     data_module_filter_modes_source = data_module_filter_modes_raw if isinstance(data_module_filter_modes_raw, dict) else {}
     data_module_filter_modes = {
-        str(devid): str(mode).strip().lower()
-        for devid, mode in data_module_filter_modes_source.items()
-        if str(devid).strip()
+        str(devid): str(mode).strip().lower() for devid, mode in data_module_filter_modes_source.items() if str(devid).strip()
     }
     options_changed = (
         object_id != data_object_id

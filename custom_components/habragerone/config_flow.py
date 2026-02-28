@@ -595,12 +595,16 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
             default_modules = [module_id for module_id, _ in self._module_choices]
 
         filter_values = _entity_filter_mode_values()
-        default_filter_mode = str(
-            self._config_entry.options.get(
-                CONF_ENTITY_FILTER_MODE,
-                self._config_entry.data.get(CONF_ENTITY_FILTER_MODE, DEFAULT_ENTITY_FILTER_MODE),
+        default_filter_mode = (
+            str(
+                self._config_entry.options.get(
+                    CONF_ENTITY_FILTER_MODE,
+                    self._config_entry.data.get(CONF_ENTITY_FILTER_MODE, DEFAULT_ENTITY_FILTER_MODE),
+                )
             )
-        ).strip().lower()
+            .strip()
+            .lower()
+        )
         if default_filter_mode not in filter_values:
             default_filter_mode = DEFAULT_ENTITY_FILTER_MODE
 
