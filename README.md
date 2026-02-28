@@ -90,7 +90,7 @@ See [PyPI Setup Guide](docs/PYPI_SETUP.md) for Trusted Publisher configuration.
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
