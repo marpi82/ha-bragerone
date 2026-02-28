@@ -14,25 +14,13 @@ jobs:
     integration-test:
         name: HA Integration Test
         runs-on: ubuntu-latest
+        timeout-minutes: 30
         strategy:
             matrix:
                 home-assistant-version:
                     - "2025.5.1"
                     - "latest"
                     - "dev" # Latest development version
-        services:
-            homeassistant:
-                image: homeassistant/home-assistant:${{ matrix.home-assistant-version == 'dev' && 'dev' || (matrix.home-assistant-version == 'latest' && 'stable' || matrix.home-assistant-version) }}
-                options: >-
-                    --health-cmd="curl -f http://localhost:8123 || exit 1"
-                    --health-interval=30s
-                    --health-timeout=10s
-                    --health-retries=5
-                    --health-start-period=30s
-                ports:
-                    - 8123:8123
-                volumes:
-                    - /tmp/homeassistant:/config
 
         steps:
             - name: Checkout
@@ -54,10 +42,25 @@ jobs:
                   version: "latest"
 
             - name: Set up Python
-              run: uv python install 3.13
+              uses: actions/setup-python@v6
+              with:
+                  python-version: "3.13"
 
             - name: Install dependencies
               run: uv sync --group dev --group test
+
+            - name: Resolve Home Assistant image tag
+              id: ha-image
+              run: |
+                  version="${{ matrix.home-assistant-version }}"
+                  if [[ "$version" == "dev" ]]; then
+                    tag="dev"
+                  elif [[ "$version" == "latest" ]]; then
+                    tag="stable"
+                  else
+                    tag="$version"
+                  fi
+                  echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
             - name: Setup Home Assistant config
               run: |
@@ -70,29 +73,37 @@ jobs:
                     default: info
                     logs:
                       custom_components.habragerone: debug
-
-                  # Test our integration
-                  habragerone:
-                    # Add minimal config here when implemented
                   EOF
+
+            - name: Start Home Assistant container
+              run: |
+                  docker run -d \
+                    --name ha-under-test \
+                    --health-cmd="curl -f http://localhost:8123 || exit 1" \
+                    --health-interval=30s \
+                    --health-timeout=10s \
+                    --health-retries=10 \
+                    --health-start-period=60s \
+                    -p 8123:8123 \
+                    -v /tmp/homeassistant:/config \
+                    homeassistant/home-assistant:${{ steps.ha-image.outputs.tag }}
 
             - name: Wait for Home Assistant to start
               run: |
                   echo "Waiting for Home Assistant to start..."
-                  timeout 300 bash -c 'until curl -f http://localhost:8123; do sleep 5; done'
+                  timeout 420 bash -c 'until curl -fsS http://localhost:8123/ > /dev/null; do sleep 5; done'
 
             - name: Test integration loading
               run: |
-                  # Check if our integration is loaded
-                  response=$(curl -s http://localhost:8123/api/ || echo "failed")
-                  if [[ "$response" == "failed" ]]; then
+                  # Check if Home Assistant is reachable
+                  if ! curl -fsS http://localhost:8123/ > /dev/null; then
                     echo "❌ Home Assistant API not accessible"
                     exit 1
                   fi
                   echo "✅ Home Assistant is running"
 
                   # Check logs for our integration
-                  if docker logs homeassistant_homeassistant_1 2>&1 | grep -q "habragerone"; then
+                  if docker logs ha-under-test 2>&1 | grep -q "habragerone"; then
                     echo "✅ Integration habragerone found in logs"
                   else
                     echo "⚠️  Integration habragerone not found in logs (may be expected if not configured)"
@@ -107,4 +118,9 @@ jobs:
               if: always()
               run: |
                   echo "=== Home Assistant Logs ==="
-                  docker logs homeassistant_homeassistant_1 2>&1 | tail -50
+                  docker logs ha-under-test 2>&1 | tail -50 || true
+
+            - name: Stop Home Assistant container
+              if: always()
+              run: |
+                  docker rm -f ha-under-test >/dev/null 2>&1 || true

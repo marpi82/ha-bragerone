@@ -1,122 +1,147 @@
 name: Release
 
 on:
-    push:
-        tags:
-            - "v*"
-            - "[0-9][0-9][0-9][0-9]*" # CalVer tags like 2025, 2025.1, etc.
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
-    release:
-        name: Create Release
-        runs-on: ubuntu-latest
-        permissions:
-            contents: write
-            id-token: write
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v6
-              with:
-                  fetch-depth: 0
+  release:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_repository.fork == false &&
+      github.event.workflow_run.event == 'push'
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout target SHA
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
 
-            - name: Checkout py-bragerone
-              uses: actions/checkout@v6
-              with:
-                  repository: marpi82/py-bragerone
-                  ref: main
-                  path: py-bragerone
+      - name: Detect tag and pre-release
+        id: meta
+        shell: bash
+        run: |
+          TAG="$(git tag --points-at HEAD | head -n1 || true)"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" =~ (a|b|rc)[0-9]+$ ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Detected tag: ${TAG:-<none>}"
 
-            - name: Link py-bragerone for uv editable source
-              run: ln -sfn "$GITHUB_WORKSPACE/py-bragerone" "$GITHUB_WORKSPACE/../py-bragerone"
+      - name: Checkout py-bragerone
+        if: ${{ steps.meta.outputs.tag != '' }}
+        uses: actions/checkout@v6
+        with:
+          repository: marpi82/py-bragerone
+          ref: main
+          path: py-bragerone
 
-            - name: Install uv
-              uses: astral-sh/setup-uv@v7
-              with:
-                  version: "latest"
+      - name: Link py-bragerone for uv editable source
+        if: ${{ steps.meta.outputs.tag != '' }}
+        run: ln -sfn "$GITHUB_WORKSPACE/py-bragerone" "$GITHUB_WORKSPACE/../py-bragerone"
 
-            - name: Set up Python
-              run: uv python install 3.13
+      - name: Set up Python
+        if: ${{ steps.meta.outputs.tag != '' }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
 
-            - name: Install dependencies
-              run: uv sync --group dev
+      - uses: astral-sh/setup-uv@v7
+        if: ${{ steps.meta.outputs.tag != '' }}
+        with:
+          version: "latest"
+          enable-cache: true
 
-            - name: Build package
-              run: uv run --group dev hatch build
+      - name: Install dependencies
+        if: ${{ steps.meta.outputs.tag != '' }}
+        run: uv sync --locked --group dev
 
-            - name: Create HACS archive
-              run: |
-                  mkdir -p hacs-release
-                  cp -r custom_components hacs-release/
-                  cp README.md hacs-release/
-                  cp LICENSE hacs-release/
-                  cd hacs-release
-                  zip -r ../ha-bragerone-hacs.zip .
-                  cd ..
+      - name: Build package
+        if: ${{ steps.meta.outputs.tag != '' }}
+        run: uv run --group dev hatch build
 
-            - name: Generate changelog
-              id: changelog
-              run: |
-                  # Extract version from tag
-                  VERSION=${GITHUB_REF#refs/tags/}
-                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Verify build artifacts
+        if: ${{ steps.meta.outputs.tag != '' }}
+        run: |
+          ls -lh dist/
+          uv tool run twine check dist/*
 
-                  # Generate simple changelog from git commits since last tag
-                  LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+      - name: Create HACS archive
+        if: ${{ steps.meta.outputs.tag != '' }}
+        run: |
+          mkdir -p hacs-release
+          cp -r custom_components hacs-release/
+          cp README.md hacs-release/
+          cp LICENSE hacs-release/
+          cd hacs-release
+          zip -r ../ha-bragerone-hacs.zip .
+          cd ..
 
-                  if [ -n "$LAST_TAG" ]; then
-                    CHANGELOG=$(git log --pretty=format:"- %s" $LAST_TAG..HEAD)
-                  else
-                    CHANGELOG=$(git log --pretty=format:"- %s" HEAD~10..HEAD)
-                  fi
+      - name: Upload artifacts
+        if: ${{ steps.meta.outputs.tag != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ steps.meta.outputs.tag }}
+          path: |
+            dist/*
+            ha-bragerone-hacs.zip
 
-                  echo "changelog<<EOF" >> $GITHUB_OUTPUT
-                  echo "$CHANGELOG" >> $GITHUB_OUTPUT
-                  echo "EOF" >> $GITHUB_OUTPUT
+      - name: Fetch release drafter notes
+        if: ${{ steps.meta.outputs.tag != '' }}
+        id: drafter
+        uses: actions/github-script@v8
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { data: releases } = await github.rest.repos.listReleases({ owner, repo, per_page: 50 });
+            const draft = releases.find((release) => release.draft === true);
+            const draftBody = draft?.body?.trim() ?? "";
+            const draftName = draft?.name?.trim() ?? "";
+            core.setOutput("body", draftBody);
+            core.setOutput("name", draftName || `Release ${process.env.RELEASE_TAG}`);
 
-            - name: Create Release
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: ${{ github.ref_name }}
-                  name: Release ${{ steps.changelog.outputs.version }}
-                  body: |
-                      ## Changes in ${{ steps.changelog.outputs.version }}
+      - name: Create Release
+        if: ${{ steps.meta.outputs.tag != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.drafter.outputs.name }}
+          body: |
+            ${{ steps.drafter.outputs.body }}
 
-                      ${{ steps.changelog.outputs.changelog }}
+            ## Installation
 
-                      ## Installation
+            ### HACS (Recommended)
+            1. Open HACS in Home Assistant.
+            2. Add this repository as a custom repository (category: Integration).
+            3. Search for "BragerOne" in HACS and install the integration.
+            4. Restart Home Assistant.
 
-                      ### HACS (Recommended)
-                      1. Download `ha-bragerone-hacs.zip`
-                      2. Extract to your `custom_components` directory
-                      3. Restart Home Assistant
+            ### Manual Installation
+            1. Download `ha-bragerone-hacs.zip` from this release.
+            2. Extract it and copy `custom_components/habragerone` to your Home Assistant `custom_components` directory.
+            3. Restart Home Assistant.
 
-                      ### Manual Installation
-                      1. Download the wheel file from PyPI or use the source distribution
-                      2. Copy `custom_components/habragerone` to your Home Assistant `custom_components` directory
-                      3. Restart Home Assistant
-
-                      ## Requirements
-                      - Python >= 3.13.2
-                      - Home Assistant > 2025.5.0
-                  draft: false
-                  prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') }}
-                  files: |
-                      ha-bragerone-hacs.zip
-                      dist/*
-
-            # Publish to TestPyPI for pre-releases (alpha/beta/rc)
-            - name: Publish to TestPyPI
-              if: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') }}
-              uses: pypa/gh-action-pypi-publish@release/v1
-              with:
-                  repository-url: https://test.pypi.org/legacy/
-                  print-hash: true
-                  verbose: true
-
-            # Publish to PyPI for stable releases (Trusted Publisher)
-            - name: Publish to PyPI
-              if: ${{ !contains(github.ref_name, 'a') && !contains(github.ref_name, 'b') && !contains(github.ref_name, 'rc') }}
-              uses: pypa/gh-action-pypi-publish@release/v1
-              with:
-                  print-hash: true
-                  verbose: true
+            ## Requirements
+            - Python >= 3.13.2
+            - Home Assistant > 2025.5.0
+          draft: false
+          prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
+          files: |
+            ha-bragerone-hacs.zip
+            dist/*

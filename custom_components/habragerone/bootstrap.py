@@ -8,11 +8,16 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from .const import (
     CONF_ENTITY_DESCRIPTORS,
+    CONF_ENTITY_FILTER_MODE,
     CONF_ENUM_MAP,
+    CONF_MODULE_FILTER_MODES,
     CONF_MODULES_META,
     CONF_OPTIONS,
     CONF_PLATFORM,
     CONF_RAW_TO_LABEL,
+    DEFAULT_ENTITY_FILTER_MODE,
+    FILTER_MODE_PERMISSIONS,
+    FILTER_MODE_UI,
 )
 
 if TYPE_CHECKING:
@@ -206,6 +211,58 @@ def _extract_options(mapping: dict[str, Any] | None) -> list[str]:
     return list(enum_map.keys())
 
 
+def _collect_symbols_from_route(route: Any) -> set[str]:
+    symbols: set[str] = set()
+
+    def add_from_container(container: Any) -> None:
+        if container is None:
+            return
+        for kind in ("read", "write", "status", "special"):
+            items = getattr(container, kind, None)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                token = getattr(item, "token", None)
+                if isinstance(token, str) and token:
+                    symbols.add(token)
+
+    meta = getattr(route, "meta", None)
+    if meta is not None:
+        add_from_container(getattr(meta, "parameters", None))
+    add_from_container(getattr(route, "parameters", None))
+    return symbols
+
+
+def _collect_symbols_from_menu(menu: Any) -> set[str]:
+    symbols: set[str] = set()
+    stack = list(getattr(menu, "routes", []) or [])[::-1]
+    while stack:
+        route = stack.pop()
+        symbols.update(_collect_symbols_from_route(route))
+        children = getattr(route, "children", None)
+        if isinstance(children, list):
+            for child in reversed(children):
+                stack.append(child)
+    return symbols
+
+
+def _normalize_filter_mode(value: str | None) -> str:
+    mode = str(value or "").strip().lower()
+    if mode in {FILTER_MODE_UI, FILTER_MODE_PERMISSIONS}:
+        return mode
+    return DEFAULT_ENTITY_FILTER_MODE
+
+
+def _has_display_value(*, value: Any, value_label: Any) -> bool:
+    if isinstance(value_label, str) and value_label.strip():
+        return True
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
 def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescriptor]:
     """Normalize and filter cached descriptors to ensure valid platform assignment."""
     normalized: list[EntityDescriptor] = []
@@ -249,6 +306,8 @@ class BootstrapPayload(TypedDict):
 
     entity_descriptors: list[EntityDescriptor]
     modules_meta: dict[str, dict[str, Any]]
+    entity_filter_mode: str
+    module_filter_modes: dict[str, str]
 
 
 async def async_build_bootstrap_payload(
@@ -257,6 +316,8 @@ async def async_build_bootstrap_payload(
     object_id: int,
     modules: list[str],
     language: str | None = None,
+    entity_filter_mode: str = DEFAULT_ENTITY_FILTER_MODE,
+    module_filter_modes: dict[str, str] | None = None,
 ) -> BootstrapPayload:
     """Build one-time cached descriptors from menu/assets + prime snapshot."""
     from pybragerone.models.param import ParamStore
@@ -268,6 +329,10 @@ async def async_build_bootstrap_payload(
 
     store = ParamStore()
     resolver = ParamResolver.from_api(api=api, store=store, lang=language)
+    filter_mode = _normalize_filter_mode(entity_filter_mode)
+    normalized_module_modes = {
+        str(devid): _normalize_filter_mode(mode) for devid, mode in (module_filter_modes or {}).items() if str(devid).strip()
+    }
 
     prime_result = await api.modules_parameters_prime([module.devid for module in effective_modules], return_data=True)
     if isinstance(prime_result, tuple) and len(prime_result) == 2:
@@ -281,6 +346,9 @@ async def async_build_bootstrap_payload(
 
     for module in effective_modules:
         module_permissions = [str(perm) for perm in getattr(module, "permissions", []) or []]
+        symbols: set[str] = set()
+        panel_paths: dict[str, str] = {}
+
         try:
             groups = await resolver.build_panel_groups(
                 device_menu=module.deviceMenu,
@@ -295,8 +363,7 @@ async def async_build_bootstrap_payload(
                 all_panels=True,
             )
 
-        symbols = {symbol for symbols in groups.values() for symbol in symbols if symbol}
-        panel_paths: dict[str, str] = {}
+        symbols = {symbol for panel_symbols in groups.values() for symbol in panel_symbols if symbol}
         for panel_name, panel_symbols in groups.items():
             panel_title = str(panel_name).strip()
             if not panel_title:
@@ -316,6 +383,7 @@ async def async_build_bootstrap_payload(
     for module in effective_modules:
         module_symbols: set[str] = set()
         devid_text = str(module.devid)
+        module_mode = normalized_module_modes.get(devid_text, filter_mode)
         resolver.set_runtime_context(
             {
                 "devid": devid_text,
@@ -333,11 +401,17 @@ async def async_build_bootstrap_payload(
                 continue
             try:
                 resolved = await resolver.resolve_value(symbol)
-                visible, _ = resolver.parameter_visibility_diagnostics(
-                    desc=payload,
-                    resolved=resolved,
-                    flat_values=flat_values,
-                )
+                if not _has_display_value(value=resolved.value, value_label=resolved.value_label):
+                    continue
+
+                if module_mode == FILTER_MODE_UI:
+                    visible, _ = resolver.parameter_visibility_diagnostics(
+                        desc=payload,
+                        resolved=resolved,
+                        flat_values=flat_values,
+                    )
+                else:
+                    visible = True
             except Exception:
                 LOGGER.debug("Visibility diagnostics failed for %s/%s", module.devid, symbol, exc_info=True)
                 visible = True
@@ -423,4 +497,8 @@ async def async_build_bootstrap_payload(
     return {
         CONF_ENTITY_DESCRIPTORS: descriptors,
         CONF_MODULES_META: modules_meta,
+        CONF_ENTITY_FILTER_MODE: filter_mode,
+        CONF_MODULE_FILTER_MODES: {
+            str(module.devid): normalized_module_modes.get(str(module.devid), filter_mode) for module in effective_modules
+        },
     }

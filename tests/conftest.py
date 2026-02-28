@@ -1,9 +1,21 @@
+import asyncio
 import sys
 import types
 
 import pytest
 
 pytest.register_assert_rewrite("tests.test_sensor")
+
+
+@pytest.fixture(autouse=True)
+def enable_event_loop_debug() -> None:
+    """Enable event loop debug mode with a safe fallback when no loop exists."""
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    loop.set_debug(True)
 
 
 def install_pybragerone_stubs() -> None:
@@ -30,6 +42,14 @@ def install_pybragerone_stubs() -> None:
     pybragerone_api_server_stub.server_for = _server_for
     sys.modules.setdefault("pybragerone.api.server", pybragerone_api_server_stub)
 
+    pybragerone_api_client_stub = types.ModuleType("pybragerone.api.client")
+
+    class _ApiError(Exception):
+        pass
+
+    pybragerone_api_client_stub.ApiError = _ApiError
+    sys.modules.setdefault("pybragerone.api.client", pybragerone_api_client_stub)
+
     pybragerone_models_stub = types.ModuleType("pybragerone.models")
     pybragerone_models_stub.__path__ = []
     sys.modules.setdefault("pybragerone.models", pybragerone_models_stub)
@@ -45,3 +65,7 @@ def install_pybragerone_stubs() -> None:
     pybragerone_models_events_stub = types.ModuleType("pybragerone.models.events")
     pybragerone_models_events_stub.ParamUpdate = object
     sys.modules.setdefault("pybragerone.models.events", pybragerone_models_events_stub)
+
+    pybragerone_models_catalog_stub = types.ModuleType("pybragerone.models.catalog")
+    pybragerone_models_catalog_stub.LiveAssetsCatalog = object
+    sys.modules.setdefault("pybragerone.models.catalog", pybragerone_models_catalog_stub)
