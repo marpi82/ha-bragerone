@@ -196,36 +196,7 @@ jobs:
         run: uv sync --locked --group dev --group test
 
       - name: Run pytest
-        run: |
-          uv run --group test python - <<'PY'
-          import asyncio
-          import pytest
-
-
-          class CompatEventLoopPolicy(asyncio.DefaultEventLoopPolicy):
-            def get_event_loop(self) -> asyncio.AbstractEventLoop:
-              try:
-                return super().get_event_loop()
-              except RuntimeError:
-                loop = self.new_event_loop()
-                self.set_event_loop(loop)
-                return loop
-
-
-          asyncio.set_event_loop_policy(CompatEventLoopPolicy())
-          raise SystemExit(
-            pytest.main(
-              [
-                "-q",
-                "--maxfail=1",
-                "--disable-warnings",
-                "--cov=custom_components.habragerone",
-                "--cov-report=xml",
-                "--cov-report=term-missing",
-              ]
-            )
-          )
-          PY
+        run: uv run --group test pytest -q --maxfail=1 --disable-warnings --cov=custom_components.habragerone --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage reports to Codecov
         if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
