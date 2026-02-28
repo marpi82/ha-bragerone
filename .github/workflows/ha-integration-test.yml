@@ -42,7 +42,9 @@ jobs:
                   version: "latest"
 
             - name: Set up Python
-              run: uv python install 3.13
+              uses: actions/setup-python@v6
+              with:
+                  python-version: "3.13"
 
             - name: Install dependencies
               run: uv sync --group dev --group test
@@ -116,7 +118,7 @@ jobs:
               if: always()
               run: |
                   echo "=== Home Assistant Logs ==="
-                  docker logs ha-under-test 2>&1 | tail -50
+                  docker logs ha-under-test 2>&1 | tail -50 || true
 
             - name: Stop Home Assistant container
               if: always()
