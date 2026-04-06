@@ -14,7 +14,6 @@ from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 from pybragerone import BragerOneApiClient
 from pybragerone.api.client import ApiError
-from pybragerone.api.endpoints import modules_url
 from pybragerone.api.server import Platform, server_for
 from pybragerone.models.catalog import LiveAssetsCatalog
 
@@ -79,8 +78,9 @@ async def _safe_module_payloads(api: BragerOneApiClient, object_id: int) -> list
     api_base = getattr(api, "_api_base", None)
     if not callable(req) or not isinstance(api_base, str):
         return []
+    modules_endpoint = f"{api_base}/v1/modules?page=1&limit=999&group_id={object_id}"
     try:
-        status, data, _ = await req("GET", modules_url(object_id, api_base=api_base))
+        status, data, _ = await req("GET", modules_endpoint)
     except Exception:
         LOGGER.warning("Raw module payload fallback failed for object_id=%s", object_id, exc_info=True)
         return []
