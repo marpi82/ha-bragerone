@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Platformă backend",
+          "language": "Limbă"
+        }
+      },
+      "select_modules": {
+        "title": "Selectare module",
+        "description": "Alege modulele și modul de filtrare al entităților.",
+        "data": {
+          "modules": "Module",
+          "entity_filter_mode": "Mod de filtrare al entităților"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Selectare module",
+        "data": {
+          "modules": "Module",
+          "entity_filter_mode": "Mod de filtrare al entităților"
+        }
+      }
+    }
+  }
+}

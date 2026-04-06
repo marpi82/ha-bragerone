@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "バックエンドプラットフォーム",
+          "language": "言語"
+        }
+      },
+      "select_modules": {
+        "title": "モジュールを選択",
+        "description": "モジュールとエンティティのフィルターモードを選択してください。",
+        "data": {
+          "modules": "モジュール",
+          "entity_filter_mode": "エンティティのフィルターモード"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "モジュールを選択",
+        "data": {
+          "modules": "モジュール",
+          "entity_filter_mode": "エンティティのフィルターモード"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Backend platform",
+          "language": "Nyelv"
+        }
+      },
+      "select_modules": {
+        "title": "Modulok kiválasztása",
+        "description": "Válassza ki a modulokat és az entitásszűrés módját.",
+        "data": {
+          "modules": "Modulok",
+          "entity_filter_mode": "Entitásszűrés módja"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Modulok kiválasztása",
+        "data": {
+          "modules": "Modulok",
+          "entity_filter_mode": "Entitásszűrés módja"
+        }
+      }
+    }
+  }
+}

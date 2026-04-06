@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Платформа бекенду",
+          "language": "Мова"
+        }
+      },
+      "select_modules": {
+        "title": "Вибір модулів",
+        "description": "Виберіть модулі та режим фільтрації сутностей.",
+        "data": {
+          "modules": "Модулі",
+          "entity_filter_mode": "Режим фільтрації сутностей"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Вибір модулів",
+        "data": {
+          "modules": "Модулі",
+          "entity_filter_mode": "Режим фільтрації сутностей"
+        }
+      }
+    }
+  }
+}

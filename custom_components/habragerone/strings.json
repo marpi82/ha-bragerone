@@ -2,39 +2,56 @@
   "config": {
     "step": {
       "user": {
-        "title": "Brager One — Logowanie",
-        "description": "Podaj poświadczenia do Brager One.",
+        "title": "BragerOne — Sign in",
+        "description": "Provide your BragerOne credentials.",
         "data": {
           "email": "E-mail",
-          "password": "Hasło"
+          "password": "Password",
+          "backend_platform": "Backend platform",
+          "language": "Language"
         }
       },
       "select_site": {
-        "title": "Wybór instalacji",
-        "description": "Wybierz instalację (object_id) i moduły (devid).",
+        "title": "Select installation",
+        "description": "Choose installation and modules.",
         "data": {
-          "object_id": "ID instalacji (object_id)",
-          "modules": "Kody modułów (devid) — lista rozdzielona przecinkami"
+          "object_id": "Installation ID",
+          "modules": "Module codes — comma separated"
+        }
+      },
+      "select_modules": {
+        "title": "Select modules",
+        "description": "Choose modules and entity filtering mode.",
+        "data": {
+          "modules": "Modules",
+          "entity_filter_mode": "Entity filtering mode"
         }
       }
     },
     "error": {
-      "auth": "Błędny e-mail lub hasło.",
-      "cannot_connect": "Nie można połączyć z API Brager.",
-      "invalid_response": "Nieprawidłowa odpowiedź serwera.",
-      "unknown": "Niespodziewany błąd."
+      "auth": "Invalid e-mail or password.",
+      "cannot_connect": "Cannot connect to Brager API.",
+      "invalid_response": "Invalid server response.",
+      "unknown": "Unexpected error."
     },
     "abort": {
-      "already_configured": "Ta kombinacja użytkownika i instalacji jest już skonfigurowana."
+      "already_configured": "This user/installation combination is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Ustawienia Brager One",
+        "title": "BragerOne settings",
         "data": {
-          "object_id": "ID instalacji (object_id)",
-          "modules": "Kody modułów (devid) — lista rozdzielona przecinkami"
+          "object_id": "Installation ID",
+          "modules": "Module codes — comma separated"
+        }
+      },
+      "modules": {
+        "title": "Select modules",
+        "data": {
+          "modules": "Modules",
+          "entity_filter_mode": "Entity filtering mode"
         }
       }
     }

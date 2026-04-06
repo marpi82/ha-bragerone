@@ -1,6 +1,7 @@
 import asyncio
 import sys
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -26,20 +27,20 @@ def _container(*tokens: str) -> SimpleNamespace:
 
 def test_collect_symbols_from_menu_walks_nested_routes() -> None:
     leaf = SimpleNamespace(
-        meta=SimpleNamespace(parameters=_container("LEAF_A")),
-        parameters=_container("LEAF_B"),
+        meta=SimpleNamespace(parameters=_container("PARAM_LEAF_A")),
+        parameters=_container("PARAM_LEAF_B"),
         children=[],
     )
     root = SimpleNamespace(
-        meta=SimpleNamespace(parameters=_container("ROOT_A")),
-        parameters=_container("ROOT_B"),
+        meta=SimpleNamespace(parameters=_container("PARAM_ROOT_A")),
+        parameters=_container("PARAM_ROOT_B"),
         children=[leaf],
     )
     menu = SimpleNamespace(routes=[root])
 
     symbols = _collect_symbols_from_menu(menu)
 
-    assert symbols == {"ROOT_A", "ROOT_B", "LEAF_A", "LEAF_B"}
+    assert symbols == {"PARAM_ROOT_A", "PARAM_ROOT_B", "PARAM_LEAF_A", "PARAM_LEAF_B"}
 
 
 def test_normalize_filter_mode_defaults_for_unknown_values() -> None:
@@ -54,7 +55,7 @@ def test_async_build_bootstrap_payload_applies_filter_mode_per_module(monkeypatc
             return None
 
         def flatten(self) -> dict[str, object]:
-            return {}
+            return {"P4.v1": 42}
 
     class _FakeResolver:
         def __init__(self) -> None:
@@ -155,7 +156,7 @@ def test_async_build_bootstrap_payload_applies_filter_mode_per_module(monkeypatc
 
     payload = asyncio.run(
         async_build_bootstrap_payload(
-            api=_FakeApi(),
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
             object_id=1,
             modules=["M1", "M2"],
             language="en",
@@ -166,3 +167,142 @@ def test_async_build_bootstrap_payload_applies_filter_mode_per_module(monkeypatc
 
     symbols = {(item["devid"], item["symbol"]) for item in payload["entity_descriptors"]}
     assert symbols == {("M2", "SYM_M2")}
+
+
+def test_async_build_bootstrap_payload_ui_excludes_non_panel_actions(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P4.v1": 42}
+
+    class _FakeAssets:
+        async def get_module_menu(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+        ) -> dict[str, object]:
+            _ = device_menu, permissions
+            return {
+                "routes": [
+                    {
+                        "name": "Actions",
+                        "parameters": {
+                            "read": [],
+                            "write": [{"parameter": {"token": "COMMAND_MODULE_RESTART"}}],
+                            "status": [],
+                            "special": [],
+                        },
+                        "children": [],
+                    }
+                ]
+            }
+
+    class _FakeResolver:
+        def __init__(self) -> None:
+            self._assets = _FakeAssets()
+
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> "_FakeResolver":
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels
+            return {"Kocioł": ["SYM_PANEL"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            payload: dict[str, dict[str, object]] = {}
+            for symbol in symbols:
+                payload[symbol] = {
+                    "label": symbol,
+                    "pool": "P4" if symbol == "SYM_PANEL" else None,
+                    "chan": "v" if symbol == "SYM_PANEL" else None,
+                    "idx": 1 if symbol == "SYM_PANEL" else None,
+                    "mapping": ({} if symbol == "SYM_PANEL" else {"command_rules": [{"command": "MODULE_RESTART", "value": 1}]}),
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+            return payload
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=1, value_label="1")
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload_ui = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+            entity_filter_mode="ui",
+        )
+    )
+    symbols_ui = {item["symbol"] for item in payload_ui["entity_descriptors"]}
+    assert symbols_ui == {"SYM_PANEL"}
+
+    payload_permissions = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+            entity_filter_mode="permissions",
+        )
+    )
+    symbols_permissions = {item["symbol"] for item in payload_permissions["entity_descriptors"]}
+    assert symbols_permissions == {"SYM_PANEL", "COMMAND_MODULE_RESTART"}

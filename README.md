@@ -1,10 +1,10 @@
 # Ha-BragerOne
 
-Home Assistant custom integration for Brager One web service.
+Home Assistant custom integration for BragerOne web service.
 
 ## Description
 
-This custom component provides integration between Home Assistant and the Brager One system, allowing you to monitor and control your devices through the Home Assistant interface.
+This custom component provides integration between Home Assistant and the BragerOne system, allowing you to monitor and control your devices through the Home Assistant interface.
 
 ## Features
 
@@ -20,7 +20,7 @@ This custom component provides integration between Home Assistant and the Brager
 1. Copy the `custom_components/habragerone` directory to your Home Assistant `custom_components` directory
 2. Restart Home Assistant
 3. Go to Configuration > Integrations
-4. Click "Add Integration" and search for "Brager One"
+4. Click "Add Integration" and search for "BragerOne"
 
 ### HACS Installation
 
@@ -33,7 +33,7 @@ This custom component provides integration between Home Assistant and the Brager
 
 The integration can be configured through the Home Assistant UI. You will need:
 
-- Brager One server URL
+- BragerOne server URL
 - Authentication credentials
 - Device selection
 

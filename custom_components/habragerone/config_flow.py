@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -31,6 +33,14 @@ from .const import (
     FILTER_MODE_UI,
 )
 
+LOGGER = logging.getLogger(__name__)
+
+_LANGUAGE_CONFIG_TIMEOUT_S = 15
+_AUTH_TIMEOUT_S = 20
+_OBJECTS_TIMEOUT_S = 20
+_MODULES_TIMEOUT_S = 20
+_BOOTSTRAP_TIMEOUT_S = 90
+
 
 def _module_choices(modules: list[dict[str, Any]]) -> list[tuple[str, str]]:
     """Build module code choices as ``(value, label)`` list."""
@@ -45,15 +55,30 @@ def _module_choices(modules: list[dict[str, Any]]) -> list[tuple[str, str]]:
     return choices
 
 
-def _entity_filter_mode_values() -> dict[str, str]:
+def _ui_field_labels(ui_language: str | None) -> dict[str, str]:
+    lang = (ui_language or "").strip().lower()
+    if lang.startswith("pl"):
+        return {
+            CONF_BACKEND_PLATFORM: "Platforma backendu",
+            CONF_LANGUAGE: "Język",
+        }
+    return {
+        CONF_BACKEND_PLATFORM: "Backend platform",
+        CONF_LANGUAGE: "Language",
+    }
+
+
+def _entity_filter_mode_values(*, ui_language: str | None = None) -> dict[str, str]:
+    lang = (ui_language or "").strip().lower()
+    if lang.startswith("pl"):
+        return {
+            FILTER_MODE_UI: "Filtrowanie po menu UI",
+            FILTER_MODE_PERMISSIONS: "Filtrowanie po uprawnieniach",
+        }
     return {
         FILTER_MODE_UI: "UI menu filtering",
         FILTER_MODE_PERMISSIONS: "Permission filtering",
     }
-
-
-def _module_filter_mode_field(module_id: str) -> str:
-    return f"{CONF_ENTITY_FILTER_MODE}__{module_id}"
 
 
 def _extract_selected_module_filter_modes(
@@ -61,16 +86,13 @@ def _extract_selected_module_filter_modes(
     user_input: dict[str, Any],
     module_ids: list[str],
     default_mode: str,
+    ui_language: str | None = None,
 ) -> dict[str, str] | None:
-    values = _entity_filter_mode_values()
-    selected: dict[str, str] = {}
-    for module_id in module_ids:
-        field = _module_filter_mode_field(module_id)
-        mode = str(user_input.get(field, default_mode)).strip().lower()
-        if mode not in values:
-            return None
-        selected[module_id] = mode
-    return selected
+    values = _entity_filter_mode_values(ui_language=ui_language)
+    mode = str(user_input.get(CONF_ENTITY_FILTER_MODE, default_mode)).strip().lower()
+    if mode not in values:
+        return None
+    return {module_id: mode for module_id in module_ids}
 
 
 def _build_modules_step_schema(
@@ -81,15 +103,11 @@ def _build_modules_step_schema(
     module_filter_defaults: dict[str, str],
     filter_values: dict[str, str],
 ) -> vol.Schema:
+    default_mode = next(iter(module_filter_defaults.values()), DEFAULT_ENTITY_FILTER_MODE)
     data_schema: dict[Any, Any] = {
         vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
+        vol.Required(CONF_ENTITY_FILTER_MODE, default=default_mode): vol.In(filter_values),
     }
-    for module_id, _ in module_choices:
-        field = vol.Required(
-            _module_filter_mode_field(module_id),
-            default=module_filter_defaults[module_id],
-        )
-        data_schema[field] = vol.In(filter_values)
     return vol.Schema(data_schema)
 
 
@@ -141,6 +159,49 @@ def _language_label_from_row(row: dict[str, Any], *, lang_id: str) -> str:
     return lang_id.upper()
 
 
+def _format_language_option_label(*, label_base: str, flag: Any) -> str:
+    if not isinstance(flag, str):
+        return label_base
+    flag_text = flag.strip()
+    if not flag_text:
+        return label_base
+    # Ignore ASCII-like short codes (e.g. "pl"), but keep emoji/pictographic markers.
+    has_symbolic_chars = any((not ch.isalnum()) and (not ch.isspace()) for ch in flag_text)
+    if not has_symbolic_chars:
+        return label_base
+    return f"{flag_text} {label_base}"
+
+
+def _extract_lang_map_from_app_namespace(app_namespace: Any) -> dict[str, str]:
+    if not isinstance(app_namespace, dict):
+        return {}
+
+    def _walk(node: Any) -> dict[str, str]:
+        if isinstance(node, dict):
+            candidate = node.get("lang")
+            if isinstance(candidate, dict):
+                mapped: dict[str, str] = {}
+                for key, value in candidate.items():
+                    code = str(key).strip().lower()
+                    label = str(value).strip() if isinstance(value, str) else ""
+                    if code and label:
+                        mapped[code] = label
+                if mapped:
+                    return mapped
+            for value in node.values():
+                nested = _walk(value)
+                if nested:
+                    return nested
+        elif isinstance(node, list):
+            for value in node:
+                nested = _walk(value)
+                if nested:
+                    return nested
+        return {}
+
+    return _walk(app_namespace)
+
+
 class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Login + installation/module selection flow."""
 
@@ -186,8 +247,25 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         values: dict[str, str] = {}
         api = BragerOneApiClient(server=server_for(platform))
+        catalog = LiveAssetsCatalog(api)
+        cfg = None
+        app_lang_map: dict[str, str] = {}
         try:
-            cfg = await LiveAssetsCatalog(api).list_language_config()
+            async with asyncio.timeout(_LANGUAGE_CONFIG_TIMEOUT_S):
+                cfg = await catalog.list_language_config()
+            if cfg is not None:
+                preferred_lang = str(cfg.default_translation).strip().lower() or "en"
+                for lang_candidate in (preferred_lang, "en"):
+                    try:
+                        async with asyncio.timeout(_LANGUAGE_CONFIG_TIMEOUT_S):
+                            app_ns = await catalog.get_i18n(lang_candidate, "app")
+                    except Exception:
+                        continue
+                    app_lang_map = _extract_lang_map_from_app_namespace(app_ns)
+                    if app_lang_map:
+                        break
+        except TimeoutError:
+            LOGGER.warning("Language config fetch timed out for platform '%s'", platform)
         except Exception:
             cfg = None
         finally:
@@ -198,12 +276,8 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 lang_id = str(row.get("id") or "").strip().lower()
                 if not lang_id or lang_id == "dev":
                     continue
-                label_base = _language_label_from_row(row, lang_id=lang_id)
-                flag = row.get("flag")
-                if isinstance(flag, str) and flag.strip():
-                    values[lang_id] = f"{flag} {label_base}"
-                else:
-                    values[lang_id] = label_base
+                label_base = app_lang_map.get(lang_id) or _language_label_from_row(row, lang_id=lang_id)
+                values[lang_id] = _format_language_option_label(label_base=label_base, flag=row.get("flag"))
 
             default_lang = str(cfg.default_translation).strip().lower()
             if default_lang and default_lang in values:
@@ -227,6 +301,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         default_language: str | None = None,
     ) -> vol.Schema:
         platform = (default_platform or self._platform or Platform.BRAGERONE.value).strip().lower()
+        ui_language = str(getattr(self.hass.config, "language", "") or "").strip().lower()
         platform_values = self._platform_values()
         if platform not in platform_values:
             platform = Platform.BRAGERONE.value
@@ -237,11 +312,20 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             language_default = next(iter(language_values.keys()))
 
         email_default = (default_email or self._email or "").strip()
+        field_labels = _ui_field_labels(ui_language)
         schema: dict[Any, Any] = {
             vol.Required(CONF_EMAIL, default=email_default): str,
             vol.Required(CONF_PASSWORD): str,
-            vol.Required(CONF_BACKEND_PLATFORM, default=platform): vol.In(platform_values),
-            vol.Required(CONF_LANGUAGE, default=language_default): vol.In(language_values),
+            vol.Required(
+                CONF_BACKEND_PLATFORM,
+                default=platform,
+                description={"name": field_labels[CONF_BACKEND_PLATFORM]},
+            ): vol.In(platform_values),
+            vol.Required(
+                CONF_LANGUAGE,
+                default=language_default,
+                description={"name": field_labels[CONF_LANGUAGE]},
+            ): vol.In(language_values),
         }
         return vol.Schema(schema)
 
@@ -275,8 +359,20 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         api = await self._api_client()
         try:
-            await api.ensure_auth(email, password)
-            objects = await api.get_objects()
+            async with asyncio.timeout(_AUTH_TIMEOUT_S):
+                await api.ensure_auth(email, password)
+            async with asyncio.timeout(_OBJECTS_TIMEOUT_S):
+                objects = await api.get_objects()
+        except TimeoutError:
+            return self.async_show_form(
+                step_id="user",
+                errors={"base": "cannot_connect"},
+                data_schema=await self._user_form_schema(
+                    default_email=email,
+                    default_platform=self._platform,
+                    default_language=selected_language,
+                ),
+            )
         except ApiError:
             return self.async_show_form(
                 step_id="user",
@@ -320,7 +416,18 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         api = await self._api_client()
         try:
-            modules = await api.get_modules(selected_object_id)
+            async with asyncio.timeout(_MODULES_TIMEOUT_S):
+                modules = await api.get_modules(selected_object_id)
+        except TimeoutError:
+            return self.async_show_form(
+                step_id="select_site",
+                errors={"base": "cannot_connect"},
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_OBJECT_ID, default=selected_object_id): vol.In(object_values),
+                    }
+                ),
+            )
         except ApiError:
             return self.async_show_form(
                 step_id="select_site",
@@ -356,7 +463,8 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         module_values = {module_id: label for module_id, label in self._module_choices}
         default_modules = [module_id for module_id, _ in self._module_choices]
-        filter_values = _entity_filter_mode_values()
+        ui_language = str(getattr(self.hass.config, "language", "") or "").strip().lower()
+        filter_values = _entity_filter_mode_values(ui_language=ui_language)
         default_mode = str(self._entity_filter_mode or DEFAULT_ENTITY_FILTER_MODE).strip().lower()
         if default_mode not in filter_values:
             default_mode = DEFAULT_ENTITY_FILTER_MODE
@@ -387,6 +495,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_input=user_input,
             module_ids=selected_modules,
             default_mode=default_mode,
+            ui_language=ui_language,
         )
         if not selected_modules or any(module not in available_codes for module in selected_modules):
             return self.async_show_form(
@@ -419,14 +528,41 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(f"{self._platform}:{self._email}:{self._selected_object_id}")
         self._abort_if_unique_id_configured()
 
-        bootstrap = await async_build_bootstrap_payload(
-            api=await self._api_client(),
-            object_id=self._selected_object_id,
-            modules=selected_modules,
-            language=self._language,
-            entity_filter_mode=self._entity_filter_mode,
-            module_filter_modes=self._module_filter_modes,
-        )
+        try:
+            async with asyncio.timeout(_BOOTSTRAP_TIMEOUT_S):
+                bootstrap = await async_build_bootstrap_payload(
+                    api=await self._api_client(),
+                    object_id=self._selected_object_id,
+                    modules=selected_modules,
+                    language=self._language,
+                    entity_filter_mode=self._entity_filter_mode,
+                    module_filter_modes=self._module_filter_modes,
+                )
+        except TimeoutError:
+            return self.async_show_form(
+                step_id="select_modules",
+                errors={"base": "cannot_connect"},
+                data_schema=_build_modules_step_schema(
+                    module_choices=self._module_choices,
+                    module_values=module_values,
+                    default_modules=selected_modules,
+                    module_filter_defaults=module_filter_defaults,
+                    filter_values=filter_values,
+                ),
+            )
+        except Exception:
+            LOGGER.exception("Bootstrap payload build failed during config flow")
+            return self.async_show_form(
+                step_id="select_modules",
+                errors={"base": "invalid_response"},
+                data_schema=_build_modules_step_schema(
+                    module_choices=self._module_choices,
+                    module_values=module_values,
+                    default_modules=selected_modules,
+                    module_filter_defaults=module_filter_defaults,
+                    filter_values=filter_values,
+                ),
+            )
 
         data = {
             CONF_EMAIL: self._email,
@@ -594,7 +730,8 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
         if not default_modules:
             default_modules = [module_id for module_id, _ in self._module_choices]
 
-        filter_values = _entity_filter_mode_values()
+        ui_language = str(getattr(self.hass.config, "language", "") or "").strip().lower()
+        filter_values = _entity_filter_mode_values(ui_language=ui_language)
         default_filter_mode = (
             str(
                 self._config_entry.options.get(
@@ -638,6 +775,7 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
             user_input=user_input,
             module_ids=selected_modules,
             default_mode=default_filter_mode,
+            ui_language=ui_language,
         )
         if not selected_modules or any(module not in module_values for module in selected_modules):
             return self.async_show_form(

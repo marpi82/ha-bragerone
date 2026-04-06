@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Zaledna platforma",
+          "language": "Jezik"
+        }
+      },
+      "select_modules": {
+        "title": "Izbira modulov",
+        "description": "Izberite module in način filtriranja entitet.",
+        "data": {
+          "modules": "Moduli",
+          "entity_filter_mode": "Način filtriranja entitet"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Izbira modulov",
+        "data": {
+          "modules": "Moduli",
+          "entity_filter_mode": "Način filtriranja entitet"
+        }
+      }
+    }
+  }
+}

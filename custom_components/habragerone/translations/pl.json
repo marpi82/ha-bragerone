@@ -2,19 +2,29 @@
   "config": {
     "step": {
       "user": {
-        "title": "Brager One — Logowanie",
-        "description": "Podaj poświadczenia do Brager One.",
+        "title": "BragerOne — Logowanie",
+        "description": "Podaj poświadczenia do BragerOne.",
         "data": {
           "email": "E-mail",
-          "password": "Hasło"
+          "password": "Hasło",
+          "backend_platform": "Platforma backendu",
+          "language": "Język"
         }
       },
       "select_site": {
         "title": "Wybór instalacji",
-        "description": "Wybierz instalację (object_id) i moduły (devid).",
+        "description": "Wybierz instalację i moduły.",
         "data": {
-          "object_id": "ID instalacji (object_id)",
-          "modules": "Kody modułów (devid) — lista rozdzielona przecinkami"
+          "object_id": "ID instalacji",
+          "modules": "Kody modułów — lista rozdzielona przecinkami"
+        }
+      },
+      "select_modules": {
+        "title": "Wybór modułów",
+        "description": "Wybierz moduły i tryb filtrowania encji.",
+        "data": {
+          "modules": "Moduły",
+          "entity_filter_mode": "Tryb filtrowania encji"
         }
       }
     },
@@ -31,10 +41,17 @@
   "options": {
     "step": {
       "init": {
-        "title": "Ustawienia Brager One",
+        "title": "Ustawienia BragerOne",
         "data": {
-          "object_id": "ID instalacji (object_id)",
-          "modules": "Kody modułów (devid) — lista rozdzielona przecinkami"
+          "object_id": "ID instalacji",
+          "modules": "Kody modułów — lista rozdzielona przecinkami"
+        }
+      },
+      "modules": {
+        "title": "Wybór modułów",
+        "data": {
+          "modules": "Moduły",
+          "entity_filter_mode": "Tryb filtrowania encji"
         }
       }
     }

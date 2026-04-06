@@ -14,6 +14,7 @@ from homeassistant.exceptions import HomeAssistantError
 from pybragerone import BragerOneApiClient, BragerOneGateway
 from pybragerone.models.events import ParamUpdate
 from pybragerone.models.param import ParamStore
+from pybragerone.models.param_resolver import ParamResolver
 
 from .command_write import WriteContext, WriteValidationError, prepare_write
 
@@ -29,11 +30,14 @@ class BragerRuntime:
     gateway: BragerOneGateway
     store: ParamStore
     modules_meta: dict[str, dict[str, Any]]
+    language: str | None = None
 
     _tasks: list[asyncio.Task[Any]] = field(default_factory=list)
     _listeners: set[UpdateCallback] = field(default_factory=set)
     _start_monotonic: float | None = None
     _first_update_logged: bool = False
+    _status_resolver: ParamResolver | None = None
+    _resolver_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def start(self) -> None:
         """Start gateway, state store ingestion and update dispatcher."""
@@ -66,6 +70,7 @@ class BragerRuntime:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         self._tasks.clear()
+        self._status_resolver = None
         await self.gateway.stop()
         await self.api.close()
 
@@ -98,7 +103,24 @@ class BragerRuntime:
             raise HomeAssistantError(f"Missing device id for symbol '{symbol}'")
 
         has_parameter_address = isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int)
-        has_command_rule = isinstance(command_rules, list) and len(command_rules) > 0
+        if isinstance(command_rules, list):
+            typed_command_rules = [rule for rule in command_rules if isinstance(rule, dict)]
+        else:
+            typed_command_rules = []
+        has_command_rule = len(typed_command_rules) > 0
+        flat_values = self.store.flatten()
+        default_actual: Any = None
+        if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
+            default_actual = flat_values.get(f"{pool}.{chan}{idx}")
+        active_rule = _select_active_command_rule(
+            command_rules=typed_command_rules,
+            flat_values=flat_values,
+            devid=devid,
+            modules_meta=self.modules_meta,
+            default_actual=default_actual,
+        )
+        active_command = _rule_command_name(active_rule)
+        has_raw_command_route = isinstance(active_command, str) and bool(active_command.strip())
 
         context = WriteContext(
             symbol=symbol,
@@ -113,23 +135,43 @@ class BragerRuntime:
         except WriteValidationError as err:
             raise HomeAssistantError(str(err)) from err
 
+        intent_rule = _select_intent_command_rule(command_rules=typed_command_rules, desired_value=prepared.raw_value)
+        if _rule_command_name(intent_rule) is not None:
+            active_rule = intent_rule
+            active_command = _rule_command_name(active_rule)
+            has_raw_command_route = isinstance(active_command, str) and bool(active_command.strip())
+
+        if has_raw_command_route:
+            raw_value = active_rule.get("value", prepared.raw_value)
+            ok = await self.api.module_command_auto(
+                devid=devid,
+                command=str(active_command).strip(),
+                value=raw_value,
+            )
+            if not ok:
+                raise HomeAssistantError(f"Command write failed for '{symbol}' via raw command route")
+            return
+
         if prepared.route == "parameter_write":
             parameter = f"{chan}{idx}"
+            mapping_raw = descriptor.get("mapping")
+            mapping_dict = mapping_raw if isinstance(mapping_raw, dict) else {}
+            mapping_source = mapping_dict.get("raw")
+            parameter_name = mapping_source.get("name") if isinstance(mapping_source, Mapping) else None
+            parameter_name = parameter_name.strip() or None if isinstance(parameter_name, str) else None
             ok = await self.api.module_command_auto(
                 devid=devid,
                 pool=str(pool),
                 parameter=parameter,
                 value=prepared.raw_value,
+                parameter_name=parameter_name,
             )
             if not ok:
                 raise HomeAssistantError(f"Command write failed for '{symbol}' via parameter route")
             return
 
-        rule = _select_command_rule(
-            command_rules=[rule for rule in command_rules if isinstance(rule, dict)] if isinstance(command_rules, list) else [],
-            desired_value=prepared.raw_value,
-        )
-        command = rule.get("command") if isinstance(rule.get("command"), str) else None
+        rule = _select_command_rule(command_rules=typed_command_rules, desired_value=prepared.raw_value)
+        command = _rule_command_name(rule)
         if command is None:
             raise HomeAssistantError(f"No raw command mapping available for '{symbol}'")
         raw_value = rule.get("value", prepared.raw_value)
@@ -140,6 +182,59 @@ class BragerRuntime:
         )
         if not ok:
             raise HomeAssistantError(f"Command write failed for '{symbol}' via raw command route")
+
+    async def async_resolve_status_label(self, symbol: str) -> Any | None:
+        """Resolve STATUS_* value exactly as parser/UI logic does."""
+        if not symbol.startswith("STATUS_"):
+            return None
+        resolved = await self._async_resolve_symbol(symbol)
+        if resolved is None:
+            return None
+        if isinstance(resolved.value_label, str) and resolved.value_label.strip():
+            return resolved.value_label.strip()
+        return resolved.value
+
+    async def async_resolve_symbol_value(self, symbol: str) -> Any | None:
+        """Resolve symbol value using parser rules and dynamic unit transforms."""
+        resolved = await self._async_resolve_symbol(symbol)
+        if resolved is None:
+            return None
+        if isinstance(resolved.value_label, str) and resolved.value_label.strip():
+            return resolved.value_label.strip()
+        return resolved.value
+
+    async def async_resolve_symbol_with_unit(self, symbol: str) -> tuple[Any | None, Any | None]:
+        """Resolve symbol value and unit using parser rules."""
+        resolved = await self._async_resolve_symbol(symbol)
+        if resolved is None:
+            return None, None
+        value: Any = (
+            resolved.value_label if isinstance(resolved.value_label, str) and resolved.value_label.strip() else resolved.value
+        )
+        return value, resolved.unit
+
+    async def _async_resolve_symbol(self, symbol: str) -> Any | None:
+        resolver = await self._async_get_resolver()
+        if resolver is None:
+            return None
+        try:
+            return await resolver.resolve_value(symbol)
+        except Exception:
+            return None
+
+    async def _async_get_resolver(self) -> ParamResolver | None:
+        if self._status_resolver is not None:
+            return self._status_resolver
+        async with self._resolver_lock:
+            try:
+                self._status_resolver = ParamResolver.from_api(
+                    api=self.api,
+                    store=self.store,
+                    lang=self.language,
+                )
+            except Exception:
+                return None
+            return self._status_resolver
 
     async def _dispatch_updates(self) -> None:
         async for update in self.gateway.bus.subscribe():
@@ -156,7 +251,10 @@ class BragerRuntime:
                 )
                 self._first_update_logged = True
             for callback in tuple(self._listeners):
-                callback(update)
+                try:
+                    callback(update)
+                except Exception:
+                    LOGGER.exception("Runtime listener callback failed for update %s.%s%s", update.pool, update.chan, update.idx)
 
 
 def _select_command_rule(*, command_rules: list[dict[str, Any]], desired_value: Any) -> dict[str, Any]:
@@ -170,4 +268,135 @@ def _select_command_rule(*, command_rules: list[dict[str, Any]], desired_value: 
         if str(rule_value).strip().lower() == desired_normalized:
             return rule
 
-    return command_rules[0] if command_rules else {}
+    for rule in command_rules:
+        if _rule_command_name(rule) is not None:
+            return rule
+    return {}
+
+
+def _rule_command_name(rule: Mapping[str, Any]) -> str | None:
+    command_raw = rule.get("command")
+    if not isinstance(command_raw, str):
+        return None
+    command = command_raw.strip()
+    if not command or command.lower() == "void 0":
+        return None
+    return command
+
+
+def _select_intent_command_rule(*, command_rules: list[dict[str, Any]], desired_value: Any) -> dict[str, Any]:
+    if not isinstance(desired_value, bool):
+        return {}
+
+    # Prefer explicit logic tags when available.
+    desired_logic = "on" if desired_value else "off"
+    for rule in command_rules:
+        logic = str(rule.get("logic", "")).strip().lower()
+        if logic == desired_logic and _rule_command_name(rule) is not None:
+            return rule
+
+    # Fallback for symbolic command names like BOILER_START/BOILER_STOP.
+    for rule in command_rules:
+        command = _rule_command_name(rule)
+        if command is None:
+            continue
+        cmd = command.strip().upper()
+        if desired_value and ("START" in cmd or "ENABLE" in cmd or cmd.endswith("_ON")):
+            return rule
+        if (not desired_value) and ("STOP" in cmd or "DISABLE" in cmd or cmd.endswith("_OFF")):
+            return rule
+
+    return {}
+
+
+def _select_active_command_rule(
+    *,
+    command_rules: list[dict[str, Any]],
+    flat_values: Mapping[str, Any],
+    devid: str,
+    modules_meta: Mapping[str, Mapping[str, Any]],
+    default_actual: Any,
+) -> dict[str, Any]:
+    for rule in command_rules:
+        if _command_rule_matches(
+            rule,
+            flat_values=flat_values,
+            devid=devid,
+            modules_meta=modules_meta,
+            default_actual=default_actual,
+        ):
+            return rule
+    for rule in command_rules:
+        if _rule_command_name(rule) is not None:
+            return rule
+    return {}
+
+
+def _command_rule_matches(
+    rule: Mapping[str, Any],
+    *,
+    flat_values: Mapping[str, Any],
+    devid: str,
+    modules_meta: Mapping[str, Mapping[str, Any]],
+    default_actual: Any,
+) -> bool:
+    conditions = rule.get("conditions")
+    if not isinstance(conditions, list) or not conditions:
+        return True
+
+    for cond in conditions:
+        if not isinstance(cond, Mapping):
+            return False
+        operation = cond.get("operation")
+        expected = cond.get("expected")
+        targets = cond.get("targets")
+        if not isinstance(operation, str):
+            return False
+        if not isinstance(targets, list) or not targets:
+            return _compare_condition(operation=operation, actual=default_actual, expected=expected)
+        for target in targets:
+            if not isinstance(target, Mapping):
+                return False
+            actual = _read_target_actual(target, flat_values=flat_values, devid=devid, modules_meta=modules_meta)
+            if not _compare_condition(operation=operation, actual=actual, expected=expected):
+                return False
+    return True
+
+
+def _read_target_actual(
+    target: Mapping[str, Any],
+    *,
+    flat_values: Mapping[str, Any],
+    devid: str,
+    modules_meta: Mapping[str, Mapping[str, Any]],
+) -> Any:
+    address = target.get("address")
+    if isinstance(address, str) and address.strip():
+        value = flat_values.get(address.strip())
+    else:
+        group = target.get("group")
+        use = target.get("use")
+        number = target.get("number")
+        key = f"{group}.{use}{number}" if isinstance(group, str) and isinstance(use, str) and isinstance(number, int) else None
+        value = flat_values.get(key) if isinstance(key, str) else None
+
+    if value is None:
+        getter = target.get("storeGetter")
+        if isinstance(getter, str) and getter.endswith("connectedAt"):
+            value = modules_meta.get(devid, {}).get("connectedAt")
+
+    bit = target.get("bit")
+    if isinstance(bit, int) and isinstance(value, int):
+        return (value >> bit) & 1
+    return value
+
+
+def _compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
+    op = operation.strip()
+    if "." in op:
+        op = op.rsplit(".", 1)[-1]
+    if op == "equalTo":
+        return bool(actual == expected)
+    if op == "notEqualTo":
+        return bool(actual != expected)
+    return False

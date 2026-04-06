@@ -1,6 +1,6 @@
 {
   "domain": "habragerone",
-  "name": "Brager One",
+  "name": "BragerOne",
   "after_dependencies": [],
   "codeowners": [
     "@marpi82"
@@ -14,7 +14,7 @@
     "custom_components.habragerone"
   ],
   "requirements": [
-    "py-bragerone@git+https://github.com/marpi82/py-bragerone.git@2026.2.0b1"
+    "py-bragerone==2026.4.1"
   ],
-  "version": "2026a3"
+  "version": "2026.4.1"
 }

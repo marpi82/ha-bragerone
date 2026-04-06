@@ -9,6 +9,7 @@ logger:
   default: info
   logs:
     custom_components.habragerone: debug
+    pybragerone: debug
 # Development configuration
 # Uncomment for demo data
 # demo:

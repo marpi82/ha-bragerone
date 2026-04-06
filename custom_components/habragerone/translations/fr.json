@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Plateforme backend",
+          "language": "Langue"
+        }
+      },
+      "select_modules": {
+        "title": "Sélectionner des modules",
+        "description": "Choisissez les modules et le mode de filtrage des entités.",
+        "data": {
+          "modules": "Modules",
+          "entity_filter_mode": "Mode de filtrage des entités"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Sélectionner des modules",
+        "data": {
+          "modules": "Modules",
+          "entity_filter_mode": "Mode de filtrage des entités"
+        }
+      }
+    }
+  }
+}

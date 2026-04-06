@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Платформа бэкенда",
+          "language": "Язык"
+        }
+      },
+      "select_modules": {
+        "title": "Выбор модулей",
+        "description": "Выберите модули и режим фильтрации сущностей.",
+        "data": {
+          "modules": "Модули",
+          "entity_filter_mode": "Режим фильтрации сущностей"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Выбор модулей",
+        "data": {
+          "modules": "Модули",
+          "entity_filter_mode": "Режим фильтрации сущностей"
+        }
+      }
+    }
+  }
+}

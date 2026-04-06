@@ -15,7 +15,9 @@ from pybragerone.models.param import ParamStore
 
 from .bootstrap import async_build_bootstrap_payload, normalize_cached_descriptors
 from .const import (
+    BOOTSTRAP_VERSION,
     CONF_BACKEND_PLATFORM,
+    CONF_BOOTSTRAP_VERSION,
     CONF_ENTITY_DESCRIPTORS,
     CONF_ENTITY_FILTER_MODE,
     CONF_LANGUAGE,
@@ -34,6 +36,20 @@ from .const import (
 from .runtime import BragerRuntime
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _descriptors_require_refresh(descriptors: Any) -> bool:
+    if not isinstance(descriptors, list):
+        return True
+    for descriptor in descriptors:
+        if not isinstance(descriptor, dict):
+            continue
+        platform = str(descriptor.get("platform") or "")
+        if platform == "select":
+            options = descriptor.get("options")
+            if not isinstance(options, list) or not options:
+                return True
+    return False
 
 
 def _build_ssl_context() -> ssl.SSLContext:
@@ -97,8 +113,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         or entity_filter_mode != data_filter_mode
         or module_filter_modes != data_module_filter_modes
     )
-    missing_cached_payload = not isinstance(entry.data.get(CONF_MODULES_META), dict) or not isinstance(
-        entry.data.get(CONF_ENTITY_DESCRIPTORS), list
+    cached_descriptors = entry.data.get(CONF_ENTITY_DESCRIPTORS)
+    bootstrap_version = entry.data.get(CONF_BOOTSTRAP_VERSION)
+    missing_cached_payload = (
+        not isinstance(entry.data.get(CONF_MODULES_META), dict)
+        or _descriptors_require_refresh(cached_descriptors)
+        or bootstrap_version != BOOTSTRAP_VERSION
     )
 
     modules_meta = entry.data.get(CONF_MODULES_META)
@@ -133,6 +153,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         updated_data = dict(entry.data)
         updated_data[CONF_OBJECT_ID] = object_id
         updated_data[CONF_MODULES] = modules
+        updated_data[CONF_BOOTSTRAP_VERSION] = BOOTSTRAP_VERSION
         updated_data.update(bootstrap_payload)
         hass.config_entries.async_update_entry(entry, data=updated_data)
         modules_meta = bootstrap_payload[CONF_MODULES_META]
@@ -153,6 +174,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         gateway=gateway,
         store=store,
         modules_meta={str(k): dict(v) for k, v in modules_meta.items()} if isinstance(modules_meta, dict) else {},
+        language=language,
     )
     await runtime.start()
 

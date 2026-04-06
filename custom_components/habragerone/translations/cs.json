@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Backendová platforma",
+          "language": "Jazyk"
+        }
+      },
+      "select_modules": {
+        "title": "Výběr modulů",
+        "description": "Vyberte moduly a režim filtrování entit.",
+        "data": {
+          "modules": "Moduly",
+          "entity_filter_mode": "Režim filtrování entit"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Výběr modulů",
+        "data": {
+          "modules": "Moduly",
+          "entity_filter_mode": "Režim filtrování entit"
+        }
+      }
+    }
+  }
+}

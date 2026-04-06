@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Taustsüsteemi platvorm",
+          "language": "Keel"
+        }
+      },
+      "select_modules": {
+        "title": "Moodulite valimine",
+        "description": "Valige moodulid ja olemite filtreerimisrežiim.",
+        "data": {
+          "modules": "Moodulid",
+          "entity_filter_mode": "Olemite filtreerimisrežiim"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Moodulite valimine",
+        "data": {
+          "modules": "Moodulid",
+          "entity_filter_mode": "Olemite filtreerimisrežiim"
+        }
+      }
+    }
+  }
+}
