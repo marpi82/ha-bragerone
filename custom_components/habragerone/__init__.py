@@ -45,14 +45,9 @@ def _descriptors_require_refresh(descriptors: Any) -> bool:
         if not isinstance(descriptor, dict):
             continue
         platform = str(descriptor.get("platform") or "")
-        mapping = descriptor.get("mapping")
         if platform == "select":
             options = descriptor.get("options")
             if not isinstance(options, list) or not options:
-                return True
-        if platform == "binary_sensor" and isinstance(mapping, dict):
-            units_source = mapping.get("units_source")
-            if units_source not in (None, "", 0):
                 return True
     return False
 

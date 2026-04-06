@@ -395,6 +395,8 @@ def _read_target_actual(
 
 def _compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
     op = operation.strip()
+    if "." in op:
+        op = op.rsplit(".", 1)[-1]
     if op == "equalTo":
         return bool(actual == expected)
     if op == "notEqualTo":
