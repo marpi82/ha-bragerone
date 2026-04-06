@@ -761,9 +761,7 @@ async def async_build_bootstrap_payload(
             "menu_symbol_kinds_count": len(kinds_symbols),
             "menu_symbols_not_in_candidates_count": len(not_in_candidates),
             "menu_symbols_not_in_candidates_sample": not_in_candidates[:200],
-            "menu_symbol_routes_sample": {
-                symbol: routes_map.get(symbol, [])[:5] for symbol in not_in_candidates[:50]
-            },
+            "menu_symbol_routes_sample": {symbol: routes_map.get(symbol, [])[:5] for symbol in not_in_candidates[:50]},
             "accepted_count": 0,
             "rejection_count": 0,
             "rejections": module_rejections,
@@ -806,9 +804,7 @@ async def async_build_bootstrap_payload(
                 resolved = await resolver.resolve_value(symbol)
                 resolved_value = resolved.value
                 resolved_value_label = resolved.value_label
-                keep_without_value = is_menu_write and (
-                    _is_command_like_symbol(symbol) or _has_named_command_rule(mapping_dict)
-                )
+                keep_without_value = is_menu_write and (_is_command_like_symbol(symbol) or _has_named_command_rule(mapping_dict))
                 if not keep_without_value and not _has_display_value(value=resolved.value, value_label=resolved.value_label):
                     if len(module_rejections) < 500:
                         module_rejections.append(

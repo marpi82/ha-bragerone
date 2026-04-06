@@ -14,4 +14,3 @@ def test_normalize_unit_rejects_symbolic_tokens() -> None:
 def test_normalize_unit_keeps_real_units() -> None:
     assert BragerSymbolSensor._normalize_unit("°C") == "°C"
     assert BragerSymbolSensor._normalize_unit("%") == "%"
-

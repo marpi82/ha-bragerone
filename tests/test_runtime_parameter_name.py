@@ -68,4 +68,3 @@ def test_async_write_parameter_route_includes_parameter_name_from_mapping_raw() 
     assert api.calls[0]["pool"] == "P6"
     assert api.calls[0]["parameter"] == "v0"
     assert api.calls[0]["parameter_name"] == "parameters.PARAM_0"
-

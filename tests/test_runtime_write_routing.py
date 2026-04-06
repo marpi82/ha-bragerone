@@ -66,16 +66,12 @@ def test_async_write_prefers_raw_command_rule_over_parameter_address() -> None:
             "command_rules": [
                 {
                     "operation": "ignored",
-                    "conditions": [
-                        {"operation": "equalTo", "expected": 0, "targets": [{"address": "P5.s0", "bit": 0}]}
-                    ],
+                    "conditions": [{"operation": "equalTo", "expected": 0, "targets": [{"address": "P5.s0", "bit": 0}]}],
                     "command": "BOILER_START",
                     "value": "OFF",
                 },
                 {
-                    "conditions": [
-                        {"operation": "equalTo", "expected": 1, "targets": [{"address": "P5.s0", "bit": 0}]}
-                    ],
+                    "conditions": [{"operation": "equalTo", "expected": 1, "targets": [{"address": "P5.s0", "bit": 0}]}],
                     "command": "BOILER_STOP",
                     "value": "ON",
                 },
@@ -148,4 +144,3 @@ def test_async_write_prefers_intent_rule_for_start_stop_commands() -> None:
 
     assert len(api.calls) == 1
     assert api.calls[0]["command"] == "BOILER_STOP"
-

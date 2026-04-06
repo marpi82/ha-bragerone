@@ -14,4 +14,3 @@ def test_normalize_text_state_leaves_non_text_or_empty() -> None:
     assert _normalize_text_state(1) == 1
     assert _normalize_text_state("") == ""
     assert _normalize_text_state("  ") == ""
-

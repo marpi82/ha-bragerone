@@ -127,4 +127,3 @@ def normalize_rule_value(value: Any) -> Any:
             return "Off"
         return token.replace("_", " ").title()
     return value
-

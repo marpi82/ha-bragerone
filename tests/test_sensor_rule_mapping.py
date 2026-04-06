@@ -58,4 +58,3 @@ def test_resolve_rule_display_value_honors_any_logic() -> None:
     display = resolve_rule_display_value(descriptor=descriptor, flat_values={"P5.s4": 32, "P6.v13": 2}, default_actual=65)
 
     assert display == "Stop"
-

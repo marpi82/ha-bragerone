@@ -227,11 +227,7 @@ def test_async_build_bootstrap_payload_ui_excludes_non_panel_actions(monkeypatch
                     "pool": "P4" if symbol == "SYM_PANEL" else None,
                     "chan": "v" if symbol == "SYM_PANEL" else None,
                     "idx": 1 if symbol == "SYM_PANEL" else None,
-                    "mapping": (
-                        {}
-                        if symbol == "SYM_PANEL"
-                        else {"command_rules": [{"command": "MODULE_RESTART", "value": 1}]}
-                    ),
+                    "mapping": ({} if symbol == "SYM_PANEL" else {"command_rules": [{"command": "MODULE_RESTART", "value": 1}]}),
                     "min": None,
                     "max": None,
                     "unit": None,

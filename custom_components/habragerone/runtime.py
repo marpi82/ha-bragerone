@@ -209,9 +209,7 @@ class BragerRuntime:
         if resolved is None:
             return None, None
         value: Any = (
-            resolved.value_label
-            if isinstance(resolved.value_label, str) and resolved.value_label.strip()
-            else resolved.value
+            resolved.value_label if isinstance(resolved.value_label, str) and resolved.value_label.strip() else resolved.value
         )
         return value, resolved.unit
 
