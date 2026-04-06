@@ -158,10 +158,7 @@ class BragerRuntime:
             mapping_dict = mapping_raw if isinstance(mapping_raw, dict) else {}
             mapping_source = mapping_dict.get("raw")
             parameter_name = mapping_source.get("name") if isinstance(mapping_source, Mapping) else None
-            if isinstance(parameter_name, str):
-                parameter_name = parameter_name.strip() or None
-            else:
-                parameter_name = None
+            parameter_name = parameter_name.strip() or None if isinstance(parameter_name, str) else None
             ok = await self.api.module_command_auto(
                 devid=devid,
                 pool=str(pool),
@@ -211,7 +208,11 @@ class BragerRuntime:
         resolved = await self._async_resolve_symbol(symbol)
         if resolved is None:
             return None, None
-        value: Any = resolved.value_label if isinstance(resolved.value_label, str) and resolved.value_label.strip() else resolved.value
+        value: Any = (
+            resolved.value_label
+            if isinstance(resolved.value_label, str) and resolved.value_label.strip()
+            else resolved.value
+        )
         return value, resolved.unit
 
     async def _async_resolve_symbol(self, symbol: str) -> Any | None:

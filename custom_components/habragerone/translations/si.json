@@ -1,11 +1,5 @@
 {
   "config": {
-    "selector": {
-      "entity_filter_mode": {
-        "ui": "Filtriranje po meniju UI",
-        "permissions": "Filtriranje po dovoljenjih"
-      }
-    },
     "step": {
       "user": {
         "data": {

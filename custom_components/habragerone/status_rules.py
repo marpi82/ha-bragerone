@@ -12,6 +12,7 @@ def resolve_rule_display_value(
     flat_values: Mapping[str, Any],
     default_actual: Any,
 ) -> Any | None:
+    """Return the first matched rule value normalized for display."""
     mapping = descriptor.get("mapping")
     if not isinstance(mapping, Mapping):
         return None
@@ -37,6 +38,7 @@ def resolve_rule_bool(
     flat_values: Mapping[str, Any],
     default_actual: Any,
 ) -> bool | None:
+    """Resolve rule output to boolean for binary-state entities."""
     display = resolve_rule_display_value(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
     if not isinstance(display, str):
         return None
@@ -49,6 +51,7 @@ def resolve_rule_bool(
 
 
 def rule_matches(rule: Mapping[str, Any], *, flat_values: Mapping[str, Any], default_actual: Any) -> bool:
+    """Check whether all/any rule conditions match current values."""
     conditions = rule.get("conditions")
     if not isinstance(conditions, list) or not conditions:
         return True
@@ -83,6 +86,7 @@ def _condition_matches(cond: Mapping[str, Any], *, flat_values: Mapping[str, Any
 
 
 def read_target_actual(target: Mapping[str, Any], *, flat_values: Mapping[str, Any]) -> Any:
+    """Read target value from flat payload, optionally applying bit/mask."""
     address = target.get("address")
     if not isinstance(address, str) or not address.strip():
         return None
@@ -99,6 +103,7 @@ def read_target_actual(target: Mapping[str, Any], *, flat_values: Mapping[str, A
 
 
 def compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
+    """Evaluate one rule operation against actual and expected values."""
     op = operation.strip()
     if "." in op:
         op = op.rsplit(".", 1)[-1]
@@ -110,6 +115,7 @@ def compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
 
 
 def normalize_rule_value(value: Any) -> Any:
+    """Normalize token-like rule values to user-friendly text."""
     if isinstance(value, str):
         token = value.strip()
         if "." in token:

@@ -92,17 +92,15 @@ def _translation_get(language: str | None, path: tuple[str, ...], default: str) 
 
 
 def _entity_filter_mode_values(*, ui_language: str | None = None) -> dict[str, str]:
+    lang = (ui_language or "").strip().lower()
+    if lang.startswith("pl"):
+        return {
+            FILTER_MODE_UI: "Filtrowanie po menu UI",
+            FILTER_MODE_PERMISSIONS: "Filtrowanie po uprawnieniach",
+        }
     return {
-        FILTER_MODE_UI: _translation_get(
-            ui_language,
-            ("config", "selector", CONF_ENTITY_FILTER_MODE, FILTER_MODE_UI),
-            "UI menu filtering",
-        ),
-        FILTER_MODE_PERMISSIONS: _translation_get(
-            ui_language,
-            ("config", "selector", CONF_ENTITY_FILTER_MODE, FILTER_MODE_PERMISSIONS),
-            "Permission filtering",
-        ),
+        FILTER_MODE_UI: "UI menu filtering",
+        FILTER_MODE_PERMISSIONS: "Permission filtering",
     }
 
 

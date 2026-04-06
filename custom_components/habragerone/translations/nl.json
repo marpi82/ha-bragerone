@@ -1,11 +1,5 @@
 {
   "config": {
-    "selector": {
-      "entity_filter_mode": {
-        "ui": "Filteren op UI-menu",
-        "permissions": "Filteren op machtigingen"
-      }
-    },
     "step": {
       "user": {
         "data": {

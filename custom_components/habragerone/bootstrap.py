@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from contextlib import suppress
 from collections.abc import Mapping
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from .const import (
@@ -207,7 +207,7 @@ def _is_binary_status_unit(unit: Any) -> bool:
     if not isinstance(unit, Mapping) or len(unit) != 2:
         return False
     keys: set[int] = set()
-    for raw_key in unit.keys():
+    for raw_key in unit:
         parsed = _binary_key(raw_key)
         if parsed is None:
             return False

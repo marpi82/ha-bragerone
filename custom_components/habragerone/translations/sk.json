@@ -1,11 +1,5 @@
 {
   "config": {
-    "selector": {
-      "entity_filter_mode": {
-        "ui": "Filtrovanie podľa UI menu",
-        "permissions": "Filtrovanie podľa oprávnení"
-      }
-    },
     "step": {
       "user": {
         "data": {

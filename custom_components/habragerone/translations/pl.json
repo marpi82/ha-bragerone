@@ -1,11 +1,5 @@
 {
   "config": {
-    "selector": {
-      "entity_filter_mode": {
-        "ui": "Filtrowanie po menu UI",
-        "permissions": "Filtrowanie po uprawnieniach"
-      }
-    },
     "step": {
       "user": {
         "title": "BragerOne — Logowanie",

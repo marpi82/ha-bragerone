@@ -1,11 +1,5 @@
 {
   "config": {
-    "selector": {
-      "entity_filter_mode": {
-        "ui": "Фільтрація за меню UI",
-        "permissions": "Фільтрація за правами доступу"
-      }
-    },
     "step": {
       "user": {
         "data": {

@@ -1,4 +1,5 @@
 import asyncio
+from typing import ClassVar
 
 from tests.conftest import install_pybragerone_stubs
 
@@ -20,7 +21,7 @@ class _FakeApi:
 
 
 class _FakeGateway:
-    modules: list[object] = []
+    modules: ClassVar[list[object]] = []
 
     class _FakeBus:
         async def subscribe(self):  # pragma: no cover - not used in this test

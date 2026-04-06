@@ -27,20 +27,20 @@ def _container(*tokens: str) -> SimpleNamespace:
 
 def test_collect_symbols_from_menu_walks_nested_routes() -> None:
     leaf = SimpleNamespace(
-        meta=SimpleNamespace(parameters=_container("LEAF_A")),
-        parameters=_container("LEAF_B"),
+        meta=SimpleNamespace(parameters=_container("PARAM_LEAF_A")),
+        parameters=_container("PARAM_LEAF_B"),
         children=[],
     )
     root = SimpleNamespace(
-        meta=SimpleNamespace(parameters=_container("ROOT_A")),
-        parameters=_container("ROOT_B"),
+        meta=SimpleNamespace(parameters=_container("PARAM_ROOT_A")),
+        parameters=_container("PARAM_ROOT_B"),
         children=[leaf],
     )
     menu = SimpleNamespace(routes=[root])
 
     symbols = _collect_symbols_from_menu(menu)
 
-    assert symbols == {"ROOT_A", "ROOT_B", "LEAF_A", "LEAF_B"}
+    assert symbols == {"PARAM_ROOT_A", "PARAM_ROOT_B", "PARAM_LEAF_A", "PARAM_LEAF_B"}
 
 
 def test_normalize_filter_mode_defaults_for_unknown_values() -> None:
