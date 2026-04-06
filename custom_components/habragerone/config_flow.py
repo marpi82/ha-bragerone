@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
@@ -42,8 +40,6 @@ _AUTH_TIMEOUT_S = 20
 _OBJECTS_TIMEOUT_S = 20
 _MODULES_TIMEOUT_S = 20
 _BOOTSTRAP_TIMEOUT_S = 90
-_TRANSLATIONS_DIR = Path(__file__).parent / "translations"
-_TRANSLATION_CACHE: dict[str, dict[str, Any]] = {}
 
 
 def _module_choices(modules: list[dict[str, Any]]) -> list[tuple[str, str]]:
@@ -59,36 +55,17 @@ def _module_choices(modules: list[dict[str, Any]]) -> list[tuple[str, str]]:
     return choices
 
 
-def _load_translation_tree(language: str | None) -> dict[str, Any]:
-    lang = (language or "").strip().lower() or "en"
-    cached = _TRANSLATION_CACHE.get(lang)
-    if cached is not None:
-        return cached
-    path = _TRANSLATIONS_DIR / f"{lang}.json"
-    try:
-        content = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        content = {}
-    _TRANSLATION_CACHE[lang] = content if isinstance(content, dict) else {}
-    return _TRANSLATION_CACHE[lang]
-
-
-def _translation_get(language: str | None, path: tuple[str, ...], default: str) -> str:
-    def _walk(tree: dict[str, Any]) -> str | None:
-        node: Any = tree
-        for key in path:
-            if not isinstance(node, dict):
-                return None
-            node = node.get(key)
-        if isinstance(node, str) and node.strip():
-            return node.strip()
-        return None
-
-    for lang in ((language or "").strip().lower() or "en", "en"):
-        value = _walk(_load_translation_tree(lang))
-        if value:
-            return value
-    return default
+def _ui_field_labels(ui_language: str | None) -> dict[str, str]:
+    lang = (ui_language or "").strip().lower()
+    if lang.startswith("pl"):
+        return {
+            CONF_BACKEND_PLATFORM: "Platforma backendu",
+            CONF_LANGUAGE: "Język",
+        }
+    return {
+        CONF_BACKEND_PLATFORM: "Backend platform",
+        CONF_LANGUAGE: "Language",
+    }
 
 
 def _entity_filter_mode_values(*, ui_language: str | None = None) -> dict[str, str]:
@@ -335,30 +312,19 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             language_default = next(iter(language_values.keys()))
 
         email_default = (default_email or self._email or "").strip()
+        field_labels = _ui_field_labels(ui_language)
         schema: dict[Any, Any] = {
             vol.Required(CONF_EMAIL, default=email_default): str,
             vol.Required(CONF_PASSWORD): str,
             vol.Required(
                 CONF_BACKEND_PLATFORM,
                 default=platform,
-                description={
-                    "name": _translation_get(
-                        ui_language,
-                        ("config", "step", "user", "data", CONF_BACKEND_PLATFORM),
-                        "Backend platform",
-                    )
-                },
+                description={"name": field_labels[CONF_BACKEND_PLATFORM]},
             ): vol.In(platform_values),
             vol.Required(
                 CONF_LANGUAGE,
                 default=language_default,
-                description={
-                    "name": _translation_get(
-                        ui_language,
-                        ("config", "step", "user", "data", CONF_LANGUAGE),
-                        "Language",
-                    )
-                },
+                description={"name": field_labels[CONF_LANGUAGE]},
             ): vol.In(language_values),
         }
         return vol.Schema(schema)
