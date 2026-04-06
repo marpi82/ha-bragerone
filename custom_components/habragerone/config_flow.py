@@ -55,6 +55,47 @@ def _module_choices(modules: list[dict[str, Any]]) -> list[tuple[str, str]]:
     return choices
 
 
+def _extract_modules_payload(data: Any) -> list[dict[str, Any]]:
+    if isinstance(data, dict) and isinstance(data.get("data"), list):
+        return [item for item in data["data"] if isinstance(item, dict)]
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    return []
+
+
+async def _safe_module_payloads(api: BragerOneApiClient, object_id: int) -> list[dict[str, Any]]:
+    try:
+        modules = await api.get_modules(object_id)
+        return [module.model_dump(mode="json") for module in modules]
+    except ApiError:
+        raise
+    except Exception:
+        LOGGER.warning(
+            "Module model parsing failed for object_id=%s; using raw module payload fallback",
+            object_id,
+            exc_info=True,
+        )
+
+    req = getattr(api, "_req", None)
+    api_base = getattr(api, "_api_base", None)
+    if not callable(req) or not isinstance(api_base, str):
+        LOGGER.warning(
+            "Raw module payload fallback unavailable for object_id=%s (missing _req/_api_base)",
+            object_id,
+        )
+        return []
+    modules_endpoint = f"{api_base}/v1/modules?page=1&limit=999&group_id={object_id}"
+    try:
+        status, data, _ = await req("GET", modules_endpoint)
+    except Exception:
+        LOGGER.warning("Raw module payload fallback failed for object_id=%s", object_id, exc_info=True)
+        return []
+    if status != 200:
+        LOGGER.warning("Raw module payload fallback returned status=%s for object_id=%s", status, object_id)
+        return []
+    return _extract_modules_payload(data)
+
+
 def _ui_field_labels(ui_language: str | None) -> dict[str, str]:
     lang = (ui_language or "").strip().lower()
     if lang.startswith("pl"):
@@ -417,7 +458,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         api = await self._api_client()
         try:
             async with asyncio.timeout(_MODULES_TIMEOUT_S):
-                modules = await api.get_modules(selected_object_id)
+                module_payloads = await _safe_module_payloads(api, selected_object_id)
         except TimeoutError:
             return self.async_show_form(
                 step_id="select_site",
@@ -440,7 +481,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         self._selected_object_id = selected_object_id
-        self._module_choices = _module_choices([m.model_dump(mode="json") for m in modules])
+        self._module_choices = _module_choices(module_payloads)
         if not self._module_choices:
             return self.async_show_form(
                 step_id="select_site",
@@ -669,11 +710,11 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
         api = BragerOneApiClient(server=server_for(platform))
         try:
             await api.ensure_auth(email, password)
-            modules = await api.get_modules(object_id)
+            module_payloads = await _safe_module_payloads(api, object_id)
         finally:
             await api.close()
 
-        return _module_choices([m.model_dump(mode="json") for m in modules])
+        return _module_choices(module_payloads)
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Select object scope from available objects list."""
