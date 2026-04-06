@@ -1,0 +1,37 @@
+{
+  "config": {
+    "selector": {
+      "entity_filter_mode": {
+        "ui": "Filteren op UI-menu",
+        "permissions": "Filteren op machtigingen"
+      }
+    },
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Backendplatform",
+          "language": "Taal"
+        }
+      },
+      "select_modules": {
+        "title": "Modules selecteren",
+        "description": "Kies modules en de filtermodus voor entiteiten.",
+        "data": {
+          "modules": "Modules",
+          "entity_filter_mode": "Filtermodus voor entiteiten"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Modules selecteren",
+        "data": {
+          "modules": "Modules",
+          "entity_filter_mode": "Filtermodus voor entiteiten"
+        }
+      }
+    }
+  }
+}

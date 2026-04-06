@@ -1,0 +1,37 @@
+{
+  "config": {
+    "selector": {
+      "entity_filter_mode": {
+        "ui": "Filtrado por menú de UI",
+        "permissions": "Filtrado por permisos"
+      }
+    },
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Plataforma del backend",
+          "language": "Idioma"
+        }
+      },
+      "select_modules": {
+        "title": "Seleccionar módulos",
+        "description": "Elija módulos y el modo de filtrado de entidades.",
+        "data": {
+          "modules": "Módulos",
+          "entity_filter_mode": "Modo de filtrado de entidades"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Seleccionar módulos",
+        "data": {
+          "modules": "Módulos",
+          "entity_filter_mode": "Modo de filtrado de entidades"
+        }
+      }
+    }
+  }
+}

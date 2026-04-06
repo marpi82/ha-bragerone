@@ -1,0 +1,37 @@
+{
+  "config": {
+    "selector": {
+      "entity_filter_mode": {
+        "ui": "Filtrovanie podľa UI menu",
+        "permissions": "Filtrovanie podľa oprávnení"
+      }
+    },
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Backend platforma",
+          "language": "Jazyk"
+        }
+      },
+      "select_modules": {
+        "title": "Výber modulov",
+        "description": "Vyberte moduly a režim filtrovania entít.",
+        "data": {
+          "modules": "Moduly",
+          "entity_filter_mode": "Režim filtrovania entít"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Výber modulov",
+        "data": {
+          "modules": "Moduly",
+          "entity_filter_mode": "Režim filtrovania entít"
+        }
+      }
+    }
+  }
+}

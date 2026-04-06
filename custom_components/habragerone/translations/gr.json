@@ -1,0 +1,37 @@
+{
+  "config": {
+    "selector": {
+      "entity_filter_mode": {
+        "ui": "Φιλτράρισμα κατά μενού UI",
+        "permissions": "Φιλτράρισμα κατά δικαιώματα"
+      }
+    },
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Πλατφόρμα backend",
+          "language": "Γλώσσα"
+        }
+      },
+      "select_modules": {
+        "title": "Επιλογή μονάδων",
+        "description": "Επιλέξτε μονάδες και λειτουργία φιλτραρίσματος οντοτήτων.",
+        "data": {
+          "modules": "Μονάδες",
+          "entity_filter_mode": "Λειτουργία φιλτραρίσματος οντοτήτων"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Επιλογή μονάδων",
+        "data": {
+          "modules": "Μονάδες",
+          "entity_filter_mode": "Λειτουργία φιλτραρίσματος οντοτήτων"
+        }
+      }
+    }
+  }
+}

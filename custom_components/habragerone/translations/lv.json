@@ -1,0 +1,37 @@
+{
+  "config": {
+    "selector": {
+      "entity_filter_mode": {
+        "ui": "Filtrēšana pēc UI izvēlnes",
+        "permissions": "Filtrēšana pēc atļaujām"
+      }
+    },
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Backend platforma",
+          "language": "Valoda"
+        }
+      },
+      "select_modules": {
+        "title": "Moduļu izvēle",
+        "description": "Izvēlieties moduļus un entītiju filtrēšanas režīmu.",
+        "data": {
+          "modules": "Moduļi",
+          "entity_filter_mode": "Entītiju filtrēšanas režīms"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Moduļu izvēle",
+        "data": {
+          "modules": "Moduļi",
+          "entity_filter_mode": "Entītiju filtrēšanas režīms"
+        }
+      }
+    }
+  }
+}

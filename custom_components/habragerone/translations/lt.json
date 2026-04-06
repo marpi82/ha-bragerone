@@ -1,0 +1,37 @@
+{
+  "config": {
+    "selector": {
+      "entity_filter_mode": {
+        "ui": "Filtravimas pagal UI meniu",
+        "permissions": "Filtravimas pagal leidimus"
+      }
+    },
+    "step": {
+      "user": {
+        "data": {
+          "backend_platform": "Galinės sistemos platforma",
+          "language": "Kalba"
+        }
+      },
+      "select_modules": {
+        "title": "Pasirinkti modulius",
+        "description": "Pasirinkite modulius ir esybių filtravimo režimą.",
+        "data": {
+          "modules": "Moduliai",
+          "entity_filter_mode": "Esybių filtravimo režimas"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "modules": {
+        "title": "Pasirinkti modulius",
+        "data": {
+          "modules": "Moduliai",
+          "entity_filter_mode": "Esybių filtravimo režimas"
+        }
+      }
+    }
+  }
+}

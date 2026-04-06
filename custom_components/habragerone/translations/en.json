@@ -1,20 +1,36 @@
 {
   "config": {
+    "selector": {
+      "entity_filter_mode": {
+        "ui": "UI menu filtering",
+        "permissions": "Permission filtering"
+      }
+    },
     "step": {
       "user": {
-        "title": "Brager One — Sign in",
-        "description": "Provide your Brager One credentials.",
+        "title": "BragerOne — Sign in",
+        "description": "Provide your BragerOne credentials.",
         "data": {
           "email": "E-mail",
-          "password": "Password"
+          "password": "Password",
+          "backend_platform": "Backend platform",
+          "language": "Language"
         }
       },
       "select_site": {
         "title": "Select installation",
-        "description": "Choose installation (object_id) and modules (devid).",
+        "description": "Choose installation and modules.",
         "data": {
-          "object_id": "Installation ID (object_id)",
-          "modules": "Module codes (devid) — comma separated"
+          "object_id": "Installation ID",
+          "modules": "Module codes — comma separated"
+        }
+      },
+      "select_modules": {
+        "title": "Select modules",
+        "description": "Choose modules and entity filtering mode.",
+        "data": {
+          "modules": "Modules",
+          "entity_filter_mode": "Entity filtering mode"
         }
       }
     },
@@ -31,10 +47,17 @@
   "options": {
     "step": {
       "init": {
-        "title": "Brager One settings",
+        "title": "BragerOne settings",
         "data": {
-          "object_id": "Installation ID (object_id)",
-          "modules": "Module codes (devid) — comma separated"
+          "object_id": "Installation ID",
+          "modules": "Module codes — comma separated"
+        }
+      },
+      "modules": {
+        "title": "Select modules",
+        "data": {
+          "modules": "Modules",
+          "entity_filter_mode": "Entity filtering mode"
         }
       }
     }
