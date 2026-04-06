@@ -63,6 +63,8 @@ services:
       - ha-bragerone-venv:/workspace/.venv
       - ha-bragerone-uv-cache:/home/vscode/.cache/uv
       - ha-devhass-config:/workspace/config
+      # HA loads integrations from <config>/custom_components (see --config in Dockerfile.devhass)
+      - ./custom_components:/workspace/config/custom_components:ro
       - ~/.gitconfig:/home/vscode/.gitconfig:ro
     working_dir: /workspace
     environment:

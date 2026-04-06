@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -30,6 +32,14 @@ from .const import (
     FILTER_MODE_PERMISSIONS,
     FILTER_MODE_UI,
 )
+
+LOGGER = logging.getLogger(__name__)
+
+_LANGUAGE_CONFIG_TIMEOUT_S = 15
+_AUTH_TIMEOUT_S = 20
+_OBJECTS_TIMEOUT_S = 20
+_MODULES_TIMEOUT_S = 20
+_BOOTSTRAP_TIMEOUT_S = 90
 
 
 def _module_choices(modules: list[dict[str, Any]]) -> list[tuple[str, str]]:
@@ -187,7 +197,11 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         values: dict[str, str] = {}
         api = BragerOneApiClient(server=server_for(platform))
         try:
-            cfg = await LiveAssetsCatalog(api).list_language_config()
+            async with asyncio.timeout(_LANGUAGE_CONFIG_TIMEOUT_S):
+                cfg = await LiveAssetsCatalog(api).list_language_config()
+        except TimeoutError:
+            LOGGER.warning("Language config fetch timed out for platform '%s'", platform)
+            cfg = None
         except Exception:
             cfg = None
         finally:
@@ -275,8 +289,20 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         api = await self._api_client()
         try:
-            await api.ensure_auth(email, password)
-            objects = await api.get_objects()
+            async with asyncio.timeout(_AUTH_TIMEOUT_S):
+                await api.ensure_auth(email, password)
+            async with asyncio.timeout(_OBJECTS_TIMEOUT_S):
+                objects = await api.get_objects()
+        except TimeoutError:
+            return self.async_show_form(
+                step_id="user",
+                errors={"base": "cannot_connect"},
+                data_schema=await self._user_form_schema(
+                    default_email=email,
+                    default_platform=self._platform,
+                    default_language=selected_language,
+                ),
+            )
         except ApiError:
             return self.async_show_form(
                 step_id="user",
@@ -320,7 +346,18 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         api = await self._api_client()
         try:
-            modules = await api.get_modules(selected_object_id)
+            async with asyncio.timeout(_MODULES_TIMEOUT_S):
+                modules = await api.get_modules(selected_object_id)
+        except TimeoutError:
+            return self.async_show_form(
+                step_id="select_site",
+                errors={"base": "cannot_connect"},
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_OBJECT_ID, default=selected_object_id): vol.In(object_values),
+                    }
+                ),
+            )
         except ApiError:
             return self.async_show_form(
                 step_id="select_site",
@@ -419,14 +456,41 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(f"{self._platform}:{self._email}:{self._selected_object_id}")
         self._abort_if_unique_id_configured()
 
-        bootstrap = await async_build_bootstrap_payload(
-            api=await self._api_client(),
-            object_id=self._selected_object_id,
-            modules=selected_modules,
-            language=self._language,
-            entity_filter_mode=self._entity_filter_mode,
-            module_filter_modes=self._module_filter_modes,
-        )
+        try:
+            async with asyncio.timeout(_BOOTSTRAP_TIMEOUT_S):
+                bootstrap = await async_build_bootstrap_payload(
+                    api=await self._api_client(),
+                    object_id=self._selected_object_id,
+                    modules=selected_modules,
+                    language=self._language,
+                    entity_filter_mode=self._entity_filter_mode,
+                    module_filter_modes=self._module_filter_modes,
+                )
+        except TimeoutError:
+            return self.async_show_form(
+                step_id="select_modules",
+                errors={"base": "cannot_connect"},
+                data_schema=_build_modules_step_schema(
+                    module_choices=self._module_choices,
+                    module_values=module_values,
+                    default_modules=selected_modules,
+                    module_filter_defaults=module_filter_defaults,
+                    filter_values=filter_values,
+                ),
+            )
+        except Exception:
+            LOGGER.exception("Bootstrap payload build failed during config flow")
+            return self.async_show_form(
+                step_id="select_modules",
+                errors={"base": "invalid_response"},
+                data_schema=_build_modules_step_schema(
+                    module_choices=self._module_choices,
+                    module_values=module_values,
+                    default_modules=selected_modules,
+                    module_filter_defaults=module_filter_defaults,
+                    filter_values=filter_values,
+                ),
+            )
 
         data = {
             CONF_EMAIL: self._email,

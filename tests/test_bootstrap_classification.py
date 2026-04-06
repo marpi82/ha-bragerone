@@ -2,7 +2,11 @@ from tests.conftest import install_pybragerone_stubs
 
 install_pybragerone_stubs()
 
-from custom_components.habragerone.bootstrap import normalize_cached_descriptors  # noqa: E402
+from custom_components.habragerone.bootstrap import (  # noqa: E402
+    _collect_symbol_kinds_from_route,
+    _normalize_panel_path,
+    normalize_cached_descriptors,
+)
 
 
 def test_normalize_cached_descriptors_filters_non_exposable_tokens() -> None:
@@ -53,6 +57,26 @@ def test_normalize_cached_descriptors_classifies_status_channel_as_binary_sensor
     assert normalized[0]["platform"] == "binary_sensor"
 
 
+def test_normalize_cached_descriptors_keeps_writable_status_symbol_as_non_binary() -> None:
+    descriptors = [
+        {
+            "symbol": "URUCHOMIENIE_KOTLA",
+            "devid": "MOD1",
+            "pool": "P5",
+            "chan": "s",
+            "idx": 0,
+            "mapping": {"command_rules": [{"command": "BOILER_START", "value": "OFF"}]},
+            "writable": True,
+            "menu_kinds": ["write"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["platform"] != "binary_sensor"
+
+
 def test_normalize_cached_descriptors_classifies_enum_writable_as_select() -> None:
     descriptors = [
         {
@@ -67,6 +91,7 @@ def test_normalize_cached_descriptors_classifies_enum_writable_as_select() -> No
                 "units_source": {"0": "Off", "1": "Eco", "2": "Boost"},
             },
             "writable": True,
+            "menu_kinds": ["write"],
         }
     ]
 
@@ -92,6 +117,7 @@ def test_normalize_cached_descriptors_classifies_switch_like_rules_as_switch() -
                 ]
             },
             "writable": True,
+            "menu_kinds": ["write"],
         }
     ]
 
@@ -99,6 +125,28 @@ def test_normalize_cached_descriptors_classifies_switch_like_rules_as_switch() -
 
     assert len(normalized) == 1
     assert normalized[0]["platform"] == "switch"
+
+
+def test_normalize_cached_descriptors_defaults_writable_value_channel_to_number() -> None:
+    descriptors = [
+        {
+            "symbol": "PARAM_49",
+            "devid": "MOD1",
+            "pool": "P6",
+            "chan": "v",
+            "idx": 49,
+            "mapping": {"command_rules": []},
+            "writable": True,
+            "menu_kinds": ["write"],
+            "min": None,
+            "max": None,
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["platform"] == "number"
 
 
 def test_normalize_cached_descriptors_classifies_write_without_address_as_button() -> None:
@@ -114,6 +162,7 @@ def test_normalize_cached_descriptors_classifies_write_without_address_as_button
                 "component_type": "action",
             },
             "writable": True,
+            "menu_kinds": ["write"],
         }
     ]
 
@@ -141,3 +190,165 @@ def test_normalize_cached_descriptors_filters_ui_only_component_types() -> None:
     normalized = normalize_cached_descriptors(descriptors)
 
     assert normalized == []
+
+
+def test_normalize_cached_descriptors_uses_menu_kinds_for_writable() -> None:
+    descriptors = [
+        {
+            "symbol": "STATUS_P5_11",
+            "devid": "MOD1",
+            "pool": "P5",
+            "chan": "s",
+            "idx": 11,
+            "mapping": {"command_rules": [{"command": "BOILER_START", "value": "OFF"}]},
+            "writable": True,
+            "menu_kinds": ["status"],
+        },
+        {
+            "symbol": "URUCHOMIENIE_KOTLA",
+            "devid": "MOD1",
+            "pool": "P5",
+            "chan": "s",
+            "idx": 0,
+            "mapping": {"command_rules": [{"command": "BOILER_START", "value": "OFF"}]},
+            "writable": False,
+            "menu_kinds": ["write"],
+        },
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+    by_symbol = {item["symbol"]: item for item in normalized}
+
+    assert by_symbol["STATUS_P5_11"]["writable"] is False
+    assert by_symbol["URUCHOMIENIE_KOTLA"]["writable"] is True
+
+
+def test_normalize_cached_descriptors_treats_special_command_symbol_as_writable() -> None:
+    descriptors = [
+        {
+            "symbol": "COMMAND_MODULE_RESTART",
+            "devid": "MOD1",
+            "pool": None,
+            "chan": None,
+            "idx": None,
+            "mapping": {"command_rules": [{"command": "MODULE_RESTART", "value": "ONLINE"}]},
+            "writable": False,
+            "menu_kinds": ["special"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["writable"] is True
+    assert normalized[0]["platform"] == "button"
+
+
+def test_normalize_cached_descriptors_treats_special_with_named_command_as_writable() -> None:
+    descriptors = [
+        {
+            "symbol": "PARAM_999",
+            "devid": "MOD1",
+            "pool": None,
+            "chan": None,
+            "idx": None,
+            "mapping": {"command_rules": [{"command": "MODULE_RESTART", "value": "ONLINE"}]},
+            "writable": False,
+            "menu_kinds": ["special"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["writable"] is True
+    assert normalized[0]["platform"] == "button"
+
+
+def test_normalize_cached_descriptors_unresolved_command_symbol_is_button() -> None:
+    descriptors = [
+        {
+            "symbol": "COMMAND_MODULE_RESTART",
+            "devid": "MOD1",
+            "pool": None,
+            "chan": None,
+            "idx": None,
+            "mapping": {"command_rules": [{"command": "COMMAND_MODULE_RESTART"}]},
+            "writable": False,
+            "menu_kinds": ["special"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["writable"] is True
+    assert normalized[0]["platform"] == "button"
+
+
+def test_normalize_panel_path_drops_only_first_menu_level() -> None:
+    assert _normalize_panel_path("Menu palnika/Zawór 1") == "Menu palnika/Zawór 1"
+    assert _normalize_panel_path("General menu/Burner/Fan") == "General menu/Burner/Fan"
+    assert _normalize_panel_path("SingleLevel") == "SingleLevel"
+    assert _normalize_panel_path("Boiler") == "Boiler"
+    assert _normalize_panel_path("DHW") == "DHW"
+    assert _normalize_panel_path("Valve 1") == "Valve 1"
+
+
+def test_collect_symbol_kinds_from_route_reads_nested_parameter_token() -> None:
+    class _Param:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+    class _Entry:
+        def __init__(self, token: str) -> None:
+            self.parameter = _Param(token)
+
+    class _Params:
+        def __init__(self) -> None:
+            self.read = []
+            self.write = [_Entry("COMMAND_MODULE_RESTART")]
+            self.status = []
+            self.special = []
+
+    class _Route:
+        def __init__(self) -> None:
+            self.parameters = _Params()
+            self.meta = None
+
+    kinds = _collect_symbol_kinds_from_route(_Route())
+
+    assert "COMMAND_MODULE_RESTART" in kinds
+    assert "write" in kinds["COMMAND_MODULE_RESTART"]
+
+
+def test_collect_symbol_kinds_from_route_reads_nested_parameter_token_from_dict() -> None:
+    route = {
+        "parameters": {
+            "read": [],
+            "write": [{"parameter": {"token": "COMMAND_MODULE_RESTART"}}],
+            "status": [],
+            "special": [],
+        }
+    }
+
+    kinds = _collect_symbol_kinds_from_route(route)
+
+    assert "COMMAND_MODULE_RESTART" in kinds
+    assert "write" in kinds["COMMAND_MODULE_RESTART"]
+
+
+def test_collect_symbol_kinds_from_route_reads_parameter_string_token_from_dict() -> None:
+    route = {
+        "parameters": {
+            "read": [],
+            "write": [{"parameter": "COMMAND_MODULE_RESTART"}],
+            "status": [],
+            "special": [],
+        }
+    }
+
+    kinds = _collect_symbol_kinds_from_route(route)
+
+    assert "COMMAND_MODULE_RESTART" in kinds
+    assert "write" in kinds["COMMAND_MODULE_RESTART"]

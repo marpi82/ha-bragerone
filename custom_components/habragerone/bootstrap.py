@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
@@ -50,10 +51,59 @@ class EntityDescriptor(TypedDict, total=False):
     options: list[str]
     enum_map: dict[str, str | int | float | bool]
     raw_to_label: dict[str, str]
+    menu_kinds: list[str]
 
 
 _SWITCHISH_RULE_VALUES = {"0", "1", "true", "false", "on", "off", "enabled", "disabled", "yes", "no"}
 _NON_ENTITY_COMPONENT_MARKERS = ("password", "menu", "view", "separator", "title")
+_PARAM_KINDS = ("read", "write", "status", "special")
+_SYMBOL_TOKEN_RE = re.compile(r"^(?:COMMAND_|URUCHOMIENIE_|PARAM_|STATUS_)[A-Z0-9_]+$")
+
+
+def _get_field(obj: Any, key: str) -> Any:
+    if isinstance(obj, Mapping):
+        return obj.get(key)
+    return getattr(obj, key, None)
+
+
+def _extract_symbol_token(value: Any, *, _depth: int = 0) -> str | None:
+    if _depth > 3:
+        return None
+    if isinstance(value, str):
+        token = value.strip()
+        if _SYMBOL_TOKEN_RE.match(token):
+            return token
+        return None
+    if isinstance(value, Mapping):
+        direct = value.get("token")
+        if isinstance(direct, str):
+            token = direct.strip()
+            if _SYMBOL_TOKEN_RE.match(token):
+                return token
+        nested = value.get("parameter")
+        nested_token = _extract_symbol_token(nested, _depth=_depth + 1)
+        if nested_token:
+            return nested_token
+        for key in ("symbol", "name", "raw"):
+            nested_token = _extract_symbol_token(value.get(key), _depth=_depth + 1)
+            if nested_token:
+                return nested_token
+        return None
+
+    token_attr = getattr(value, "token", None)
+    if isinstance(token_attr, str):
+        token = token_attr.strip()
+        if _SYMBOL_TOKEN_RE.match(token):
+            return token
+    nested_attr = getattr(value, "parameter", None)
+    nested_token = _extract_symbol_token(nested_attr, _depth=_depth + 1)
+    if nested_token:
+        return nested_token
+    for attr in ("symbol", "name", "raw"):
+        nested_token = _extract_symbol_token(getattr(value, attr, None), _depth=_depth + 1)
+        if nested_token:
+            return nested_token
+    return None
 
 
 def _coerce_raw(value: Any) -> str | int | float | bool:
@@ -134,11 +184,12 @@ def _infer_platform(
     symbol: str,
     chan: Any,
     has_direct_address: bool,
+    unit: Any,
 ) -> str:
     symbol_norm = symbol.upper()
     component_type = str(mapping.get("component_type") if isinstance(mapping, dict) else "").lower()
 
-    if chan == "s" or symbol_norm.startswith("STATUS_") or "status" in component_type:
+    if (chan == "s" or symbol_norm.startswith("STATUS_") or "status" in component_type) and not writable:
         return "binary_sensor"
 
     if not writable:
@@ -146,6 +197,9 @@ def _infer_platform(
 
     values = mapping.get("values") if isinstance(mapping, dict) else None
     if isinstance(values, list) and values:
+        return "select"
+
+    if isinstance(unit, Mapping) and unit:
         return "select"
 
     if "button" in component_type or "action" in component_type:
@@ -160,10 +214,17 @@ def _infer_platform(
     if "switch" in component_type or "toggle" in component_type or _is_switch_like_command(mapping):
         return "switch"
 
+    if chan == "v":
+        return "number"
+
     return "switch"
 
 
-def _enum_maps(mapping: dict[str, Any] | None) -> tuple[dict[str, str | int | float | bool], dict[str, str]]:
+def _enum_maps(
+    mapping: dict[str, Any] | None,
+    *,
+    descriptor_unit: Any | None = None,
+) -> tuple[dict[str, str | int | float | bool], dict[str, str]]:
     if not isinstance(mapping, dict):
         return {}, {}
 
@@ -203,43 +264,96 @@ def _enum_maps(mapping: dict[str, Any] | None) -> tuple[dict[str, str | int | fl
                 continue
             enum_map[label] = raw_coerced
             raw_to_label[str(raw_coerced)] = label
+        return enum_map, raw_to_label
+
+    if isinstance(descriptor_unit, Mapping):
+        for raw, label_raw in descriptor_unit.items():
+            label = str(label_raw).strip()
+            raw_coerced = _coerce_raw(raw)
+            if not label:
+                continue
+            enum_map[label] = raw_coerced
+            raw_to_label[str(raw_coerced)] = label
     return enum_map, raw_to_label
 
 
-def _extract_options(mapping: dict[str, Any] | None) -> list[str]:
-    enum_map, _ = _enum_maps(mapping)
+def _extract_options(mapping: dict[str, Any] | None, *, descriptor_unit: Any | None = None) -> list[str]:
+    enum_map, _ = _enum_maps(mapping, descriptor_unit=descriptor_unit)
     return list(enum_map.keys())
 
 
 def _collect_symbols_from_route(route: Any) -> set[str]:
     symbols: set[str] = set()
 
+    def token_from_item(item: Any) -> str | None:
+        return _extract_symbol_token(item)
+
     def add_from_container(container: Any) -> None:
         if container is None:
             return
         for kind in ("read", "write", "status", "special"):
-            items = getattr(container, kind, None)
+            items = _get_field(container, kind)
             if not isinstance(items, list):
                 continue
             for item in items:
-                token = getattr(item, "token", None)
+                token = token_from_item(item)
                 if isinstance(token, str) and token:
                     symbols.add(token)
 
-    meta = getattr(route, "meta", None)
+    meta = _get_field(route, "meta")
     if meta is not None:
-        add_from_container(getattr(meta, "parameters", None))
-    add_from_container(getattr(route, "parameters", None))
+        add_from_container(_get_field(meta, "parameters"))
+    add_from_container(_get_field(route, "parameters"))
     return symbols
+
+
+def _collect_symbol_kinds_from_route(route: Any) -> dict[str, set[str]]:
+    symbol_kinds: dict[str, set[str]] = {}
+
+    def token_from_item(item: Any) -> str | None:
+        return _extract_symbol_token(item)
+
+    def add_from_container(container: Any) -> None:
+        if container is None:
+            return
+        for kind in _PARAM_KINDS:
+            items = _get_field(container, kind)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                token = token_from_item(item)
+                if isinstance(token, str) and token:
+                    symbol_kinds.setdefault(token, set()).add(kind)
+
+    meta = _get_field(route, "meta")
+    if meta is not None:
+        add_from_container(_get_field(meta, "parameters"))
+    add_from_container(_get_field(route, "parameters"))
+    return symbol_kinds
+
+
+def _collect_symbol_kinds_from_menu(menu: Any) -> dict[str, set[str]]:
+    symbol_kinds: dict[str, set[str]] = {}
+    stack = list(_get_field(menu, "routes") or [])[::-1]
+    while stack:
+        route = stack.pop()
+        route_kinds = _collect_symbol_kinds_from_route(route)
+        for symbol, kinds in route_kinds.items():
+            symbol_kinds.setdefault(symbol, set()).update(kinds)
+        children = _get_field(route, "children")
+        if isinstance(children, list):
+            for child in reversed(children):
+                stack.append(child)
+    return symbol_kinds
 
 
 def _collect_symbols_from_menu(menu: Any) -> set[str]:
     symbols: set[str] = set()
-    stack = list(getattr(menu, "routes", []) or [])[::-1]
+    stack = list(_get_field(menu, "routes") or [])[::-1]
     while stack:
         route = stack.pop()
         symbols.update(_collect_symbols_from_route(route))
-        children = getattr(route, "children", None)
+        children = _get_field(route, "children")
         if isinstance(children, list):
             for child in reversed(children):
                 stack.append(child)
@@ -253,6 +367,10 @@ def _normalize_filter_mode(value: str | None) -> str:
     return DEFAULT_ENTITY_FILTER_MODE
 
 
+def _normalize_panel_path(panel_path: str) -> str:
+    return panel_path.strip()
+
+
 def _has_display_value(*, value: Any, value_label: Any) -> bool:
     if isinstance(value_label, str) and value_label.strip():
         return True
@@ -261,6 +379,61 @@ def _has_display_value(*, value: Any, value_label: Any) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
     return True
+
+
+def _is_command_like_symbol(symbol: str) -> bool:
+    token = symbol.strip().upper()
+    if not token:
+        return False
+    if token.startswith(("COMMAND_", "URUCHOMIENIE_")):
+        return True
+    return "RESTART" in token and "MODULE" in token
+
+
+def _has_named_command_rule(mapping: dict[str, Any] | None) -> bool:
+    if not isinstance(mapping, dict):
+        return False
+    command_rules = mapping.get("command_rules")
+    if not isinstance(command_rules, list):
+        return False
+    for rule in command_rules:
+        if not isinstance(rule, dict):
+            continue
+        command = rule.get("command")
+        if isinstance(command, str) and command.strip():
+            return True
+    return False
+
+
+def _command_rule_names(mapping: dict[str, Any] | None) -> set[str]:
+    names: set[str] = set()
+    if not isinstance(mapping, dict):
+        return names
+    command_rules = mapping.get("command_rules")
+    if not isinstance(command_rules, list):
+        return names
+    for rule in command_rules:
+        if not isinstance(rule, dict):
+            continue
+        command = rule.get("command")
+        if not isinstance(command, str):
+            continue
+        cmd = command.strip()
+        if not cmd or cmd.lower() == "void 0":
+            continue
+        names.add(cmd.upper())
+    return names
+
+
+def _is_action_command_name(command: str) -> bool:
+    cmd = command.upper()
+    return any(marker in cmd for marker in ("RESTART", "START", "STOP", "MODULE", "RESET", "REBOOT"))
+
+
+def _is_menu_command_action(*, symbol: str, symbol_kinds: set[str], mapping: dict[str, Any] | None = None) -> bool:
+    if "write" in symbol_kinds:
+        return True
+    return "special" in symbol_kinds and (_is_command_like_symbol(symbol) or _has_named_command_rule(mapping))
 
 
 def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescriptor]:
@@ -277,12 +450,17 @@ def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescr
         chan = descriptor.get("chan")
         idx = descriptor.get("idx")
         mapping = descriptor.get("mapping") if isinstance(descriptor.get("mapping"), dict) else None
-        writable = bool(descriptor.get("writable")) or bool(mapping and mapping.get("command_rules"))
+        kinds_raw = descriptor.get("menu_kinds")
+        if isinstance(kinds_raw, list):
+            menu_kinds = {str(kind).strip().lower() for kind in kinds_raw if isinstance(kind, str)}
+        else:
+            menu_kinds = set()
+        writable = _is_menu_command_action(symbol=symbol, symbol_kinds=menu_kinds, mapping=mapping)
 
         if not _is_exposable_descriptor(writable=writable, pool=pool, chan=chan, idx=idx, mapping=mapping):
             continue
 
-        enum_map, raw_to_label = _enum_maps(mapping)
+        enum_map, raw_to_label = _enum_maps(mapping, descriptor_unit=descriptor.get("unit"))
         descriptor["writable"] = writable
         descriptor[CONF_OPTIONS] = list(enum_map.keys())
         descriptor[CONF_ENUM_MAP] = enum_map
@@ -295,6 +473,7 @@ def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescr
             symbol=symbol,
             chan=chan,
             has_direct_address=_has_direct_address(pool=pool, chan=chan, idx=idx),
+            unit=descriptor.get("unit"),
         )
         normalized.append(descriptor)
 
@@ -342,6 +521,7 @@ async def async_build_bootstrap_payload(
 
     per_module_candidate_symbols: dict[str, set[str]] = {}
     per_module_panel_paths: dict[str, dict[str, str]] = {}
+    per_module_symbol_kinds: dict[str, dict[str, set[str]]] = {}
     all_candidate_symbols: set[str] = set()
 
     for module in effective_modules:
@@ -353,19 +533,19 @@ async def async_build_bootstrap_payload(
             groups = await resolver.build_panel_groups(
                 device_menu=module.deviceMenu,
                 permissions=module_permissions,
-                all_panels=True,
+                all_panels=False,
             )
         except Exception:
             LOGGER.debug("Panel-group build failed for %s, retrying without permissions", module.devid, exc_info=True)
             groups = await resolver.build_panel_groups(
                 device_menu=module.deviceMenu,
                 permissions=None,
-                all_panels=True,
+                all_panels=False,
             )
 
         symbols = {symbol for panel_symbols in groups.values() for symbol in panel_symbols if symbol}
         for panel_name, panel_symbols in groups.items():
-            panel_title = str(panel_name).strip()
+            panel_title = _normalize_panel_path(str(panel_name))
             if not panel_title:
                 continue
             for symbol in panel_symbols:
@@ -374,6 +554,20 @@ async def async_build_bootstrap_payload(
 
         per_module_candidate_symbols[module.devid] = symbols
         per_module_panel_paths[module.devid] = panel_paths
+        per_module_symbol_kinds[module.devid] = {}
+        assets = getattr(resolver, "_assets", None)
+        if assets is not None and hasattr(assets, "get_module_menu"):
+            try:
+                menu = await assets.get_module_menu(device_menu=module.deviceMenu, permissions=module_permissions)
+                per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu)
+            except Exception:
+                LOGGER.debug("Menu kind extraction failed for %s", module.devid, exc_info=True)
+        if not per_module_symbol_kinds[module.devid] and assets is not None and hasattr(assets, "get_module_menu"):
+            try:
+                menu_all = await assets.get_module_menu(device_menu=module.deviceMenu, permissions=None)
+                per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu_all)
+            except Exception:
+                LOGGER.debug("Menu kind fallback extraction failed for %s", module.devid, exc_info=True)
         all_candidate_symbols.update(symbols)
 
     details = await resolver.describe_symbols(sorted(all_candidate_symbols))
@@ -399,9 +593,16 @@ async def async_build_bootstrap_payload(
             payload = details.get(symbol)
             if payload is None:
                 continue
+            symbol_kinds = per_module_symbol_kinds.get(module.devid, {}).get(symbol, set())
+            mapping_raw = payload.get("mapping")
+            mapping_dict = mapping_raw if isinstance(mapping_raw, dict) else None
+            is_menu_write = _is_menu_command_action(symbol=symbol, symbol_kinds=symbol_kinds, mapping=mapping_dict)
             try:
                 resolved = await resolver.resolve_value(symbol)
-                if not _has_display_value(value=resolved.value, value_label=resolved.value_label):
+                keep_without_value = is_menu_write and (
+                    _is_command_like_symbol(symbol) or _has_named_command_rule(mapping_dict)
+                )
+                if not keep_without_value and not _has_display_value(value=resolved.value, value_label=resolved.value_label):
                     continue
 
                 if module_mode == FILTER_MODE_UI:
@@ -417,6 +618,55 @@ async def async_build_bootstrap_payload(
                 visible = True
 
             if visible:
+                module_symbols.add(symbol)
+
+        # Secondary pass: include command-like/special actions that are outside panel groups.
+        extra_candidates = per_module_symbol_kinds.get(module.devid, {})
+        symbols_to_resolve: list[str] = [
+            symbol
+            for symbol, kinds in extra_candidates.items()
+            if symbol not in module_symbols and ("write" in kinds or "special" in kinds) and symbol not in details
+        ]
+        if symbols_to_resolve:
+            try:
+                extra_details = await resolver.describe_symbols(sorted(set(symbols_to_resolve)))
+                details.update(extra_details)
+            except Exception:
+                LOGGER.debug(
+                    "Extra descriptor batch resolution failed for %s (count=%s)",
+                    module.devid,
+                    len(symbols_to_resolve),
+                    exc_info=True,
+                )
+        for symbol, kinds in extra_candidates.items():
+            if symbol in module_symbols:
+                continue
+            if "write" not in kinds and "special" not in kinds:
+                continue
+            payload = details.get(symbol)
+            if payload is None:
+                if _is_command_like_symbol(symbol):
+                    # Keep unresolved command-like tokens as synthetic button actions.
+                    details[symbol] = {
+                        "label": symbol,
+                        "unit": None,
+                        "pool": None,
+                        "idx": None,
+                        "chan": None,
+                        "min": None,
+                        "max": None,
+                        "mapping": {
+                            "command_rules": [{"command": symbol}],
+                        },
+                    }
+                    payload = details[symbol]
+                else:
+                    continue
+            mapping = payload.get("mapping") if isinstance(payload.get("mapping"), dict) else None
+            if not _has_named_command_rule(mapping):
+                continue
+            commands = _command_rule_names(mapping)
+            if _is_command_like_symbol(symbol) or any(_is_action_command_name(cmd) for cmd in commands):
                 module_symbols.add(symbol)
 
         per_module_symbols[module.devid] = module_symbols
@@ -443,7 +693,8 @@ async def async_build_bootstrap_payload(
                 continue
 
             mapping = payload.get("mapping") if isinstance(payload.get("mapping"), dict) else None
-            writable = bool(mapping and mapping.get("command_rules"))
+            symbol_kinds = per_module_symbol_kinds.get(module.devid, {}).get(symbol, set())
+            writable = _is_menu_command_action(symbol=symbol, symbol_kinds=symbol_kinds, mapping=mapping)
             label = str(payload.get("label")) if isinstance(payload.get("label"), str) else symbol
 
             descriptor: EntityDescriptor = {
@@ -464,6 +715,7 @@ async def async_build_bootstrap_payload(
                 "max": payload.get("max"),
                 "mapping": mapping,
                 "writable": writable,
+                "menu_kinds": sorted(symbol_kinds),
             }
 
             if not _is_exposable_descriptor(
@@ -475,8 +727,8 @@ async def async_build_bootstrap_payload(
             ):
                 continue
 
-            enum_map, raw_to_label = _enum_maps(mapping)
-            descriptor[CONF_OPTIONS] = _extract_options(mapping)
+            enum_map, raw_to_label = _enum_maps(mapping, descriptor_unit=payload.get("unit"))
+            descriptor[CONF_OPTIONS] = _extract_options(mapping, descriptor_unit=payload.get("unit"))
             descriptor[CONF_ENUM_MAP] = enum_map
             descriptor[CONF_RAW_TO_LABEL] = raw_to_label
             descriptor[CONF_PLATFORM] = _infer_platform(
@@ -491,6 +743,7 @@ async def async_build_bootstrap_payload(
                     chan=payload.get("chan"),
                     idx=payload.get("idx"),
                 ),
+                unit=payload.get("unit"),
             )
             descriptors.append(descriptor)
 
