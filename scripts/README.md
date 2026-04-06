@@ -41,6 +41,19 @@ Main development workflow helper with various commands:
 ./scripts/dev.sh clean      # Clean artifacts
 ```
 
+### release.sh
+Release helper that creates and pushes version tags used by the GitHub release workflow.
+
+```bash
+# Stable release tag (v2025.1.0)
+./scripts/release.sh 2025.1.0
+
+# Pre-release tags (v2025.1.0a1 / v2025.1.0b1 / v2025.1.0rc1)
+./scripts/release.sh 2025.1.0 alpha
+./scripts/release.sh 2025.1.0 beta
+./scripts/release.sh 2025.1.0 rc
+```
+
 ## Quick Start
 
 1. **Initial setup**: `./scripts/setup.sh`

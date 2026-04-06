@@ -99,9 +99,9 @@ log_info "Preparing release $TAG ($RELEASE_TYPE)"
 
 # Show what will be published
 if [ "$RELEASE_TYPE" = "stable" ]; then
-    log_info "This will publish to PyPI (production)"
+    log_info "This will create a stable GitHub release"
 else
-    log_info "This will publish to TestPyPI (testing)"
+    log_info "This will create a GitHub pre-release"
 fi
 
 # Confirm with user
@@ -128,15 +128,6 @@ log_info "Release $TAG has been created and pushed!"
 log_info "GitHub Actions will now:"
 echo "  1. Build the package"
 echo "  2. Create GitHub release"
-echo "  3. Publish to $([ "$RELEASE_TYPE" = "stable" ] && echo "PyPI" || echo "TestPyPI")"
+echo "  3. Attach release artifacts"
 
 log_info "Check the progress at: https://github.com/marpi82/ha-bragerone/actions"
-
-# Show installation instructions
-echo
-log_info "Once published, you can install it with:"
-if [ "$RELEASE_TYPE" = "stable" ]; then
-    echo "  pip install ha-bragerone==$VERSION"
-else
-    echo "  pip install --index-url https://test.pypi.org/simple/ ha-bragerone==$TAG"
-fi

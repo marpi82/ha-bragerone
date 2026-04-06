@@ -1,4 +1,4 @@
-# Ha-BragerOne
+# ha-BragerOne
 
 Home Assistant custom integration for BragerOne web service.
 
@@ -45,7 +45,6 @@ This project uses:
 - uv for dependency management
 - pre-commit for code quality
 - Docker Compose for development environment
-- Trusted Publisher for PyPI publishing
 
 ### Setup Development Environment
 
@@ -72,7 +71,7 @@ uv run pytest --cov=custom_components.habragerone --cov-report=term-missing
 
 ### Publishing Releases
 
-The project automatically publishes to PyPI using GitHub Actions:
+The project publishes releases through GitHub Actions:
 
 ```bash
 # Create stable release
@@ -82,11 +81,9 @@ The project automatically publishes to PyPI using GitHub Actions:
 ./scripts/release.sh 2025.1.0 alpha  # or beta, rc
 ```
 
-Releases are automatically published to:
-- **PyPI** for stable releases (`v2025.1.0`)
-- **TestPyPI** for pre-releases (`v2025.1.0a1`, `v2025.1.0b1`, `v2025.1.0rc1`)
-
-See [PyPI Setup Guide](docs/PYPI_SETUP.md) for Trusted Publisher configuration.
+Releases are automatically built and published on GitHub:
+- **GitHub Releases** for stable tags (`v2025.1.0`)
+- **GitHub pre-releases** for pre-release tags (`v2025.1.0a1`, `v2025.1.0b1`, `v2025.1.0rc1`)
 
 ## License
 
