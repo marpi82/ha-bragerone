@@ -67,6 +67,8 @@ async def _safe_module_payloads(api: BragerOneApiClient, object_id: int) -> list
     try:
         modules = await api.get_modules(object_id)
         return [module.model_dump(mode="json") for module in modules]
+    except ApiError:
+        raise
     except Exception:
         LOGGER.warning(
             "Module model parsing failed for object_id=%s; using raw module payload fallback",
@@ -77,6 +79,10 @@ async def _safe_module_payloads(api: BragerOneApiClient, object_id: int) -> list
     req = getattr(api, "_req", None)
     api_base = getattr(api, "_api_base", None)
     if not callable(req) or not isinstance(api_base, str):
+        LOGGER.warning(
+            "Raw module payload fallback unavailable for object_id=%s (missing _req/_api_base)",
+            object_id,
+        )
         return []
     modules_endpoint = f"{api_base}/v1/modules?page=1&limit=999&group_id={object_id}"
     try:
@@ -85,6 +91,7 @@ async def _safe_module_payloads(api: BragerOneApiClient, object_id: int) -> list
         LOGGER.warning("Raw module payload fallback failed for object_id=%s", object_id, exc_info=True)
         return []
     if status != 200:
+        LOGGER.warning("Raw module payload fallback returned status=%s for object_id=%s", status, object_id)
         return []
     return _extract_modules_payload(data)
 

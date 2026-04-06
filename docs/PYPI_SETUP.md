@@ -3,6 +3,9 @@
 This project is released through GitHub tags and GitHub Actions.
 It is **not** published to PyPI/TestPyPI.
 
+> **Note:** This file keeps the legacy name `PYPI_SETUP.md`.
+> It documents GitHub release setup for this repository.
+
 ## Configuration Overview
 
 - **Stable releases** (tags without `a`, `b`, `rc`) -> GitHub Release
