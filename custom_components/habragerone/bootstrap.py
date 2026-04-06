@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import suppress
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
@@ -55,6 +56,7 @@ class EntityDescriptor(TypedDict, total=False):
 
 
 _SWITCHISH_RULE_VALUES = {"0", "1", "true", "false", "on", "off", "enabled", "disabled", "yes", "no"}
+_BINARY_UNITS_SOURCE_CODES = {9994, 9995, 9996}
 _NON_ENTITY_COMPONENT_MARKERS = ("password", "menu", "view", "separator", "title")
 _PARAM_KINDS = ("read", "write", "status", "special")
 _SYMBOL_TOKEN_RE = re.compile(r"^(?:COMMAND_|URUCHOMIENIE_|PARAM_|STATUS_)[A-Z0-9_]+$")
@@ -161,6 +163,73 @@ def _is_switch_like_command(mapping: dict[str, Any] | None) -> bool:
     return bool(raw_values and raw_values.issubset(_SWITCHISH_RULE_VALUES))
 
 
+def _is_binary_status_rule(mapping: dict[str, Any] | None) -> bool:
+    if not isinstance(mapping, dict):
+        return False
+    command_rules = mapping.get("command_rules")
+    if not isinstance(command_rules, list) or not command_rules:
+        return False
+    values: set[str] = set()
+    for candidate in command_rules:
+        if not isinstance(candidate, dict):
+            continue
+        value = candidate.get("value")
+        if not isinstance(value, str) or not value.strip():
+            continue
+        token = value.strip().lower()
+        if "." in token:
+            token = token.rsplit(".", 1)[-1]
+        values.add(token)
+    if not values:
+        return False
+    return values.issubset({"on", "off", "on_manual", "off_manual", "enabled", "disabled"})
+
+
+def _binary_key(value: Any) -> int | None:
+    raw = _coerce_raw(value)
+    if isinstance(raw, bool):
+        return 1 if raw else 0
+    if isinstance(raw, int):
+        if raw in (0, 1):
+            return raw
+        return None
+    if isinstance(raw, str):
+        norm = raw.strip().casefold()
+        if norm in {"0", "false", "off", "disabled", "no"}:
+            return 0
+        if norm in {"1", "true", "on", "enabled", "yes"}:
+            return 1
+    return None
+
+
+def _is_binary_status_unit(unit: Any) -> bool:
+    if not isinstance(unit, Mapping) or len(unit) != 2:
+        return False
+    keys: set[int] = set()
+    for raw_key in unit.keys():
+        parsed = _binary_key(raw_key)
+        if parsed is None:
+            return False
+        keys.add(parsed)
+    return keys == {0, 1}
+
+
+def _is_binary_units_source(mapping: dict[str, Any] | None) -> bool:
+    if not isinstance(mapping, dict):
+        return False
+    units_source = mapping.get("units_source")
+    code: int | None = None
+    if isinstance(units_source, int):
+        code = units_source
+    elif isinstance(units_source, str):
+        text = units_source.strip()
+        if text.startswith("wn."):
+            text = text[3:]
+        if text.isdigit():
+            code = int(text)
+    return code in _BINARY_UNITS_SOURCE_CODES
+
+
 def _is_exposable_descriptor(
     *,
     writable: bool,
@@ -189,7 +258,25 @@ def _infer_platform(
     symbol_norm = symbol.upper()
     component_type = str(mapping.get("component_type") if isinstance(mapping, dict) else "").lower()
 
+    if not writable and _is_binary_status_unit(unit):
+        return "binary_sensor"
+
     if (chan == "s" or symbol_norm.startswith("STATUS_") or "status" in component_type) and not writable:
+        if _is_binary_status_rule(mapping):
+            return "binary_sensor"
+        if _is_binary_units_source(mapping):
+            return "binary_sensor"
+        values = mapping.get("values") if isinstance(mapping, dict) else None
+        units_source = mapping.get("units_source") if isinstance(mapping, dict) else None
+        command_rules = mapping.get("command_rules") if isinstance(mapping, dict) else None
+        if isinstance(unit, Mapping) and unit:
+            return "sensor"
+        if isinstance(values, list) and values:
+            return "sensor"
+        if units_source not in (None, "", 0):
+            return "sensor"
+        if isinstance(command_rules, list) and command_rules:
+            return "sensor"
         return "binary_sensor"
 
     if not writable:
@@ -256,7 +343,7 @@ def _enum_maps(
                 raw_to_label[str(raw_coerced)] = label
         return enum_map, raw_to_label
 
-    if isinstance(values, list):
+    if isinstance(values, list) and values:
         for raw in values:
             raw_coerced = _coerce_raw(raw)
             label = str(raw).strip()
@@ -602,6 +689,12 @@ async def async_build_bootstrap_payload(
                 keep_without_value = is_menu_write and (
                     _is_command_like_symbol(symbol) or _has_named_command_rule(mapping_dict)
                 )
+                if not keep_without_value and "status" in symbol_kinds:
+                    keep_without_value = _has_direct_address(
+                        pool=payload.get("pool"),
+                        chan=payload.get("chan"),
+                        idx=payload.get("idx"),
+                    )
                 if not keep_without_value and not _has_display_value(value=resolved.value, value_label=resolved.value_label):
                     continue
 
@@ -696,6 +789,34 @@ async def async_build_bootstrap_payload(
             symbol_kinds = per_module_symbol_kinds.get(module.devid, {}).get(symbol, set())
             writable = _is_menu_command_action(symbol=symbol, symbol_kinds=symbol_kinds, mapping=mapping)
             label = str(payload.get("label")) if isinstance(payload.get("label"), str) else symbol
+            unit_value = payload.get("unit")
+            if unit_value is None and isinstance(mapping, dict):
+                unit_candidates: list[Any] = []
+                units_source = mapping.get("units_source")
+                if isinstance(units_source, (int, float, str)) and str(units_source).strip():
+                    unit_candidates.append(units_source)
+                    if isinstance(units_source, int):
+                        unit_candidates.append(str(units_source))
+                        unit_candidates.append(f"wn.{units_source}")
+                raw_mapping = mapping.get("raw")
+                if isinstance(raw_mapping, dict):
+                    raw_units = raw_mapping.get("units")
+                    if raw_units not in (None, "", 0):
+                        unit_candidates.append(raw_units)
+                    raw_unit = raw_mapping.get("unit")
+                    if raw_unit not in (None, "", 0):
+                        unit_candidates.append(raw_unit)
+                seen_candidates: set[str] = set()
+                for candidate in unit_candidates:
+                    key = str(candidate)
+                    if key in seen_candidates:
+                        continue
+                    seen_candidates.add(key)
+                    with suppress(Exception):
+                        resolved_unit = await resolver.resolve_unit(candidate)
+                        if resolved_unit is not None:
+                            unit_value = resolved_unit
+                            break
 
             descriptor: EntityDescriptor = {
                 "key": f"{module.devid}:{symbol}",
@@ -707,7 +828,7 @@ async def async_build_bootstrap_payload(
                 "device_menu": module.deviceMenu,
                 "panel_path": per_module_panel_paths.get(module.devid, {}).get(symbol, ""),
                 "label": label,
-                "unit": payload.get("unit"),
+                "unit": unit_value,
                 "pool": payload.get("pool"),
                 "idx": payload.get("idx"),
                 "chan": payload.get("chan"),
@@ -727,8 +848,8 @@ async def async_build_bootstrap_payload(
             ):
                 continue
 
-            enum_map, raw_to_label = _enum_maps(mapping, descriptor_unit=payload.get("unit"))
-            descriptor[CONF_OPTIONS] = _extract_options(mapping, descriptor_unit=payload.get("unit"))
+            enum_map, raw_to_label = _enum_maps(mapping, descriptor_unit=unit_value)
+            descriptor[CONF_OPTIONS] = _extract_options(mapping, descriptor_unit=unit_value)
             descriptor[CONF_ENUM_MAP] = enum_map
             descriptor[CONF_RAW_TO_LABEL] = raw_to_label
             descriptor[CONF_PLATFORM] = _infer_platform(
@@ -743,7 +864,7 @@ async def async_build_bootstrap_payload(
                     chan=payload.get("chan"),
                     idx=payload.get("idx"),
                 ),
-                unit=payload.get("unit"),
+                unit=unit_value,
             )
             descriptors.append(descriptor)
 

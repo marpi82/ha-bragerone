@@ -57,6 +57,139 @@ def test_normalize_cached_descriptors_classifies_status_channel_as_binary_sensor
     assert normalized[0]["platform"] == "binary_sensor"
 
 
+def test_normalize_cached_descriptors_classifies_status_with_enum_unit_as_sensor() -> None:
+    descriptors = [
+        {
+            "symbol": "STATUS_P5_0",
+            "devid": "MOD1",
+            "pool": "P5",
+            "chan": "s",
+            "idx": 0,
+            "mapping": {"units_source": 9998, "values": []},
+            "unit": {"0": "Postoj", "1": "Praca", "2": "Rozpalanie"},
+            "writable": False,
+            "menu_kinds": ["status"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["platform"] == "sensor"
+    assert normalized[0]["options"] == ["Postoj", "Praca", "Rozpalanie"]
+
+
+def test_normalize_cached_descriptors_classifies_on_off_status_rules_as_binary_sensor() -> None:
+    descriptors = [
+        {
+            "symbol": "STATUS_P5_19",
+            "devid": "MOD1",
+            "pool": "P5",
+            "chan": "s",
+            "idx": 19,
+            "mapping": {
+                "units_source": 9996,
+                "command_rules": [
+                    {"value": "wn.ON", "conditions": [{"operation": "xa.equalTo", "expected": 1}]},
+                    {"value": "wn.OFF", "conditions": [{"operation": "xa.equalTo", "expected": 0}]},
+                ],
+            },
+            "unit": None,
+            "writable": False,
+            "menu_kinds": ["status"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["platform"] == "binary_sensor"
+
+
+def test_normalize_cached_descriptors_classifies_binary_status_unit_as_binary_sensor() -> None:
+    descriptors = [
+        {
+            "symbol": "STATUS_P5_22",
+            "devid": "MOD1",
+            "pool": "P5",
+            "chan": "s",
+            "idx": 22,
+            "mapping": {"units_source": 9994, "command_rules": []},
+            "unit": {"0": "Wyłączone", "1": "Włączone"},
+            "writable": False,
+            "menu_kinds": ["status"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["platform"] == "binary_sensor"
+
+
+def test_normalize_cached_descriptors_classifies_binary_status_unit_independent_of_labels() -> None:
+    descriptors = [
+        {
+            "symbol": "STATUS_P5_77",
+            "devid": "MOD1",
+            "pool": "P5",
+            "chan": "s",
+            "idx": 77,
+            "mapping": {"units_source": 12345, "command_rules": []},
+            "unit": {"0": "BeliebigAus", "1": "BeliebigEin"},
+            "writable": False,
+            "menu_kinds": ["status"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["platform"] == "binary_sensor"
+
+
+def test_normalize_cached_descriptors_classifies_binary_read_unit_as_binary_sensor() -> None:
+    descriptors = [
+        {
+            "symbol": "PARAM_61",
+            "devid": "MOD1",
+            "pool": "P5",
+            "chan": "v",
+            "idx": 61,
+            "mapping": {},
+            "unit": {"0": "Wyłączony", "1": "Załączony"},
+            "writable": False,
+            "menu_kinds": ["read"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["platform"] == "binary_sensor"
+
+
+def test_normalize_cached_descriptors_classifies_status_with_binary_units_source_as_binary_sensor() -> None:
+    descriptors = [
+        {
+            "symbol": "STATUS_P5_22",
+            "devid": "MOD1",
+            "pool": "P5",
+            "chan": "s",
+            "idx": 22,
+            "mapping": {"units_source": 9994},
+            "unit": "wn.9994",
+            "writable": False,
+            "menu_kinds": ["status"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["platform"] == "binary_sensor"
+
+
 def test_normalize_cached_descriptors_keeps_writable_status_symbol_as_non_binary() -> None:
     descriptors = [
         {
@@ -306,10 +439,10 @@ def test_collect_symbol_kinds_from_route_reads_nested_parameter_token() -> None:
 
     class _Params:
         def __init__(self) -> None:
-            self.read = []
+            self.read: list[object] = []
             self.write = [_Entry("COMMAND_MODULE_RESTART")]
-            self.status = []
-            self.special = []
+            self.status: list[object] = []
+            self.special: list[object] = []
 
     class _Route:
         def __init__(self) -> None:

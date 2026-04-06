@@ -22,6 +22,7 @@ from .entity_common import (
     record_platform_entity_stats,
 )
 from .runtime import BragerRuntime
+from .status_rules import resolve_rule_bool
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -88,7 +89,12 @@ class BragerStatusBinarySensor(BinarySensorEntity):
             return
 
         self._attr_available = True
-        self._attr_is_on = _to_bool(raw_value)
+        rule_value = resolve_rule_bool(
+            descriptor=self._descriptor,
+            flat_values=self._runtime.store.flatten(),
+            default_actual=raw_value,
+        )
+        self._attr_is_on = rule_value if rule_value is not None else _to_bool(raw_value)
 
     def _on_runtime_update(self, _update: ParamUpdate) -> None:
         update_key = f"{_update.pool}.{_update.chan}{_update.idx}"

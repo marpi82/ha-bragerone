@@ -14,6 +14,7 @@ from homeassistant.exceptions import HomeAssistantError
 from pybragerone import BragerOneApiClient, BragerOneGateway
 from pybragerone.models.events import ParamUpdate
 from pybragerone.models.param import ParamStore
+from pybragerone.models.param_resolver import ParamResolver
 
 from .command_write import WriteContext, WriteValidationError, prepare_write
 
@@ -29,11 +30,14 @@ class BragerRuntime:
     gateway: BragerOneGateway
     store: ParamStore
     modules_meta: dict[str, dict[str, Any]]
+    language: str | None = None
 
     _tasks: list[asyncio.Task[Any]] = field(default_factory=list)
     _listeners: set[UpdateCallback] = field(default_factory=set)
     _start_monotonic: float | None = None
     _first_update_logged: bool = False
+    _status_resolver: ParamResolver | None = None
+    _resolver_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def start(self) -> None:
         """Start gateway, state store ingestion and update dispatcher."""
@@ -66,6 +70,7 @@ class BragerRuntime:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         self._tasks.clear()
+        self._status_resolver = None
         await self.gateway.stop()
         await self.api.close()
 
@@ -180,6 +185,37 @@ class BragerRuntime:
         )
         if not ok:
             raise HomeAssistantError(f"Command write failed for '{symbol}' via raw command route")
+
+    async def async_resolve_status_label(self, symbol: str) -> Any | None:
+        """Resolve STATUS_* value exactly as parser/UI logic does."""
+        if not symbol.startswith("STATUS_"):
+            return None
+        resolver = await self._async_get_status_resolver()
+        if resolver is None:
+            return None
+        try:
+            resolved = await resolver.resolve_value(symbol)
+        except Exception:
+            return None
+        if isinstance(resolved.value_label, str) and resolved.value_label.strip():
+            return resolved.value_label.strip()
+        return resolved.value
+
+    async def _async_get_status_resolver(self) -> ParamResolver | None:
+        if self._status_resolver is not None:
+            return self._status_resolver
+        async with self._resolver_lock:
+            if self._status_resolver is not None:
+                return self._status_resolver
+            try:
+                self._status_resolver = ParamResolver.from_api(
+                    api=self.api,
+                    store=self.store,
+                    lang=self.language,
+                )
+            except Exception:
+                return None
+            return self._status_resolver
 
     async def _dispatch_updates(self) -> None:
         async for update in self.gateway.bus.subscribe():
@@ -339,7 +375,7 @@ def _read_target_actual(
 def _compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
     op = operation.strip()
     if op == "equalTo":
-        return actual == expected
+        return bool(actual == expected)
     if op == "notEqualTo":
-        return actual != expected
+        return bool(actual != expected)
     return False
