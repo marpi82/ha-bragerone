@@ -190,18 +190,40 @@ class BragerRuntime:
         """Resolve STATUS_* value exactly as parser/UI logic does."""
         if not symbol.startswith("STATUS_"):
             return None
-        resolver = await self._async_get_status_resolver()
-        if resolver is None:
-            return None
-        try:
-            resolved = await resolver.resolve_value(symbol)
-        except Exception:
+        resolved = await self._async_resolve_symbol(symbol)
+        if resolved is None:
             return None
         if isinstance(resolved.value_label, str) and resolved.value_label.strip():
             return resolved.value_label.strip()
         return resolved.value
 
-    async def _async_get_status_resolver(self) -> ParamResolver | None:
+    async def async_resolve_symbol_value(self, symbol: str) -> Any | None:
+        """Resolve symbol value using parser rules and dynamic unit transforms."""
+        resolved = await self._async_resolve_symbol(symbol)
+        if resolved is None:
+            return None
+        if isinstance(resolved.value_label, str) and resolved.value_label.strip():
+            return resolved.value_label.strip()
+        return resolved.value
+
+    async def async_resolve_symbol_with_unit(self, symbol: str) -> tuple[Any | None, Any | None]:
+        """Resolve symbol value and unit using parser rules."""
+        resolved = await self._async_resolve_symbol(symbol)
+        if resolved is None:
+            return None, None
+        value: Any = resolved.value_label if isinstance(resolved.value_label, str) and resolved.value_label.strip() else resolved.value
+        return value, resolved.unit
+
+    async def _async_resolve_symbol(self, symbol: str) -> Any | None:
+        resolver = await self._async_get_resolver()
+        if resolver is None:
+            return None
+        try:
+            return await resolver.resolve_value(symbol)
+        except Exception:
+            return None
+
+    async def _async_get_resolver(self) -> ParamResolver | None:
         if self._status_resolver is not None:
             return self._status_resolver
         async with self._resolver_lock:

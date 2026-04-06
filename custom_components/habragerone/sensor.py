@@ -69,6 +69,15 @@ class BragerSymbolSensor(SensorEntity):
         self._attr_native_unit_of_measurement = self._normalize_unit(descriptor.get("unit"))
         self._attr_available = True
         self._raw_to_label = descriptor_raw_to_label(descriptor)
+        mapping = descriptor.get("mapping")
+        mapping_dict = mapping if isinstance(mapping, dict) else {}
+        channels = mapping_dict.get("channels")
+        self._requires_resolver_value = (
+            self._attr_native_unit_of_measurement is None
+            and isinstance(channels, dict)
+            and isinstance(channels.get("unit"), list)
+            and len(channels.get("unit") or []) > 0
+        )
         self._refresh_keys = descriptor_refresh_keys(descriptor)
 
         self._unsubscribe_listener: Any = None
@@ -97,6 +106,14 @@ class BragerSymbolSensor(SensorEntity):
             return
 
         self._attr_available = True
+        if self._requires_resolver_value:
+            resolved_value, resolved_unit = await self._runtime.async_resolve_symbol_with_unit(self._symbol)
+            normalized_dynamic_unit = self._normalize_unit(resolved_unit)
+            if normalized_dynamic_unit:
+                self._attr_native_unit_of_measurement = normalized_dynamic_unit
+            if resolved_value is not None:
+                self._attr_native_value = _normalize_text_state(resolved_value)
+                return
         mapped_by_unit = self._raw_to_label.get(str(raw_value))
         if mapped_by_unit is not None:
             self._attr_native_value = _normalize_text_state(mapped_by_unit)
