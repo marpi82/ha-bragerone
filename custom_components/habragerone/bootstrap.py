@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from .const import (
+    CONF_BOOTSTRAP_DEBUG,
     CONF_ENTITY_DESCRIPTORS,
     CONF_ENTITY_FILTER_MODE,
     CONF_ENUM_MAP,
@@ -434,6 +435,36 @@ def _collect_symbol_kinds_from_menu(menu: Any) -> dict[str, set[str]]:
     return symbol_kinds
 
 
+def _collect_symbol_route_meta_from_menu(menu: Any) -> dict[str, list[dict[str, Any]]]:
+    symbol_routes: dict[str, list[dict[str, Any]]] = {}
+    stack = list(_get_field(menu, "routes") or [])[::-1]
+    while stack:
+        route = stack.pop()
+        symbols = _collect_symbols_from_route(route)
+        route_meta = _get_field(route, "meta")
+        route_name = _get_field(route, "name")
+        route_path = _get_field(route, "path")
+        route_display = _get_field(route_meta, "displayName") if route_meta is not None else None
+        route_visible = _get_field(route_meta, "isVisibleOnSideMenu") if route_meta is not None else None
+        route_dropdown = _get_field(route_meta, "displayDropdown") if route_meta is not None else None
+        route_component = _get_field(route, "component")
+        payload = {
+            "name": route_name,
+            "path": route_path,
+            "display_name": route_display,
+            "is_visible_on_side_menu": route_visible,
+            "display_dropdown": route_dropdown,
+            "component": str(route_component) if route_component is not None else None,
+        }
+        for symbol in symbols:
+            symbol_routes.setdefault(symbol, []).append(payload)
+        children = _get_field(route, "children")
+        if isinstance(children, list):
+            for child in reversed(children):
+                stack.append(child)
+    return symbol_routes
+
+
 def _collect_symbols_from_menu(menu: Any) -> set[str]:
     symbols: set[str] = set()
     stack = list(_get_field(menu, "routes") or [])[::-1]
@@ -466,6 +497,39 @@ def _has_display_value(*, value: Any, value_label: Any) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
     return True
+
+
+def _has_runtime_raw_value(
+    *,
+    payload: Mapping[str, Any],
+    mapping: Mapping[str, Any] | None,
+    flat_values: Mapping[str, Any],
+) -> bool:
+    pool = payload.get("pool")
+    chan = payload.get("chan")
+    idx = payload.get("idx")
+    if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
+        direct_key = f"{pool}.{chan}{idx}"
+        if flat_values.get(direct_key) is not None:
+            return True
+    if not isinstance(mapping, Mapping):
+        return False
+    inputs = mapping.get("inputs")
+    if not isinstance(inputs, list):
+        return False
+    for candidate in inputs:
+        if not isinstance(candidate, Mapping):
+            continue
+        address = candidate.get("address")
+        if not isinstance(address, str) or not address.strip():
+            continue
+        if flat_values.get(address.strip()) is not None:
+            return True
+    return False
+
+
+def _is_boiler_panel(panel_path: str) -> bool:
+    return _normalize_panel_path(panel_path) == "Kocioł"
 
 
 def _is_command_like_symbol(symbol: str) -> bool:
@@ -574,6 +638,7 @@ class BootstrapPayload(TypedDict):
     modules_meta: dict[str, dict[str, Any]]
     entity_filter_mode: str
     module_filter_modes: dict[str, str]
+    bootstrap_debug: dict[str, Any]
 
 
 async def async_build_bootstrap_payload(
@@ -609,7 +674,10 @@ async def async_build_bootstrap_payload(
     per_module_candidate_symbols: dict[str, set[str]] = {}
     per_module_panel_paths: dict[str, dict[str, str]] = {}
     per_module_symbol_kinds: dict[str, dict[str, set[str]]] = {}
+    per_module_symbol_routes: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    per_module_route_diagnostics: dict[str, list[dict[str, Any]]] = {}
     all_candidate_symbols: set[str] = set()
+    bootstrap_debug: dict[str, Any] = {"modules": {}, "limits": {"max_rejections_per_module": 500}}
 
     for module in effective_modules:
         module_permissions = [str(perm) for perm in getattr(module, "permissions", []) or []]
@@ -620,14 +688,14 @@ async def async_build_bootstrap_payload(
             groups = await resolver.build_panel_groups(
                 device_menu=module.deviceMenu,
                 permissions=module_permissions,
-                all_panels=False,
+                all_panels=True,
             )
         except Exception:
             LOGGER.debug("Panel-group build failed for %s, retrying without permissions", module.devid, exc_info=True)
             groups = await resolver.build_panel_groups(
                 device_menu=module.deviceMenu,
                 permissions=None,
-                all_panels=False,
+                all_panels=True,
             )
 
         symbols = {symbol for panel_symbols in groups.values() for symbol in panel_symbols if symbol}
@@ -642,17 +710,31 @@ async def async_build_bootstrap_payload(
         per_module_candidate_symbols[module.devid] = symbols
         per_module_panel_paths[module.devid] = panel_paths
         per_module_symbol_kinds[module.devid] = {}
+        per_module_symbol_routes[module.devid] = {}
+        per_module_route_diagnostics[module.devid] = []
         assets = getattr(resolver, "_assets", None)
         if assets is not None and hasattr(assets, "get_module_menu"):
             try:
                 menu = await assets.get_module_menu(device_menu=module.deviceMenu, permissions=module_permissions)
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu)
+                per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu)
+                per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
+                    menu,
+                    all_panels=True,
+                    routes_i18n=await resolver._i18n.get_namespace("routes"),
+                )
             except Exception:
                 LOGGER.debug("Menu kind extraction failed for %s", module.devid, exc_info=True)
         if not per_module_symbol_kinds[module.devid] and assets is not None and hasattr(assets, "get_module_menu"):
             try:
                 menu_all = await assets.get_module_menu(device_menu=module.deviceMenu, permissions=None)
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu_all)
+                per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu_all)
+                per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
+                    menu_all,
+                    all_panels=True,
+                    routes_i18n=await resolver._i18n.get_namespace("routes"),
+                )
             except Exception:
                 LOGGER.debug("Menu kind fallback extraction failed for %s", module.devid, exc_info=True)
         all_candidate_symbols.update(symbols)
@@ -665,6 +747,34 @@ async def async_build_bootstrap_payload(
         module_symbols: set[str] = set()
         devid_text = str(module.devid)
         module_mode = normalized_module_modes.get(devid_text, filter_mode)
+        module_rejections: list[dict[str, Any]] = []
+        module_accepts: list[dict[str, Any]] = []
+        boiler_accepts: list[dict[str, Any]] = []
+        module_candidates = per_module_candidate_symbols.get(module.devid, set())
+        kinds_map = per_module_symbol_kinds.get(module.devid, {})
+        routes_map = per_module_symbol_routes.get(module.devid, {})
+        kinds_symbols = set(kinds_map.keys())
+        not_in_candidates = sorted(kinds_symbols - module_candidates)
+        bootstrap_debug["modules"][module.devid] = {
+            "candidate_count": len(module_candidates),
+            "candidate_symbols_sample": sorted(module_candidates)[:200],
+            "menu_symbol_kinds_count": len(kinds_symbols),
+            "menu_symbols_not_in_candidates_count": len(not_in_candidates),
+            "menu_symbols_not_in_candidates_sample": not_in_candidates[:200],
+            "menu_symbol_routes_sample": {
+                symbol: routes_map.get(symbol, [])[:5] for symbol in not_in_candidates[:50]
+            },
+            "accepted_count": 0,
+            "rejection_count": 0,
+            "rejections": module_rejections,
+            "accepted_debug": module_accepts,
+            "boiler_panel_debug": boiler_accepts,
+            "route_diagnostics_summary": {
+                "accepted": sum(1 for row in per_module_route_diagnostics.get(module.devid, []) if bool(row.get("accepted"))),
+                "rejected": sum(1 for row in per_module_route_diagnostics.get(module.devid, []) if not bool(row.get("accepted"))),
+            },
+            "route_diagnostics_sample": per_module_route_diagnostics.get(module.devid, [])[:300],
+        }
         resolver.set_runtime_context(
             {
                 "devid": devid_text,
@@ -676,30 +786,45 @@ async def async_build_bootstrap_payload(
             }
         )
 
-        for symbol in per_module_candidate_symbols.get(module.devid, set()):
+        for symbol in module_candidates:
             payload = details.get(symbol)
             if payload is None:
+                if len(module_rejections) < 500:
+                    module_rejections.append({"symbol": symbol, "reason": "missing_descriptor"})
                 continue
             symbol_kinds = per_module_symbol_kinds.get(module.devid, {}).get(symbol, set())
             mapping_raw = payload.get("mapping")
             mapping_dict = mapping_raw if isinstance(mapping_raw, dict) else None
             is_menu_write = _is_menu_command_action(symbol=symbol, symbol_kinds=symbol_kinds, mapping=mapping_dict)
+            panel_path = per_module_panel_paths.get(module.devid, {}).get(symbol, "")
+            resolved_value: Any = None
+            resolved_value_label: Any = None
+            keep_without_value = False
+            has_runtime_raw = False
+            visible_diag: Any = None
             try:
                 resolved = await resolver.resolve_value(symbol)
+                resolved_value = resolved.value
+                resolved_value_label = resolved.value_label
                 keep_without_value = is_menu_write and (
                     _is_command_like_symbol(symbol) or _has_named_command_rule(mapping_dict)
                 )
-                if not keep_without_value and "status" in symbol_kinds:
-                    keep_without_value = _has_direct_address(
-                        pool=payload.get("pool"),
-                        chan=payload.get("chan"),
-                        idx=payload.get("idx"),
-                    )
                 if not keep_without_value and not _has_display_value(value=resolved.value, value_label=resolved.value_label):
+                    if len(module_rejections) < 500:
+                        module_rejections.append(
+                            {
+                                "symbol": symbol,
+                                "reason": "no_display_value",
+                                "value": resolved_value,
+                                "value_label": resolved_value_label,
+                                "menu_kinds": sorted(symbol_kinds),
+                            }
+                        )
                     continue
+                has_runtime_raw = _has_runtime_raw_value(payload=payload, mapping=mapping_dict, flat_values=flat_values)
 
                 if module_mode == FILTER_MODE_UI:
-                    visible, _ = resolver.parameter_visibility_diagnostics(
+                    visible, visible_diag = resolver.parameter_visibility_diagnostics(
                         desc=payload,
                         resolved=resolved,
                         flat_values=flat_values,
@@ -712,57 +837,105 @@ async def async_build_bootstrap_payload(
 
             if visible:
                 module_symbols.add(symbol)
+                if len(module_accepts) < 500:
+                    module_accepts.append(
+                        {
+                            "symbol": symbol,
+                            "panel_path": panel_path,
+                            "menu_kinds": sorted(symbol_kinds),
+                            "keep_without_value": keep_without_value,
+                            "has_runtime_raw": has_runtime_raw,
+                            "value": resolved_value,
+                            "value_label": resolved_value_label,
+                            "ui_visible_diag": visible_diag,
+                        }
+                    )
+                if _is_boiler_panel(panel_path) and len(boiler_accepts) < 200:
+                    boiler_accepts.append(
+                        {
+                            "symbol": symbol,
+                            "menu_kinds": sorted(symbol_kinds),
+                            "keep_without_value": keep_without_value,
+                            "has_runtime_raw": has_runtime_raw,
+                            "value": resolved_value,
+                            "value_label": resolved_value_label,
+                            "ui_visible_diag": visible_diag,
+                        }
+                    )
+            else:
+                if len(module_rejections) < 500:
+                    module_rejections.append(
+                        {
+                            "symbol": symbol,
+                            "reason": "ui_visibility_false",
+                            "menu_kinds": sorted(symbol_kinds),
+                            "value": resolved_value,
+                            "value_label": resolved_value_label,
+                            "ui_visible_diag": visible_diag,
+                        }
+                    )
 
         # Secondary pass: include command-like/special actions that are outside panel groups.
-        extra_candidates = per_module_symbol_kinds.get(module.devid, {})
-        symbols_to_resolve: list[str] = [
-            symbol
-            for symbol, kinds in extra_candidates.items()
-            if symbol not in module_symbols and ("write" in kinds or "special" in kinds) and symbol not in details
-        ]
-        if symbols_to_resolve:
-            try:
-                extra_details = await resolver.describe_symbols(sorted(set(symbols_to_resolve)))
-                details.update(extra_details)
-            except Exception:
-                LOGGER.debug(
-                    "Extra descriptor batch resolution failed for %s (count=%s)",
-                    module.devid,
-                    len(symbols_to_resolve),
-                    exc_info=True,
-                )
-        for symbol, kinds in extra_candidates.items():
-            if symbol in module_symbols:
-                continue
-            if "write" not in kinds and "special" not in kinds:
-                continue
-            payload = details.get(symbol)
-            if payload is None:
-                if _is_command_like_symbol(symbol):
-                    # Keep unresolved command-like tokens as synthetic button actions.
-                    details[symbol] = {
-                        "label": symbol,
-                        "unit": None,
-                        "pool": None,
-                        "idx": None,
-                        "chan": None,
-                        "min": None,
-                        "max": None,
-                        "mapping": {
-                            "command_rules": [{"command": symbol}],
-                        },
-                    }
-                    payload = details[symbol]
-                else:
+        # In UI mode keep parity with CLI and expose only panel-derived symbols.
+        if module_mode != FILTER_MODE_UI:
+            extra_candidates = per_module_symbol_kinds.get(module.devid, {})
+            symbols_to_resolve: list[str] = [
+                symbol
+                for symbol, kinds in extra_candidates.items()
+                if symbol not in module_symbols and ("write" in kinds or "special" in kinds) and symbol not in details
+            ]
+            if symbols_to_resolve:
+                try:
+                    extra_details = await resolver.describe_symbols(sorted(set(symbols_to_resolve)))
+                    details.update(extra_details)
+                except Exception:
+                    LOGGER.debug(
+                        "Extra descriptor batch resolution failed for %s (count=%s)",
+                        module.devid,
+                        len(symbols_to_resolve),
+                        exc_info=True,
+                    )
+            for symbol, kinds in extra_candidates.items():
+                if symbol in module_symbols:
                     continue
-            mapping = payload.get("mapping") if isinstance(payload.get("mapping"), dict) else None
-            if not _has_named_command_rule(mapping):
-                continue
-            commands = _command_rule_names(mapping)
-            if _is_command_like_symbol(symbol) or any(_is_action_command_name(cmd) for cmd in commands):
-                module_symbols.add(symbol)
+                if "write" not in kinds and "special" not in kinds:
+                    continue
+                payload = details.get(symbol)
+                if payload is None:
+                    if _is_command_like_symbol(symbol):
+                        # Keep unresolved command-like tokens as synthetic button actions.
+                        details[symbol] = {
+                            "label": symbol,
+                            "unit": None,
+                            "pool": None,
+                            "idx": None,
+                            "chan": None,
+                            "min": None,
+                            "max": None,
+                            "mapping": {
+                                "command_rules": [{"command": symbol}],
+                            },
+                        }
+                        payload = details[symbol]
+                    else:
+                        continue
+                mapping = payload.get("mapping") if isinstance(payload.get("mapping"), dict) else None
+                if not _has_named_command_rule(mapping):
+                    continue
+                commands = _command_rule_names(mapping)
+                if _is_command_like_symbol(symbol) or any(_is_action_command_name(cmd) for cmd in commands):
+                    module_symbols.add(symbol)
 
         per_module_symbols[module.devid] = module_symbols
+        module_debug = bootstrap_debug["modules"].get(module.devid)
+        if isinstance(module_debug, dict):
+            module_debug["accepted_count"] = len(module_symbols)
+            module_debug["rejection_count"] = len(module_rejections)
+            accepted_symbols_sample = sorted(module_symbols)[:200]
+            module_debug["accepted_symbols_sample"] = accepted_symbols_sample
+            module_debug["accepted_symbol_routes_sample"] = {
+                symbol: routes_map.get(symbol, [])[:5] for symbol in accepted_symbols_sample
+            }
 
     resolver.set_runtime_context(None)
 
@@ -770,6 +943,7 @@ async def async_build_bootstrap_payload(
     modules_meta: dict[str, dict[str, Any]] = {}
 
     for module in effective_modules:
+        module_mode = normalized_module_modes.get(str(module.devid), filter_mode)
         modules_meta[module.devid] = {
             "name": module.name,
             "title": module.moduleTitle,
@@ -789,6 +963,7 @@ async def async_build_bootstrap_payload(
             symbol_kinds = per_module_symbol_kinds.get(module.devid, {}).get(symbol, set())
             writable = _is_menu_command_action(symbol=symbol, symbol_kinds=symbol_kinds, mapping=mapping)
             label = str(payload.get("label")) if isinstance(payload.get("label"), str) else symbol
+            panel_path = per_module_panel_paths.get(module.devid, {}).get(symbol, "")
             unit_value = payload.get("unit")
             if unit_value is None and isinstance(mapping, dict):
                 unit_candidates: list[Any] = []
@@ -826,7 +1001,7 @@ async def async_build_bootstrap_payload(
                 "module_title": module.moduleTitle,
                 "module_version": module.moduleVersion,
                 "device_menu": module.deviceMenu,
-                "panel_path": per_module_panel_paths.get(module.devid, {}).get(symbol, ""),
+                "panel_path": panel_path,
                 "label": label,
                 "unit": unit_value,
                 "pool": payload.get("pool"),
@@ -875,4 +1050,5 @@ async def async_build_bootstrap_payload(
         CONF_MODULE_FILTER_MODES: {
             str(module.devid): normalized_module_modes.get(str(module.devid), filter_mode) for module in effective_modules
         },
+        CONF_BOOTSTRAP_DEBUG: bootstrap_debug,
     }
