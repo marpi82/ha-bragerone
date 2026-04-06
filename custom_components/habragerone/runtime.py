@@ -226,8 +226,6 @@ class BragerRuntime:
         if self._status_resolver is not None:
             return self._status_resolver
         async with self._resolver_lock:
-            if self._status_resolver is not None:
-                return self._status_resolver
             try:
                 self._status_resolver = ParamResolver.from_api(
                     api=self.api,

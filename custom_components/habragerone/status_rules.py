@@ -108,9 +108,9 @@ def compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
     if "." in op:
         op = op.rsplit(".", 1)[-1]
     if op == "equalTo":
-        return actual == expected
+        return bool(actual == expected)
     if op == "notEqualTo":
-        return actual != expected
+        return bool(actual != expected)
     return False
 
 
