@@ -1090,7 +1090,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "homeassistant", specifier = ">=2025.5.1" },
-    { name = "py-bragerone", editable = "../py-bragerone" },
+    { name = "py-bragerone" },
 ]
 
 [package.metadata.requires-dev]
@@ -2261,7 +2261,8 @@ wheels = [
 
 [[package]]
 name = "py-bragerone"
-source = { editable = "../py-bragerone" }
+version = "2026.4.2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
@@ -2270,48 +2271,9 @@ dependencies = [
     { name = "tree-sitter-javascript" },
     { name = "typing-extensions" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiofiles", marker = "extra == 'cli'", specifier = ">=24.1" },
-    { name = "httpx", specifier = ">=0.25.0,<1.0.0" },
-    { name = "keyring", marker = "extra == 'keyring'", specifier = ">=25.0.0" },
-    { name = "pydantic", specifier = ">=2.10.4,<3.0.0" },
-    { name = "python-socketio", extras = ["asyncio-client"], specifier = ">=5.14.0,<6.0.0" },
-    { name = "rich", marker = "extra == 'cli'", specifier = ">=12.6.0" },
-    { name = "tree-sitter", specifier = ">=0.21.3" },
-    { name = "tree-sitter-javascript", specifier = ">=0.21.1" },
-    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.16.0" },
-    { name = "typing-extensions", specifier = ">=4.15.0,<5.0.0" },
-]
-provides-extras = ["cli", "keyring"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "bandit", specifier = ">=1.8.4,<2.0.0" },
-    { name = "hatch", specifier = ">=1.12.0,<2.0.0" },
-    { name = "keyring", specifier = ">=25.0.0,<26.0.0" },
-    { name = "mypy", extras = ["dmypy"], specifier = ">=1.18.1,<2.0.0" },
-    { name = "pip-audit", specifier = ">=2.4.0,<3.0.0" },
-    { name = "poethepoet", specifier = ">=0.43.0,<0.44.0" },
-    { name = "pre-commit", specifier = ">=4.3.0,<5.0.0" },
-    { name = "python-dotenv", specifier = ">=1.1.1,<2.0.0" },
-    { name = "ruff", specifier = ">=0.15.0,<0.16.0" },
-    { name = "semgrep", specifier = ">=1.89" },
-]
-docs = [
-    { name = "furo", specifier = ">=2025.9.25,<2026.0.0" },
-    { name = "myst-parser", specifier = ">=4.0.0,<6.0.0" },
-    { name = "sphinx", specifier = ">=8.0.2,<10.0.0" },
-    { name = "sphinx-autodoc-typehints", specifier = ">=3.2.0,<4.0.0" },
-    { name = "sphinx-copybutton", specifier = ">=0.5.2,<0.6.0" },
-]
-test = [
-    { name = "packaging", specifier = ">=24.1,<27.0.0" },
-    { name = "pytest", specifier = ">=8.3.3,<10.0.0" },
-    { name = "pytest-asyncio", specifier = ">=1.2.0,<2.0.0" },
-    { name = "pytest-cov", specifier = ">=7.0.0,<8.0.0" },
-    { name = "pytest-httpx", specifier = ">=0.35.0,<0.37.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/85/de/74ba5ae0fc959d6388cd9ff6aba752acd9b45170bd187a89e3e985f7d3c5/py_bragerone-2026.4.2.tar.gz", hash = "sha256:c4255bf6331feed697eb020936693d9add2a48d36f207184f8626bd20aa33873", size = 91024, upload-time = "2026-04-06T18:54:22.485Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/22/98/06dac929b219ecfc1a1493e25a0abbc9f5abc661c2151f250e32a3592d60/py_bragerone-2026.4.2-py3-none-any.whl", hash = "sha256:3ae8e23a7368a04d95000d9066ead4d1fd227384ca5237725078ef8055265936", size = 97105, upload-time = "2026-04-06T18:54:21.108Z" },
 ]
 
 [[package]]
