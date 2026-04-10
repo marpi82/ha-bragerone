@@ -102,7 +102,7 @@ jobs:
       - name: Fetch release drafter notes
         if: ${{ steps.meta.outputs.tag != '' }}
         id: drafter
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           RELEASE_TAG: ${{ steps.meta.outputs.tag }}
         with:
