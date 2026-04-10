@@ -80,7 +80,7 @@ class BragerSymbolNumber(NumberEntity):
     async def async_added_to_hass(self) -> None:
         """Attach runtime listener when entity is added."""
         self._unsubscribe_listener = self._runtime.add_listener(self._on_runtime_update)
-        await self.async_update()
+        self.async_schedule_update_ha_state(True)
 
     async def async_will_remove_from_hass(self) -> None:
         """Detach runtime listener before entity removal."""
