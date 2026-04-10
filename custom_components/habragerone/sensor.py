@@ -85,7 +85,7 @@ class BragerSymbolSensor(SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Subscribe to push updates when entity is added to HA."""
         self._unsubscribe_listener = self._runtime.add_listener(self._on_runtime_update)
-        await self.async_update()
+        self.async_schedule_update_ha_state(True)
 
     async def async_will_remove_from_hass(self) -> None:
         """Detach runtime listener when entity is removed from HA."""
