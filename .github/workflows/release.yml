@@ -117,7 +117,7 @@ jobs:
 
       - name: Create Release
         if: ${{ steps.meta.outputs.tag != '' }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.drafter.outputs.name }}
