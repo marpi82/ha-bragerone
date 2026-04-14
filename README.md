@@ -37,23 +37,13 @@ The integration can be configured through the Home Assistant UI. You will need:
 - Authentication credentials
 - Device selection
 
-## License
-
-MIT License - see LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
-
 ## Support
 
 For issues and questions:
 
 - GitHub Issues: https://github.com/marpi82/ha-bragerone/issues
 - Home Assistant Community: https://community.home-assistant.io/
+
+## License
+
+MIT License - see [LICENSE](https://github.com/marpi82/ha-bragerone/blob/main/README.md) file for details.
