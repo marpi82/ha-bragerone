@@ -50,4 +50,4 @@ For issues and questions:
 
 ## License
 
-MIT License - see [LICENSE](README.md) file for details.
+MIT License - see [LICENSE](LICENSE) file for details.
