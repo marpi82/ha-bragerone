@@ -1,4 +1,4 @@
-# ha-BragerOne
+# BragerOne
 
 Home Assistant custom integration for BragerOne web service.
 
@@ -37,67 +37,9 @@ The integration can be configured through the Home Assistant UI. You will need:
 - Authentication credentials
 - Device selection
 
-## Development
+## Contributions are welcome!
 
-This project uses:
-
-- Python 3.13+
-- uv for dependency management
-- pre-commit for code quality
-- Docker Compose for development environment
-
-### Setup Development Environment
-
-```bash
-# Install dependencies
-uv sync --group dev --group test
-
-# Install pre-commit hooks  
-uv run pre-commit install
-
-# Start development environment
-docker-compose up -d
-```
-
-### Running Tests
-
-```bash
-# Run tests
-uv run pytest
-
-# Run with coverage
-uv run pytest --cov=custom_components.habragerone --cov-report=term-missing
-```
-
-### Publishing Releases
-
-The project publishes releases through GitHub Actions:
-
-```bash
-# Create stable release
-./scripts/release.sh 2025.1.0
-
-# Create pre-release
-./scripts/release.sh 2025.1.0 alpha  # or beta, rc
-```
-
-Releases are automatically built and published on GitHub:
-- **GitHub Releases** for stable tags (`v2025.1.0`)
-- **GitHub pre-releases** for pre-release tags (`v2025.1.0a1`, `v2025.1.0b1`, `v2025.1.0rc1`)
-
-## License
-
-MIT License - see LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
+If you want to contribute to this, please read the [Contributing guidelines](CONTRIBUTING.md) and [Development guidelines](DEVELOPMENT.md).
 
 ## Support
 
@@ -105,3 +47,7 @@ For issues and questions:
 
 - GitHub Issues: https://github.com/marpi82/ha-bragerone/issues
 - Home Assistant Community: https://community.home-assistant.io/
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
