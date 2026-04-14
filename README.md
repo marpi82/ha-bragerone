@@ -1,4 +1,4 @@
-# ha-BragerOne
+# BragerOne
 
 Home Assistant custom integration for BragerOne web service.
 
