@@ -39,7 +39,7 @@ The integration can be configured through the Home Assistant UI. You will need:
 
 ## Contributions are welcome!
 
-If you want to contribute to this please read the [Contribution guidelines](CONTRIBUTING.md) and [Development guidelines](DEVELOPMENT.md)
+If you want to contribute to this, please read the [Contributing guidelines](CONTRIBUTING.md) and [Development guidelines](DEVELOPMENT.md).
 
 ## Support
 
