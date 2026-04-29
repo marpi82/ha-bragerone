@@ -57,7 +57,7 @@ jobs:
         with:
           python-version: "3.14"
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           version: "latest"
           enable-cache: true
@@ -97,7 +97,7 @@ jobs:
         with:
           python-version: "3.14"
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           version: "latest"
           enable-cache: true
@@ -187,7 +187,7 @@ jobs:
         with:
           python-version: "3.14"
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           version: "latest"
           enable-cache: true
@@ -233,7 +233,7 @@ jobs:
         with:
           python-version: "3.14"
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           version: "latest"
           enable-cache: true
