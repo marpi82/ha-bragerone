@@ -826,14 +826,14 @@ wheels = [
 
 [[package]]
 name = "dbus-fast"
-version = "4.2.3"
+version = "4.2.5"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/5f/1e/d58eb69e8ffd17382494879a880545806f4c92cc4a57abf15ca318b3a375/dbus_fast-4.2.3.tar.gz", hash = "sha256:9facd1a8316835a64bb4869aaf99c1dd31f4557e57c6438bc99ac0fe248930ea", size = 77579, upload-time = "2026-05-16T00:06:34.2Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a1/5d/a89902238414c008c47cff6543d5dcd045460441193363873fa50d67fccb/dbus_fast-4.2.5.tar.gz", hash = "sha256:6929ec0860bed8778340143360af871f7df8d4456e669ce354f72b11e5232042", size = 77997, upload-time = "2026-05-16T02:38:09.772Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3a/2b/de7fd3b2b8ed1bd0f8611a6cb364e6af80f8595f9847fbe580232d739bea/dbus_fast-4.2.3-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:25a69389f7722cfbad3a55f11e7141e2877580aa1d2b1a0792ecb0e82e06b0aa", size = 794523, upload-time = "2026-05-16T00:16:58.748Z" },
-    { url = "https://files.pythonhosted.org/packages/3e/95/f7e6cc78001fd727e2e1eb340f40e9023dddef65d3d0ca72286d7f46d210/dbus_fast-4.2.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1fe522c4381d3d504dbca394790ada657f3df1bfa7041bba47939fed315af05c", size = 843494, upload-time = "2026-05-16T00:17:00.317Z" },
-    { url = "https://files.pythonhosted.org/packages/81/fd/8633ca2db701efb8e9d27a6f2c62dae89e8cc6b5340db4e06c5032c1ef65/dbus_fast-4.2.3-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:6594def964542e7aee1acadaf6c251505ab8d8f99e17fdf20c74caffb96f141f", size = 800940, upload-time = "2026-05-16T00:17:02.174Z" },
-    { url = "https://files.pythonhosted.org/packages/8e/62/7ab6bfc610cd2eeee239beddbf2a7452843f2fa837a161adbd5fc3693e19/dbus_fast-4.2.3-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:94d1a594f95dd77cfdafc567ab1fac0b3efdbccd7d684ad23e2ea59637c9beb1", size = 851990, upload-time = "2026-05-16T00:17:03.644Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/fa/5e76a6f785ab58e13e127417780d54025f83c0ca72d3d3aa961fe6763c31/dbus_fast-4.2.5-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:7adcac2f1b9c112311c3191a476f45ee3894b9936192a259852911cb48a6534b", size = 794913, upload-time = "2026-05-16T02:46:54.674Z" },
+    { url = "https://files.pythonhosted.org/packages/69/21/75d8551a22dd6a60a09bbb568d48b1cdf96d1903e7b877f2cb07c63491c8/dbus_fast-4.2.5-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:940268cb6a0ce39674600e530db7d00570ae701ff290f8859694466782216376", size = 843889, upload-time = "2026-05-16T02:46:56.56Z" },
+    { url = "https://files.pythonhosted.org/packages/83/a2/666872cd517f9e4b93723b46ab43053c541c6c8b1d9ce128afaeb7601e32/dbus_fast-4.2.5-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:d54c9e4f12aad4316d5bb74f9b8289d8dc18b6c26fef7ab5cce725e17349a10f", size = 801335, upload-time = "2026-05-16T02:46:58.52Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/a5/3a0b4a32ac1433704a34c1b3b206d8a98163b6010430072887fe9b4fe456/dbus_fast-4.2.5-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:e229b424aebedc2bd9bc84f564205ee3a5fe0300ab1cd291e715744b18c60185", size = 852382, upload-time = "2026-05-16T02:47:00.481Z" },
 ]
 
 [[package]]
