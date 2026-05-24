@@ -500,7 +500,7 @@ wheels = [
 
 [[package]]
 name = "bluetooth-auto-recovery"
-version = "1.5.3"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bluetooth-adapters" },
@@ -508,9 +508,9 @@ dependencies = [
     { name = "pyric" },
     { name = "usb-devices" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ab/8b/1d6f338ced9b47965382c8f1325bf3d22be65e6f838b4e465227c52d333c/bluetooth_auto_recovery-1.5.3.tar.gz", hash = "sha256:0b36aa6be84474fff81c1ce328f016a6553272ac47050b1fa60f03e36a8db46d", size = 12798, upload-time = "2025-09-13T17:17:09.273Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/49/f4/27c3594c30a677d41030e99abf74f77a556d2d1cb0520350743c34d12c84/bluetooth_auto_recovery-1.6.0.tar.gz", hash = "sha256:6ecb4afbe698686f3cf4da6ec66815a45c636dbe156d35be6e74302b09f52378", size = 12802, upload-time = "2026-05-24T02:51:46.42Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/ab/518f14a3c3e43c34c638485cd29bfa80bd35da5a151a434f7ac3c86e1e83/bluetooth_auto_recovery-1.5.3-py3-none-any.whl", hash = "sha256:5d66b859a54ef20fdf1bd3cf6762f153e86651babe716836770da9d9c47b01c4", size = 11750, upload-time = "2025-09-13T17:17:07.681Z" },
+    { url = "https://files.pythonhosted.org/packages/56/27/f65868078b124013f14b4e9e74d424367e50b05f79ed9dfe1e21bb4c4fce/bluetooth_auto_recovery-1.6.0-py3-none-any.whl", hash = "sha256:c0c8ade43125447ea3f8704d6c40e36326f9795422808b352f3e7218f4359cd5", size = 11773, upload-time = "2026-05-24T02:51:44.95Z" },
 ]
 
 [[package]]
