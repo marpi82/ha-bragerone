@@ -16,10 +16,10 @@ jobs:
     name: secrets (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -38,12 +38,12 @@ jobs:
     name: quality (lint + typecheck)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Checkout py-bragerone
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: marpi82/py-bragerone
           ref: main
@@ -78,12 +78,12 @@ jobs:
     name: security (bandit + semgrep + pip-audit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Checkout py-bragerone
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: marpi82/py-bragerone
           ref: main
@@ -135,14 +135,14 @@ jobs:
     name: hassfest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: home-assistant/actions/hassfest@master
 
   validate-ha:
     name: validate-ha
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Validate manifest.json
         run: |
@@ -168,12 +168,12 @@ jobs:
     name: tests (3.13)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Checkout py-bragerone
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: marpi82/py-bragerone
           ref: main
@@ -200,7 +200,7 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           file: ./coverage.xml
           flags: unittests
@@ -214,12 +214,12 @@ jobs:
     needs: [secrets, dependency-review, quality, security, hassfest, validate-ha, tests]
     if: always() && needs.quality.result == 'success' && needs.hassfest.result == 'success' && needs.validate-ha.result == 'success' && needs.tests.result == 'success' && needs.secrets.result == 'success'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Checkout py-bragerone
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: marpi82/py-bragerone
           ref: main
