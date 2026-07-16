@@ -30,7 +30,8 @@
         "project.dependencies"
       ],
       "groupName": "python runtime deps",
-      "groupSlug": "python-runtime-deps"
+      "groupSlug": "python-runtime-deps",
+      "minimumReleaseAge": "7 days"
     },
     {
       "matchManagers": [
@@ -41,7 +42,8 @@
         "build-system.requires"
       ],
       "groupName": "python dev/tooling deps",
-      "groupSlug": "python-dev-tooling-deps"
+      "groupSlug": "python-dev-tooling-deps",
+      "minimumReleaseAge": "7 days"
     },
     {
       "matchManagers": [
@@ -70,7 +72,8 @@
         "minor",
         "patch"
       ],
-      "automerge": true
+      "automerge": true,
+      "minimumReleaseAge": "7 days"
     },
     {
       "matchManagers": [
@@ -89,7 +92,8 @@
       "matchPackageNames": [
         "homeassistant"
       ],
-      "enabled": false
+      "enabled": false,
+      "minimumReleaseAge": false
     },
     {
       "matchManagers": [
@@ -98,7 +102,8 @@
       "matchDepTypes": [
         "requires-python"
       ],
-      "enabled": false
+      "enabled": false,
+      "minimumReleaseAge": false
     },
     {
       "matchManagers": [
@@ -107,7 +112,8 @@
       "matchPackageNames": [
         "python"
       ],
-      "enabled": false
+      "enabled": false,
+      "minimumReleaseAge": false
     },
     {
       "matchManagers": [
@@ -120,7 +126,8 @@
       "labels": [
         "dependencies",
         "homeassistant"
-      ]
+      ],
+      "minimumReleaseAge": "7 days"
     },
     {
       "matchManagers": [
@@ -130,7 +137,8 @@
       "matchPackageNames": [
         "python"
       ],
-      "allowedVersions": "/^3\\.13([.-].*)?$/"
+      "allowedVersions": "/^3\\.13([.-].*)?$/",
+      "minimumReleaseAge": "7 days"
     }
   ],
   "labels": [
