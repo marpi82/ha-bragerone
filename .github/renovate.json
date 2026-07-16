@@ -7,6 +7,7 @@
   "dependencyDashboard": true,
   "prConcurrentLimit": 4,
   "prHourlyLimit": 2,
+  "minimumReleaseAge": "7 days",
   "enabledManagers": [
     "pep621",
     "github-actions",
