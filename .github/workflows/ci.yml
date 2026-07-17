@@ -177,7 +177,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.13"
+          python-version: "3.13.2"
 
       - name: Export manifest requirements
         run: |
@@ -213,7 +213,7 @@ jobs:
             --platform musllinux_1_2_${{ matrix.arch }} \
             --platform musllinux_1_1_${{ matrix.arch }} \
             --implementation cp \
-            --python-version 3.13
+            --python-version 3.13.2
 
   tests:
     name: tests (3.13)
