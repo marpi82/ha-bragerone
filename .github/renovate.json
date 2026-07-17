@@ -92,8 +92,7 @@
       "matchPackageNames": [
         "homeassistant"
       ],
-      "enabled": false,
-      "minimumReleaseAge": false
+      "enabled": false
     },
     {
       "matchManagers": [
@@ -102,8 +101,7 @@
       "matchDepTypes": [
         "requires-python"
       ],
-      "enabled": false,
-      "minimumReleaseAge": false
+      "enabled": false
     },
     {
       "matchManagers": [
@@ -112,8 +110,7 @@
       "matchPackageNames": [
         "python"
       ],
-      "enabled": false,
-      "minimumReleaseAge": false
+      "enabled": false
     },
     {
       "matchManagers": [
