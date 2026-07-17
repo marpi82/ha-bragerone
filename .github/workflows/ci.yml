@@ -213,7 +213,7 @@ jobs:
             --platform musllinux_1_2_${{ matrix.arch }} \
             --platform musllinux_1_1_${{ matrix.arch }} \
             --implementation cp \
-            --python-version 3.13.2
+            --python-version 3.13
 
   tests:
     name: tests (3.13)
