@@ -205,6 +205,7 @@ jobs:
       - name: Validate binary wheels
         run: |
           python -m pip install --upgrade pip
+          # Include musllinux 1.2 and 1.1 tags to cover wheels built against both musl baselines.
           python -m pip download \
             --dest "${RUNNER_TEMP}/wheels-${{ matrix.arch }}" \
             --requirement "${RUNNER_TEMP}/manifest-requirements.txt" \
