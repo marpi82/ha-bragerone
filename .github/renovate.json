@@ -93,7 +93,7 @@
         "homeassistant"
       ],
       "enabled": false,
-      "minimumReleaseAge": false
+      "minimumReleaseAge": "7 days"
     },
     {
       "matchManagers": [
@@ -103,7 +103,7 @@
         "requires-python"
       ],
       "enabled": false,
-      "minimumReleaseAge": false
+      "minimumReleaseAge": "7 days"
     },
     {
       "matchManagers": [
@@ -113,7 +113,7 @@
         "python"
       ],
       "enabled": false,
-      "minimumReleaseAge": false
+      "minimumReleaseAge": "7 days"
     },
     {
       "matchManagers": [
