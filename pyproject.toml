@@ -84,7 +84,7 @@ test = [
 target-version = "py313"
 line-length = 130
 indent-width = 4
-exclude = ["py-bragerone/"]
+extend-exclude = ["py-bragerone/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "D", "UP", "RUF", "SIM", "B"]
