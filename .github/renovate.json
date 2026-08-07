@@ -7,7 +7,7 @@
   "dependencyDashboard": true,
   "prConcurrentLimit": 4,
   "prHourlyLimit": 2,
-  "minimumReleaseAge": "7 days",
+  "minimumReleaseAge": "1 days",
   "enabledManagers": [
     "pep621",
     "github-actions",
@@ -31,7 +31,7 @@
       ],
       "groupName": "python runtime deps",
       "groupSlug": "python-runtime-deps",
-      "minimumReleaseAge": "7 days"
+      "minimumReleaseAge": "1 days"
     },
     {
       "matchManagers": [
@@ -43,7 +43,7 @@
       ],
       "groupName": "python dev/tooling deps",
       "groupSlug": "python-dev-tooling-deps",
-      "minimumReleaseAge": "7 days"
+      "minimumReleaseAge": "1 days"
     },
     {
       "matchManagers": [
@@ -73,7 +73,7 @@
         "patch"
       ],
       "automerge": true,
-      "minimumReleaseAge": "7 days"
+      "minimumReleaseAge": "1 days"
     },
     {
       "matchManagers": [
@@ -93,7 +93,7 @@
         "homeassistant"
       ],
       "enabled": false,
-      "minimumReleaseAge": "7 days"
+      "minimumReleaseAge": "1 days"
     },
     {
       "matchManagers": [
@@ -103,7 +103,7 @@
         "requires-python"
       ],
       "enabled": false,
-      "minimumReleaseAge": "7 days"
+      "minimumReleaseAge": "1 days"
     },
     {
       "matchManagers": [
@@ -113,7 +113,7 @@
         "python"
       ],
       "enabled": false,
-      "minimumReleaseAge": "7 days"
+      "minimumReleaseAge": "1 days"
     },
     {
       "matchManagers": [
@@ -127,7 +127,7 @@
         "dependencies",
         "homeassistant"
       ],
-      "minimumReleaseAge": "7 days"
+      "minimumReleaseAge": "1 days"
     },
     {
       "matchManagers": [
@@ -138,7 +138,7 @@
         "python"
       ],
       "allowedVersions": "/^3\\.13([.-].*)?$/",
-      "minimumReleaseAge": "7 days"
+      "minimumReleaseAge": "1 days"
     }
   ],
   "labels": [
