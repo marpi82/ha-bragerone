@@ -6,7 +6,9 @@
     "@marpi82"
   ],
   "config_flow": true,
-  "dependencies": ["diagnostics"],
+  "dependencies": [
+    "diagnostics"
+  ],
   "documentation": "https://github.com/marpi82/ha-bragerone",
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/marpi82/ha-bragerone/issues",
@@ -14,8 +16,8 @@
     "custom_components.habragerone"
   ],
   "requirements": [
-    "py-bragerone==2026.4.5",
+    "py-bragerone==2026.8.1",
     "tree-sitter==0.26.0"
   ],
-  "version": "2026.4.5"
+  "version": "2026.8.1"
 }

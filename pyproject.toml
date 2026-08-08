@@ -21,7 +21,7 @@ keywords = [
 ]
 dependencies = [
     "homeassistant>=2026.8.1",
-    "py-bragerone",
+    "py-bragerone>=2026.8.1",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -173,4 +173,3 @@ hass-restart = { shell = "pkill -f homeassistant || true && python -m homeassist
 docker-up = { cmd = "docker-compose up -d" }
 docker-down = { cmd = "docker-compose down" }
 docker-logs = { cmd = "docker-compose logs -f homeassistant" }
-
