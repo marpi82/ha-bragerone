@@ -2,7 +2,7 @@
 
 This project uses:
 
-- Python 3.13+
+- Python 3.14.2+
 - uv for dependency management
 - pre-commit for code quality
 - Docker Compose for development environment

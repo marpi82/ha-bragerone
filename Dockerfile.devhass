@@ -1,5 +1,5 @@
 # All-in-one development environment with Home Assistant
-FROM python:3.13-slim-trixie
+FROM python:3.14-slim-trixie
 
 # Install system dependencies for both development and Home Assistant
 RUN apt-get update && apt-get install -y --no-install-recommends \

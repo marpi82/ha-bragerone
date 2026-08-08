@@ -4,7 +4,7 @@ This devcontainer provides a fully configured development environment for ha-bra
 
 ## Features
 
-- **Base image**: `python:3.13-slim-trixie`
+- **Base image**: `python:3.14-slim-trixie`
 - **Dependency management**: uv with py-bragerone as editable dependency
 - **Home Assistant**: Pre-configured development instance
 - **Build system**: Hatch with hatch-vcs (CalVer from git tags)
