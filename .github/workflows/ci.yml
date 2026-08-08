@@ -213,10 +213,10 @@ jobs:
             --platform musllinux_1_2_${{ matrix.arch }} \
             --platform musllinux_1_1_${{ matrix.arch }} \
             --implementation cp \
-            --python-version 3.13.2
+            --python-version 3.14.2
 
   tests:
-    name: tests (3.13)
+    name: tests (3.14)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
