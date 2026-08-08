@@ -92,8 +92,11 @@
       "matchPackageNames": [
         "homeassistant"
       ],
-      "enabled": false,
-      "minimumReleaseAge": "7 days"
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "homeassistant"
+      ]
     },
     {
       "matchManagers": [
