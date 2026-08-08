@@ -50,7 +50,8 @@
         "github-actions"
       ],
       "groupName": "github actions",
-      "groupSlug": "github-actions"
+      "groupSlug": "github-actions",
+      "minimumReleaseAge": "7 days"
     },
     {
       "matchManagers": [
@@ -58,7 +59,8 @@
         "docker-compose"
       ],
       "groupName": "docker images",
-      "groupSlug": "docker-images"
+      "groupSlug": "docker-images",
+      "minimumReleaseAge": "7 days"
     },
     {
       "matchManagers": [
@@ -83,7 +85,8 @@
         "minor",
         "patch"
       ],
-      "automerge": true
+      "automerge": true,
+      "minimumReleaseAge": "7 days"
     },
     {
       "matchManagers": [
@@ -92,7 +95,11 @@
       "matchPackageNames": [
         "homeassistant"
       ],
-      "enabled": false,
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "homeassistant"
+      ],
       "minimumReleaseAge": "7 days"
     },
     {
@@ -137,7 +144,7 @@
       "matchPackageNames": [
         "python"
       ],
-      "allowedVersions": "/^3\\.13([.-].*)?$/",
+      "allowedVersions": "/^3\\.14([.-].*)?$/",
       "minimumReleaseAge": "7 days"
     }
   ],

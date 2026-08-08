@@ -10,7 +10,7 @@ authors = [{ name = "MarPi82", email = "marpi82.dev@google.com" }]
 maintainers = [{ name = "MarPi82", email = "marpi82.dev@google.com" }]
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.13.2,<3.14"
+requires-python = ">=3.14.2,<3.15"
 keywords = [
   "home",
   "automation",
@@ -20,12 +20,12 @@ keywords = [
   "custom-component",
 ]
 dependencies = [
-    "homeassistant>=2025.5.1",
+    "homeassistant>=2026.8.1",
     "py-bragerone",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
-  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3 :: Only",
   "Operating System :: OS Independent",
   "Intended Audience :: Developers",
@@ -56,6 +56,15 @@ include = ["custom_components/habragerone/py.typed"]
 [tool.hatch.build.targets.sdist]
 include = ["custom_components/habragerone", "README.md"]
 
+
+# Home Assistant pins cryptography==48.0.1 (high-severity PKCS#7 advisory).
+# mcp/click arrive via semgrep and lag patched releases. Override until upstreams bump.
+[tool.uv]
+override-dependencies = [
+  "cryptography>=50.0.0",
+  "mcp>=1.28.1,<2",
+  "click>=8.3.3",
+]
 
 [dependency-groups]
 dev = [
@@ -105,7 +114,7 @@ line-ending = "lf"
 
 # ---------------- mypy (strict) ----------------
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 files = ["custom_components/habragerone"]
 strict = true
 namespace_packages = true
