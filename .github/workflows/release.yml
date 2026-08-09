@@ -139,7 +139,7 @@ jobs:
 
             ## Requirements
             - Python >= 3.14.2
-            - Home Assistant > 2025.5.0
+            - Home Assistant >= 2026.8.1
           draft: false
           prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
           files: |

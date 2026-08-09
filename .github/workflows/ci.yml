@@ -321,9 +321,14 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
+          # Only dependency-review may legitimately skip (push events); any other
+          # non-success fails the gate so a misconfigured `if:` can't slip through.
           echo "$NEEDS" | jq -e '
             to_entries
-            | map(select(.value.result != "success" and .value.result != "skipped"))
+            | map(select(
+                if .key == "dependency-review"
+                then (.value.result != "success" and .value.result != "skipped")
+                else .value.result != "success" end))
             | if length == 0 then true
               else error("Failed jobs: " + (map(.key) | join(", "))) end' > /dev/null
           echo "All required jobs passed."
