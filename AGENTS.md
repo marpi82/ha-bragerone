@@ -21,7 +21,7 @@ uv run poe cov                   # coverage report (the 70% threshold is enforce
 uv run poe validate              # fmt + lint + typecheck + security + test
 ```
 
-CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2025.5.1` / `latest` / `dev`.
+CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2026.8.1` / `latest` / `dev`.
 
 ## Architecture in one paragraph
 
@@ -50,6 +50,6 @@ New config/options/errors strings go into `strings.json` and English `translatio
 
 ## Version consistency checklist (watch in reviews)
 
-- `hacs.json` homeassistant minimum vs the `homeassistant` dependency in `pyproject.toml` (known drift: `hacs.json` says 2025.5.1 vs code 2026.8.1). Note: `manifest.json` has no HA version field.
+- `hacs.json` homeassistant minimum vs the `homeassistant` dependency in `pyproject.toml` (must match; `manifest.json` has no HA version field).
 - `manifest.json` `py-bragerone==X` pin vs `pyproject.toml` `py-bragerone>=X`.
 - ruff `target-version` vs actual runtime Python.
