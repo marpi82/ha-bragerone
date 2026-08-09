@@ -5,7 +5,7 @@ HACS custom integration (`custom_components/habragerone`) connecting BragerOne h
 ## Project shape
 
 - **Platforms**: `sensor`, `binary_sensor`, `switch`, `number`, `select`, `button` (no `climate`).
-- **Python**: `>=3.14.2,<3.15`; **HA**: `homeassistant>=2026.8.1`; iot_class `cloud_push`.
+- **Python**: `>=3.14.2,<3.15`; **HA**: `homeassistant>=2026.3.0`; iot_class `cloud_push`.
 - **Dependencies**: **uv** (`uv.lock` committed). Runtime deps pinned exactly in `manifest.json`.
 - **Build/versioning**: hatchling + hatch-vcs, CalVer from git tags.
 
@@ -21,7 +21,7 @@ uv run poe cov                   # coverage report (the 70% threshold is enforce
 uv run poe validate              # fmt + lint + typecheck + security + test
 ```
 
-CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2026.8.1` / `latest` / `dev`. Each workflow ends in an aggregate **gate job** (`CI`, `HA Integration Tests`, `HACS Validation`) that fails if any required job fails; the `protect-main` ruleset requires only these gates, so renaming jobs or matrix legs never requires ruleset changes — keep the gate job names stable.
+CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2026.3.0` (declared minimum — bump together with `hacs.json`/`pyproject.toml`) / `latest` / `dev`. Each workflow ends in an aggregate **gate job** (`CI`, `HA Integration Tests`, `HACS Validation`) that fails if any required job fails; the `protect-main` ruleset requires only these gates, so renaming jobs or matrix legs never requires ruleset changes — keep the gate job names stable.
 
 ## Architecture in one paragraph
 
