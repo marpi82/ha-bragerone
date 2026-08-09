@@ -1,3 +1,8 @@
+---
+name: code-review
+description: Review checklist for ha-bragerone pull requests. Use when reviewing PRs to verify write-path safety (enum/numeric conversion, bounds, routes), push architecture invariants, Home Assistant conventions, version consistency, tests, and security.
+---
+
 # Code Review — ha-bragerone
 
 Review procedure for pull requests to this Home Assistant integration. Work through every section; comment only on real issues, with file/line references and a concrete suggested fix.
