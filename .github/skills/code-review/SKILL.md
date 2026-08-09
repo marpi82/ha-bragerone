@@ -54,7 +54,7 @@ Review procedure for pull requests to this Home Assistant integration. Work thro
 
 ## Stack awareness
 
-- Before flagging stale references or inconsistencies, check whether the PR belongs to a stack (read the PR's `stack` object via the GitHub MCP server). If it does, fetch the stack's PR list and review the layer in the context of the whole stack — the fix may already exist in an upper layer.
+- Before flagging stale references or inconsistencies, check whether the PR belongs to a stack: look for "Stacked on #NNN" links or cross-referenced PRs in the PR body and timeline, and fetch those PRs via the GitHub MCP server. If the PR is part of a stack, review the layer in the context of the whole stack — the fix may already exist in a linked layer.
 
 ## How to report
 
