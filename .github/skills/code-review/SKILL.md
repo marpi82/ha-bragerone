@@ -52,6 +52,10 @@ Review procedure for pull requests to this Home Assistant integration. Work thro
 - [ ] No credentials/tokens in code, fixtures, logs, or diagnostics output.
 - [ ] User input reaching `async_write` validated before hitting the library.
 
+## Stack awareness
+
+- Before flagging stale references or inconsistencies, check whether the PR belongs to a stack (read the PR's `stack` object via the GitHub MCP server). If it does, fetch the stack's PR list and review the layer in the context of the whole stack — the fix may already exist in an upper layer.
+
 ## How to report
 
 - One comment per issue. Use severity to triage what you report — blocker (wrong value could be written to the heater, breaking change without migration, leaked secret), major (CI gate, architecture invariant, missing tests), minor (style, naming, translations) — and report blockers/majors first. Treat this as prioritization guidance, not a required comment format.
