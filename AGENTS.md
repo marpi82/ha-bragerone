@@ -1,0 +1,54 @@
+# AGENTS.md — ha-bragerone
+
+HACS custom integration (`custom_components/habragerone`) connecting BragerOne heating controllers to Home Assistant via the `py-bragerone` library (`pybragerone` package).
+
+## Project shape
+
+- **Platforms**: `sensor`, `binary_sensor`, `switch`, `number`, `select`, `button` (no `climate`).
+- **Python**: `>=3.14.2,<3.15`; **HA**: `homeassistant>=2026.8.1`; iot_class `cloud_push`.
+- **Dependencies**: **uv** (`uv.lock` committed). Runtime deps pinned exactly in `manifest.json`.
+- **Build/versioning**: hatchling + hatch-vcs, CalVer from git tags.
+
+## Common commands
+
+```bash
+uv sync --locked                 # environment
+uv run poe fmt                   # ruff format
+uv run poe lint                  # ruff check --fix
+uv run poe typecheck             # mypy --strict (python_version 3.14, pydantic plugin)
+uv run poe test                  # pytest (pytest-homeassistant-custom-component)
+uv run poe cov                   # coverage (pre-push gate: --cov-fail-under=70)
+uv run poe validate              # fmt + lint + typecheck + security + test
+```
+
+CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2025.5.1` / `latest` / `dev`.
+
+## Architecture in one paragraph
+
+All protocol work happens in `pybragerone` (REST prime + Socket.IO deltas). The integration adds a thin HA layer: `config_flow.py` (UI setup, options, reauth; `VERSION = 2`) → `bootstrap.py` (one-time extraction of entity descriptors from the asset catalog, cached in `entry.data[CONF_ENTITY_DESCRIPTORS]`, invalidated by `BOOTSTRAP_VERSION = 4`) → `runtime.py` (`BragerRuntime`: owns the gateway, syncs `ParamStore`, fans out `ParamUpdate`s to listeners — **there is no `DataUpdateCoordinator`**) → platform files create entities from cached descriptors. Writes go through `command_write.py` (enum label→raw, inverse numeric transform, min/max check, route selection) into `runtime.async_write`.
+
+## Non-negotiable conventions
+
+1. **Push, not poll**: entities set `_attr_should_poll = False` and update via `runtime.add_listener()`. Never add polling or a coordinator.
+2. **Write safety**: every write converts enum label→raw, applies inverse numeric transform, validates against `n`/`x` min/max, and picks the right route (`parameter_write` vs `raw_command`). Invalid input → explicit validation error, never a silent send.
+3. **unique_id stability**: `{entry_id}_{devid}_{symbol}` with platform suffix (`_binary`, `_switch`, `_number`, `_select`, `_button`). Changing these breaks user setups — treat as breaking change.
+4. **Naming**: display name `"{panel_path} - {label}"` via `descriptor_display_name`; suggested object id `slugify(f"{module_name}_{symbol}")`; `_attr_has_entity_name = True`; DeviceInfo identifiers `(domain, devid)`, manufacturer `"BragerOne"`.
+5. **English only** in code/comments/docstrings; mypy `--strict`; ruff (line-length 130, Google docstrings).
+6. **Credentials**: diagnostics and logs must redact password/tokens.
+7. **Library boundary**: don't re-implement protocol logic in the integration — that belongs to `py-bragerone`. Keep `manifest.json` pins and `pyproject.toml` bounds in sync.
+
+## Testing
+
+- pytest + pytest-asyncio + `pytest-homeassistant-custom-component`; most tests are pure unit tests using `install_pybragerone_stubs()`.
+- Cover at minimum: enum conversions (both directions + invalid input), inverse numeric transform, min/max rejection, route selection, bootstrap classification/filtering, entity naming.
+- Tests must pass offline.
+
+## Translations & UI strings
+
+New config/options/errors strings go into `strings.json` and English `translations/en.json`; the other 18 locales follow. hassfest validates these in CI.
+
+## Version consistency checklist (watch in reviews)
+
+- `hacs.json` homeassistant minimum vs `manifest.json` / `pyproject.toml` (known drift: `hacs.json` says 2025.5.1 vs code 2026.8.1).
+- `manifest.json` `py-bragerone==X` pin vs `pyproject.toml` `py-bragerone>=X`.
+- ruff `target-version` vs actual runtime Python.

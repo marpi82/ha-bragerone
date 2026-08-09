@@ -21,7 +21,7 @@
    - Treat WebSocket as delta stream only.
 
 ## Implementation Guidelines
-- Python 3.13+, strict typing (`mypy --strict`) and Ruff compliance.
+- Python 3.14+, strict typing (`mypy --strict`) and Ruff compliance (line-length 130, Google docstrings).
 - Keep code and comments in English.
 - Favor small, testable utilities for:
   - enum conversion,
@@ -29,6 +29,19 @@
   - bounds validation,
   - command payload construction.
 - Reuse existing architecture patterns in this repository; do not introduce parallel abstractions unless needed.
+- Home Assistant patterns: entities are push-based (`_attr_should_poll = False`) driven by `BragerRuntime` — do not introduce `DataUpdateCoordinator` or polling; descriptor-driven entity creation via cached `entry.data` descriptors; `_attr_has_entity_name = True`.
+
+## Library Boundary (py-bragerone)
+- All BragerOne protocol logic lives in the `pybragerone` package (pinned in `manifest.json`). Integration code must not re-implement REST/WS/param logic — extend the library instead.
+- `manifest.json` pins exact versions (`py-bragerone==...`); bump deliberately and keep `pyproject.toml` dependency bounds in sync.
+
+## Code Review Priorities
+When reviewing pull requests, prioritize (details in `.github/skills/code-review/SKILL.md`):
+1. **Write path safety**: enum label→raw conversion, inverse numeric transform, min/max (`n`/`x`) validation, correct route (`parameter_write` vs `raw_command`).
+2. **Entity lifecycle**: entities subscribe/unsubscribe to `runtime.add_listener()` correctly; no polling; unique_id patterns preserved (`{entry_id}_{devid}_{symbol}` + platform suffix).
+3. **Bootstrap cache**: `BOOTSTRAP_VERSION` bump when descriptor shape changes; cache invalidation correctness.
+4. **HA quality scale**: config flow errors with proper abort reasons, reauth, translations for new strings (`strings.json` + `translations/`), diagnostics redact credentials.
+5. **Version consistency**: `hacs.json`, `manifest.json`, `pyproject.toml` HA/Python/library versions must not drift.
 
 ## Logging & Diagnostics
 - Add debug logs for command write pipeline:
