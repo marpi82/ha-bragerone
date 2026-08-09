@@ -92,7 +92,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(f"Unsupported backend platform '{platform_raw}'") from err
 
     verify_context = await hass.async_add_executor_job(_build_ssl_context)
-    api = BragerOneApiClient(server=server, verify=verify_context)
+    # creds_provider lets the client re-login transparently when the token expires
+    # mid-session (e.g. WS reconnect after a long network outage).
+    api = BragerOneApiClient(server=server, verify=verify_context, creds_provider=lambda: (email, password))
     try:
         await api.ensure_auth(email, password)
     except Exception as err:
