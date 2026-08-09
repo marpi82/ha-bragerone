@@ -54,6 +54,6 @@ Review procedure for pull requests to this Home Assistant integration. Work thro
 
 ## How to report
 
-- One comment per issue, severity-tagged: **blocker** (wrong value could be written to the heater, breaking change without migration, leaked secret), **major** (CI gate, architecture invariant, missing tests), **minor** (style, naming, translations).
+- One comment per issue; start the comment with the severity in plain text — blocker (wrong value could be written to the heater, breaking change without migration, leaked secret), major (CI gate, architecture invariant, missing tests), or minor (style, naming, translations) — so impact is clear even though review comment formatting cannot be customized.
 - Prefer the smallest change consistent with existing patterns.
 - If the PR references an issue, use the GitHub MCP server to read it and confirm the change resolves it; check linked py-bragerone PRs when the library pin changes.
