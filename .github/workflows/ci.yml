@@ -110,7 +110,7 @@ jobs:
         continue-on-error: true
 
       - name: Run Semgrep
-        # exclude-newer would block homeassistant>=2026.8.1 until the cooldown elapses
+        # exclude-newer would block a freshly released homeassistant until the cooldown elapses
         run: >
           uv run --group dev semgrep --config p/ci --error
           --exclude-rule package_managers.uv.uv-missing-dependency-cooldown.uv-missing-dependency-cooldown

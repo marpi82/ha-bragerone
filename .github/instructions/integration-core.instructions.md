@@ -13,7 +13,7 @@ applyTo: "custom_components/habragerone/**/*.py"
    - route selection (`parameter_write` vs `raw_command`) must stay consistent with existing rules.
 4. **unique_id / naming**: keep `{entry_id}_{devid}_{symbol}` + platform suffix patterns and `descriptor_display_name` ("{panel_path} - {label}") stable; `_attr_has_entity_name = True`; DeviceInfo identifiers `(domain, devid)`.
 5. **Descriptors**: entity creation is descriptor-driven from `entry.data[CONF_ENTITY_DESCRIPTORS]`. Platform classification/filtering changes belong in `bootstrap.py` and require a `BOOTSTRAP_VERSION` bump.
-6. **HA APIs**: use modern HA patterns (config entries, no `hass.data` globals beyond the runtime slot, `ConfigEntry` runtime_data pattern where applicable). Target HA `>=2026.8.1`.
+6. **HA APIs**: use modern HA patterns (config entries, no `hass.data` globals beyond the runtime slot, `ConfigEntry` runtime_data pattern where applicable). Target HA `>=2026.3.0` (the declared minimum; must stay consistent with `hacs.json`/`pyproject.toml`).
 7. **Async**: never block the event loop; library calls are awaited; no threads.
 8. **Typing/style**: mypy strict, ruff (130 cols, Google docstrings), English only.
 9. **Secrets**: never log or expose password/tokens; diagnostics redact them.

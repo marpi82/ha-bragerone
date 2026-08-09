@@ -1217,7 +1217,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "homeassistant", specifier = ">=2026.8.1" },
+    { name = "homeassistant", specifier = ">=2026.3.0" },
     { name = "py-bragerone", specifier = ">=2026.8.1" },
 ]
 
