@@ -12,7 +12,7 @@ HACS custom integration (`custom_components/habragerone`) connecting BragerOne h
 ## Common commands
 
 ```bash
-uv sync --locked                 # environment
+uv sync --locked --group dev --group test   # environment (test group holds pytest; required by poe test/cov/validate)
 uv run poe fmt                   # ruff format
 uv run poe lint                  # ruff check --fix
 uv run poe typecheck             # mypy --strict (python_version 3.14, pydantic plugin)

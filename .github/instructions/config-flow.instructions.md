@@ -1,5 +1,5 @@
 ---
-applyTo: "custom_components/habragerone/config_flow.py, custom_components/habragerone/strings.json, custom_components/habragerone/translations/**, custom_components/habragerone/diagnostics.py, custom_components/habragerone/manifest.json"
+applyTo: "custom_components/habragerone/config_flow.py, custom_components/habragerone/strings.json, custom_components/habragerone/translations/**, custom_components/habragerone/diagnostics.py, custom_components/habragerone/manifest.json, hacs.json, pyproject.toml"
 ---
 
 # Config flow, translations & metadata rules
