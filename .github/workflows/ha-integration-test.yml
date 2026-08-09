@@ -124,3 +124,16 @@ jobs:
               if: always()
               run: |
                   docker rm -f ha-under-test >/dev/null 2>&1 || true
+
+    integration-gate:
+        name: HA Integration Tests
+        runs-on: ubuntu-latest
+        if: always()
+        needs: [integration-test]
+        steps:
+            - name: Verify all matrix legs succeeded
+              env:
+                  NEEDS: ${{ toJSON(needs) }}
+              run: |
+                  echo "$NEEDS" | jq -e '.["integration-test"].result == "success"' > /dev/null
+                  echo "All HA versions passed."

@@ -310,3 +310,25 @@ jobs:
           name: dist-${{ github.sha }}
           path: dist/*
           retention-days: 7
+
+  ci-gate:
+    name: CI
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [secrets, dependency-review, quality, security, hassfest, validate-ha, dependency-wheel-compat, tests, build]
+    steps:
+      - name: Verify all required jobs succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # Only dependency-review may legitimately skip (push events); any other
+          # non-success fails the gate so a misconfigured `if:` can't slip through.
+          echo "$NEEDS" | jq -e '
+            to_entries
+            | map(select(
+                if .key == "dependency-review"
+                then (.value.result != "success" and .value.result != "skipped")
+                else .value.result != "success" end))
+            | if length == 0 then true
+              else error("Failed jobs: " + (map(.key) | join(", "))) end' > /dev/null
+          echo "All required jobs passed."
