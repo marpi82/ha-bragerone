@@ -42,6 +42,7 @@ When reviewing pull requests, prioritize (details in `.github/skills/code-review
 3. **Bootstrap cache**: `BOOTSTRAP_VERSION` bump when descriptor shape changes; cache invalidation correctness.
 4. **HA quality scale**: config flow errors with proper abort reasons, reauth, translations for new strings (`strings.json` + `translations/`), diagnostics redact credentials.
 5. **Version consistency**: `hacs.json` HA minimum ↔ `pyproject.toml` `homeassistant` dependency, and `manifest.json` `py-bragerone==X` pin ↔ `pyproject.toml` library bound must not drift (`manifest.json` carries no HA/Python version).
+6. **Docs consistency (code↔docs)**: changes to config flow options, entity naming, supported platforms, or setup steps must be reflected in `README.md`, `docs/`, and translations; docs-only changes must match the actual code — flag drift in either direction.
 
 ## Logging & Diagnostics
 - Add debug logs for command write pipeline:

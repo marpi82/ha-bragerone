@@ -52,6 +52,11 @@ Review procedure for pull requests to this Home Assistant integration. Work thro
 - [ ] No credentials/tokens in code, fixtures, logs, or diagnostics output.
 - [ ] User input reaching `async_write` validated before hitting the library.
 
+## 8. Docs & metadata
+
+- [ ] **Code↔docs drift (both directions)**: changes to config flow options, entity naming/unique_id patterns, supported platforms, or setup steps must be reflected in `README.md`, `docs/`, and `strings.json`/`translations/`; docs-only changes must match the actual code — flag drift.
+- [ ] Version references in docs/examples match `manifest.json`, `hacs.json`, and `pyproject.toml`.
+
 ## Stack awareness
 
 - Before flagging stale references or inconsistencies, check whether the PR belongs to a stack: look for "Stacked on #NNN" links or cross-referenced PRs in the PR body and timeline, and fetch those PRs via the GitHub MCP server. If the PR is part of a stack, review the layer in the context of the whole stack — the fix may already exist in a linked layer.

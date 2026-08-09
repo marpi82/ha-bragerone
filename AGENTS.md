@@ -36,6 +36,7 @@ All protocol work happens in `pybragerone` (REST prime + Socket.IO deltas). The 
 5. **English only** in code/comments/docstrings; mypy `--strict`; ruff (line-length 130, Google docstrings).
 6. **Credentials**: diagnostics and logs must redact password/tokens.
 7. **Library boundary**: don't re-implement protocol logic in the integration — that belongs to `py-bragerone`. Keep `manifest.json` pins and `pyproject.toml` bounds in sync.
+8. **Docs parity**: `README.md`, `docs/`, and translations must describe the integration as it is; code changes that alter documented behavior update docs in the same PR, and docs-only changes must match the code — drift in either direction is a defect.
 
 ## Testing
 
