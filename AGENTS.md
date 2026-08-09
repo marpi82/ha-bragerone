@@ -17,7 +17,7 @@ uv run poe fmt                   # ruff format
 uv run poe lint                  # ruff check --fix
 uv run poe typecheck             # mypy --strict (python_version 3.14, pydantic plugin)
 uv run poe test                  # pytest (pytest-homeassistant-custom-component)
-uv run poe cov                   # coverage (pre-push gate: --cov-fail-under=70)
+uv run poe cov                   # coverage report (the 70% threshold is enforced only by the pre-push hook)
 uv run poe validate              # fmt + lint + typecheck + security + test
 ```
 
@@ -29,7 +29,7 @@ All protocol work happens in `pybragerone` (REST prime + Socket.IO deltas). The 
 
 ## Non-negotiable conventions
 
-1. **Push, not poll**: entities set `_attr_should_poll = False` and update via `runtime.add_listener()`. Never add polling or a coordinator.
+1. **Push, not poll**: state-bearing entities set `_attr_should_poll = False` and update via `runtime.add_listener()`. Never add polling or a coordinator. Exception: command-only entities (`button.py`) have no state and intentionally no listener.
 2. **Write safety**: every write converts enum label→raw, applies inverse numeric transform, validates against `n`/`x` min/max, and picks the right route (`parameter_write` vs `raw_command`). Invalid input → explicit validation error, never a silent send.
 3. **unique_id stability**: `{entry_id}_{devid}_{symbol}` with platform suffix (`_binary`, `_switch`, `_number`, `_select`, `_button`). Changing these breaks user setups — treat as breaking change.
 4. **Naming**: display name `"{panel_path} - {label}"` via `descriptor_display_name`; suggested object id `slugify(f"{module_name}_{symbol}")`; `_attr_has_entity_name = True`; DeviceInfo identifiers `(domain, devid)`, manufacturer `"BragerOne"`.
@@ -49,6 +49,6 @@ New config/options/errors strings go into `strings.json` and English `translatio
 
 ## Version consistency checklist (watch in reviews)
 
-- `hacs.json` homeassistant minimum vs `manifest.json` / `pyproject.toml` (known drift: `hacs.json` says 2025.5.1 vs code 2026.8.1).
+- `hacs.json` homeassistant minimum vs the `homeassistant` dependency in `pyproject.toml` (known drift: `hacs.json` says 2025.5.1 vs code 2026.8.1). Note: `manifest.json` has no HA version field.
 - `manifest.json` `py-bragerone==X` pin vs `pyproject.toml` `py-bragerone>=X`.
 - ruff `target-version` vs actual runtime Python.

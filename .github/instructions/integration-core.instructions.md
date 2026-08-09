@@ -4,8 +4,8 @@ applyTo: "custom_components/habragerone/**/*.py"
 
 # Integration core rules (apply to all of custom_components/habragerone)
 
-1. **Push architecture**: entities are push-based (`_attr_should_poll = False`) via `BragerRuntime.add_listener()`. Flag any introduction of polling, `DataUpdateCoordinator`, or `async_update` refresh loops.
-2. **Listener lifecycle**: entities must unsubscribe in `async_will_remove_from_hass` (or via the `async_on_remove` pattern used in the codebase). Leaked listeners cause duplicate state writes.
+1. **Push architecture**: state-bearing entities are push-based (`_attr_should_poll = False`) via `BragerRuntime.add_listener()`. Flag any introduction of polling, `DataUpdateCoordinator`, or `async_update` refresh loops. Command-only entities (buttons) have no state and no listener by design — do not flag that.
+2. **Listener lifecycle**: state-bearing entities must unsubscribe in `async_will_remove_from_hass` (or via the `async_on_remove` pattern used in the codebase). Leaked listeners cause duplicate state writes.
 3. **Write path** (`command_write.py` / `runtime.async_write`):
    - enum label→raw before send; raw→label on read when a mapping exists;
    - inverse numeric transform applied when UI and protocol scales differ;

@@ -17,7 +17,7 @@ Review procedure for pull requests to this Home Assistant integration. Work thro
 
 ## 2. Architecture invariants
 
-- [ ] Push model preserved: no polling, no `DataUpdateCoordinator`; entities use `runtime.add_listener()` and unsubscribe on removal.
+- [ ] Push model preserved: no polling, no `DataUpdateCoordinator`; state-bearing entities use `runtime.add_listener()` and unsubscribe on removal (command-only buttons have no listener by design).
 - [ ] Protocol logic stays in `pybragerone`; the integration doesn't re-implement REST/WS/param handling.
 - [ ] Descriptor-driven entity creation via `entry.data[CONF_ENTITY_DESCRIPTORS]`; descriptor shape changes bump `BOOTSTRAP_VERSION`.
 - [ ] unique_id patterns unchanged (`{entry_id}_{devid}_{symbol}` + platform suffix) — flag any change as breaking.
@@ -38,7 +38,7 @@ Review procedure for pull requests to this Home Assistant integration. Work thro
 
 ## 5. Version consistency
 
-- [ ] `hacs.json` HA minimum ↔ `manifest.json` ↔ `pyproject.toml` stay in sync.
+- [ ] `hacs.json` HA minimum ↔ `pyproject.toml` `homeassistant` dependency stay in sync (`manifest.json` has no HA version field).
 - [ ] `manifest.json` `py-bragerone==X` pin ↔ `pyproject.toml` `py-bragerone>=X` bound in sync; wheel compat (musl/manylinux) considered for pin bumps.
 
 ## 6. Tests

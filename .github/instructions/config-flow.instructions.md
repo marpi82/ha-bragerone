@@ -10,4 +10,4 @@ applyTo: "custom_components/habragerone/config_flow.py, custom_components/habrag
 4. **Strings**: every new config/options step, error, or abort reason needs `strings.json` + `translations/en.json` entries in the same PR; other locales may follow separately.
 5. **manifest.json**: `py-bragerone==X` and `tree-sitter==Y` pins are deliberate (CI checks wheel compatibility for musl/manylinux, x86_64 + aarch64). Bumping pins → check wheel availability. Keep `pyproject.toml` bounds in sync.
 6. **Diagnostics**: `async_get_config_entry_diagnostics` must redact credentials; new sensitive fields must be added to the redaction list.
-7. **hacs.json**: HA minimum version here, in `manifest.json`, and in `pyproject.toml` must not drift.
+7. **hacs.json**: HA minimum version here and the `homeassistant` dependency in `pyproject.toml` must not drift (`manifest.json` has no HA version field).
