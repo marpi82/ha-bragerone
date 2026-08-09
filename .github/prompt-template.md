@@ -17,7 +17,7 @@ Current priorities:
 4. Add/adjust tests for enum conversion and write validation behavior.
 
 Constraints:
-- Python 3.13+, strict typing, ruff + mypy clean.
+- Python 3.14+, strict typing, ruff + mypy clean.
 - Minimal, focused changes only.
 - Keep code/comments/docstrings in English.
 
