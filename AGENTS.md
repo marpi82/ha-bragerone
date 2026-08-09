@@ -25,7 +25,7 @@ CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wh
 
 ## Architecture in one paragraph
 
-All protocol work happens in `pybragerone` (REST prime + Socket.IO deltas). The integration adds a thin HA layer: `config_flow.py` (UI setup, options, reauth; `VERSION = 2`) → `bootstrap.py` (one-time extraction of entity descriptors from the asset catalog, cached in `entry.data[CONF_ENTITY_DESCRIPTORS]`, invalidated by `BOOTSTRAP_VERSION = 4`) → `runtime.py` (`BragerRuntime`: owns the gateway, syncs `ParamStore`, fans out `ParamUpdate`s to listeners — **there is no `DataUpdateCoordinator`**) → platform files create entities from cached descriptors. Writes go through `command_write.py` (enum label→raw, inverse numeric transform, min/max check, route selection) into `runtime.async_write`.
+All protocol work happens in `pybragerone` (REST prime + Socket.IO deltas). The integration adds a thin HA layer: `config_flow.py` (UI setup, options, reauth; `VERSION = 2`) → `bootstrap.py` (one-time extraction of entity descriptors from the asset catalog, cached in `entry.data[CONF_ENTITY_DESCRIPTORS]`, invalidated by `BOOTSTRAP_VERSION = 4`) → `runtime.py` (`BragerRuntime`: owns the gateway, syncs `ParamStore`, fans out `ParamUpdate`s to listeners — **there is no `DataUpdateCoordinator`**) → platform files create entities from cached descriptors. Writes go the other way: platform entities call `runtime.async_write`, which uses `command_write.prepare_write` (enum label→raw, inverse numeric transform, min/max check, route selection) before dispatching to the gateway.
 
 ## Non-negotiable conventions
 
