@@ -114,7 +114,6 @@ jobs:
 
       - name: Run Bandit
         run: uv run --group dev bandit -r custom_components -q -ll -f json -o bandit-report.json
-        continue-on-error: true
 
       - name: Run pip-audit
         run: |
@@ -126,7 +125,6 @@ jobs:
             --ignore-vuln PYSEC-2026-3552 \
             --ignore-vuln PYSEC-2026-3553 \
             --ignore-vuln PYSEC-2026-3554
-        continue-on-error: true
 
       - name: Upload security artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

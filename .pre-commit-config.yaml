@@ -25,7 +25,7 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: uv run mypy
+        entry: uv run --group dev mypy
         language: system
         types: [python]
         files: ^(custom_components/|tests/)
