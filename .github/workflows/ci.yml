@@ -32,7 +32,14 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate
-          allow-ghsas: GHSA-cfh3-3jmp-rvhc
+          # GHSA-cfh3-3jmp-rvhc: existing allow.
+          # GHSA-g6cj-pr64-35w5 / GHSA-jwv3-5hgf-82ww / GHSA-m2h6-j472-rp4c:
+          # inherited from Home Assistant's cryptography==48.0.1 pin (fixed in 49+/50+).
+          allow-ghsas: >
+            GHSA-cfh3-3jmp-rvhc,
+            GHSA-g6cj-pr64-35w5,
+            GHSA-jwv3-5hgf-82ww,
+            GHSA-m2h6-j472-rp4c
 
   quality:
     name: quality (lint + typecheck)
