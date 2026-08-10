@@ -57,15 +57,6 @@ include = ["custom_components/habragerone/py.typed"]
 include = ["custom_components/habragerone", "README.md"]
 
 
-# Home Assistant pins cryptography==48.0.1 (high-severity PKCS#7 advisory).
-# mcp/click arrive via semgrep and lag patched releases. Override until upstreams bump.
-[tool.uv]
-override-dependencies = [
-  "cryptography>=50.0.0",
-  "mcp>=1.28.1,<2",
-  "click>=8.3.3",
-]
-
 [dependency-groups]
 dev = [
   "poethepoet>=0.48.0,<0.49.0",
@@ -76,7 +67,6 @@ dev = [
   "debugpy>=1.8.17,<2.0.0",
   "pip-audit>=2.4.0,<3.0.0",
   "bandit>=1.8.4,<2.0.0",
-  "semgrep>=1.89",
   "hatch>=1.12.0,<2.0.0",
 ]
 test = [
@@ -90,18 +80,18 @@ test = [
 
 # ---------------- Ruff (formatter + linter) ----------------
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 130
 indent-width = 4
 extend-exclude = ["py-bragerone/"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "D", "UP", "RUF", "SIM", "B"]
+select = ["E", "F", "W", "I", "D", "UP", "RUF", "SIM", "B", "S"]
 fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D"]
+"tests/*" = ["D", "S101", "S105", "S106", "S107"]
 "custom_components/habragerone/__init__.py" = ["D104"]
 
 [tool.ruff.lint.pydocstyle]
@@ -157,10 +147,12 @@ fix = ["lint", "fmt"]
 typecheck = "mypy"
 all = ["fmt", "lint", "typecheck"]
 # Security
-bandit = { cmd = "bandit -r custom_components -q" }
-semgrep = { cmd = "semgrep --config p/ci --error ." }
-pip-audit = { cmd = "pip-audit --skip-editable --progress-spinner off" }
-security = ["bandit", "semgrep", "pip-audit"]
+# cryptography advisories are inherited from Home Assistant's exact pin (currently
+# cryptography==48.0.1 on HA 2026.8.x). Do not override that pin in the integration
+# venv; ignore until core bumps cryptography.
+bandit = { cmd = "bandit -r custom_components -q -ll" }
+pip-audit = { cmd = "pip-audit --skip-editable --progress-spinner off --ignore-vuln PYSEC-2026-3552 --ignore-vuln PYSEC-2026-3553 --ignore-vuln PYSEC-2026-3554" }
+security = ["bandit", "pip-audit"]
 # Full validation (quality + security + tests)
 validate = ["fmt", "lint", "typecheck", "security", "test"]
 # Tests

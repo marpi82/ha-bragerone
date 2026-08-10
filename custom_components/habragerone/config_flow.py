@@ -301,6 +301,12 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         async with asyncio.timeout(_LANGUAGE_CONFIG_TIMEOUT_S):
                             app_ns = await catalog.get_i18n(lang_candidate, "app")
                     except Exception:
+                        LOGGER.debug(
+                            "Failed to load app i18n for language '%s' on platform '%s'",
+                            lang_candidate,
+                            platform,
+                            exc_info=True,
+                        )
                         continue
                     app_lang_map = _extract_lang_map_from_app_namespace(app_ns)
                     if app_lang_map:

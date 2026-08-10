@@ -62,7 +62,7 @@ def test_async_build_bootstrap_payload_applies_filter_mode_per_module(monkeypatc
             self._current_devid = ""
 
         @classmethod
-        def from_api(cls, api: object, store: object, lang: object) -> "_FakeResolver":
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
             return cls()
 
         async def build_panel_groups(
@@ -205,7 +205,7 @@ def test_async_build_bootstrap_payload_ui_excludes_non_panel_actions(monkeypatch
             self._assets = _FakeAssets()
 
         @classmethod
-        def from_api(cls, api: object, store: object, lang: object) -> "_FakeResolver":
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
             _ = api, store, lang
             return cls()
 
