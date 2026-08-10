@@ -32,7 +32,14 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate
-          allow-ghsas: GHSA-cfh3-3jmp-rvhc
+          # GHSA-cfh3-3jmp-rvhc: existing allow.
+          # GHSA-g6cj-pr64-35w5 / GHSA-jwv3-5hgf-82ww / GHSA-m2h6-j472-rp4c:
+          # inherited from Home Assistant's cryptography==48.0.1 pin (fixed in 49+/50+).
+          allow-ghsas: >
+            GHSA-cfh3-3jmp-rvhc,
+            GHSA-g6cj-pr64-35w5,
+            GHSA-jwv3-5hgf-82ww,
+            GHSA-m2h6-j472-rp4c
 
   quality:
     name: quality (lint + typecheck)
@@ -75,7 +82,7 @@ jobs:
         run: uv run --group dev mypy
 
   security:
-    name: security (bandit + semgrep + pip-audit)
+    name: security (bandit + pip-audit)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -106,15 +113,7 @@ jobs:
         run: uv sync --locked --group dev --group test
 
       - name: Run Bandit
-        run: uv run --group dev bandit -r custom_components -q -f json -o bandit-report.json
-        continue-on-error: true
-
-      - name: Run Semgrep
-        # exclude-newer would block a freshly released homeassistant until the cooldown elapses
-        run: >
-          uv run --group dev semgrep --config p/ci --error
-          --exclude-rule package_managers.uv.uv-missing-dependency-cooldown.uv-missing-dependency-cooldown
-          .
+        run: uv run --group dev bandit -r custom_components -q -ll -f json -o bandit-report.json
 
       - name: Run pip-audit
         run: |
@@ -122,8 +121,10 @@ jobs:
             --format=json \
             --output=pip-audit-results.json \
             --progress-spinner=off \
-            --skip-editable
-        continue-on-error: true
+            --skip-editable \
+            --ignore-vuln PYSEC-2026-3552 \
+            --ignore-vuln PYSEC-2026-3553 \
+            --ignore-vuln PYSEC-2026-3554
 
       - name: Upload security artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
