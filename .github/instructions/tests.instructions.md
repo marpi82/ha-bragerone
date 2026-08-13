@@ -13,4 +13,4 @@ applyTo: "tests/**/*.py"
    - command route selection (`parameter_write` vs `raw_command`).
 4. **Bootstrap**: classification/filtering changes need descriptor fixtures covering each platform type.
 5. **Naming tests**: entity naming/unique_id patterns are contractual — keep regression tests for them.
-6. **Style**: same ruff/mypy rules as the integration; coverage gate is `--cov-fail-under=70` (pre-push).
+6. **Style**: same ruff/mypy rules as the integration; coverage gate is `--cov-fail-under=70` (pre-push). CI uploads to Codecov (patch target 100%, project informational).
