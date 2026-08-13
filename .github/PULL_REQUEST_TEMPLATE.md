@@ -15,7 +15,7 @@
 ## Checklist
 
 - [ ] English only in code, comments, and docs; Google-style docstrings
-- [ ] `uv run --group dev --group test poe validate` passes locally (fmt + lint + mypy --strict + security + tests)
+- [ ] `uv run poe validate` passes locally (fmt + lint + mypy --strict + security + tests; sync `--group dev --group test` first)
 - [ ] Tests added / updated where practical (regression test for bug fixes; cover enum/numeric write safety when touching the write path). Tests pass offline
 - [ ] Docs / translations updated when user-facing behavior changes (`README.md`, `docs/`, `strings.json` + `translations/en.json`)
 - [ ] Version pins stay consistent (`manifest.json` `py-bragerone==X` ↔ `pyproject.toml`; `hacs.json` HA minimum ↔ `homeassistant` dependency)
