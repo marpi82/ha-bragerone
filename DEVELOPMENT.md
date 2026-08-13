@@ -13,7 +13,7 @@ This project uses:
 # Install dependencies
 uv sync --group dev --group test
 
-# Install pre-commit hooks  
+# Install pre-commit hooks
 uv run pre-commit install
 
 # Start development environment
@@ -29,6 +29,8 @@ uv run pytest
 # Run with coverage
 uv run pytest --cov=custom_components.habragerone --cov-report=term-missing
 ```
+
+CI uploads `coverage.xml` to Codecov. Pull requests get a `codecov-commenter` report. Patch coverage target is 100%; overall project coverage is informational (the 70% floor is the pre-push hook).
 
 ### Publishing Releases
 
