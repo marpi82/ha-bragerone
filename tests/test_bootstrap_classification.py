@@ -4,6 +4,8 @@ install_pybragerone_stubs()
 
 from custom_components.habragerone.bootstrap import (  # noqa: E402
     _collect_symbol_kinds_from_route,
+    _is_menu_command_action,
+    _mapping_has_parameter_write,
     _normalize_panel_path,
     normalize_cached_descriptors,
 )
@@ -485,3 +487,195 @@ def test_collect_symbol_kinds_from_route_reads_parameter_string_token_from_dict(
 
     assert "COMMAND_MODULE_RESTART" in kinds
     assert "write" in kinds["COMMAND_MODULE_RESTART"]
+
+
+def test_mapping_has_parameter_write_accepts_value_channel_aliases() -> None:
+    """Cover alternate ParamMap field names used by inline/index factories."""
+    assert _mapping_has_parameter_write(None) is False
+    assert _mapping_has_parameter_write({}) is False
+    assert _mapping_has_parameter_write({"paths": "bad"}) is False
+    assert _mapping_has_parameter_write({"paths": {"command": "bad"}}) is False
+    assert _mapping_has_parameter_write({"paths": {"command": ["skip", 1]}}) is False
+
+    assert (
+        _mapping_has_parameter_write(
+            {
+                "paths": {
+                    "command": [
+                        {"pool": "P10", "index": 2, "path": "value"},
+                    ]
+                }
+            }
+        )
+        is True
+    )
+    assert (
+        _mapping_has_parameter_write(
+            {
+                "paths": {
+                    "command": [
+                        {"group": "", "number": 1, "use": "v"},
+                        {"group": "P6", "idx": 61, "pathType": "V"},
+                    ]
+                }
+            }
+        )
+        is True
+    )
+    assert (
+        _mapping_has_parameter_write(
+            {
+                "paths": {
+                    "command": [
+                        {"group": "P6", "number": "61", "use": "v"},
+                        {"group": "P6", "number": 61, "chan": "   "},
+                        {"group": "P6", "number": 61, "chan": "s"},
+                    ]
+                }
+            }
+        )
+        is False
+    )
+
+
+def test_is_menu_command_action_uses_parameter_write_unless_status_symbol() -> None:
+    mapping = {"paths": {"command": [{"group": "P6", "number": 239, "use": "v"}]}}
+    assert _is_menu_command_action(symbol="PARAM_239", symbol_kinds=set(), mapping=mapping) is True
+    assert _is_menu_command_action(symbol="STATUS_P5_10", symbol_kinds={"status"}, mapping=mapping) is False
+    assert _is_menu_command_action(symbol="PARAM_1", symbol_kinds={"read"}, mapping={"paths": {"command": []}}) is False
+    assert _is_menu_command_action(symbol="PARAM_1", symbol_kinds={"write"}, mapping=None) is True
+    assert (
+        _is_menu_command_action(
+            symbol="CUSTOM_ACTION",
+            symbol_kinds={"special"},
+            mapping={"command_rules": [{"command": "MODULE_RESTART"}]},
+        )
+        is True
+    )
+    assert _mapping_has_parameter_write({"paths": {"command": [{"group": "P6", "number": 1, "chan": "v"}]}}) is True
+
+
+def test_normalize_cached_descriptors_treats_status_menu_param_with_write_path_as_select() -> None:
+    """Editable Tak/Nie PARAMs listed only under menu status must become select."""
+    descriptors = [
+        {
+            "symbol": "PARAM_61",
+            "devid": "MOD1",
+            "pool": "P6",
+            "chan": "v",
+            "idx": 61,
+            "min": 0,
+            "max": 1,
+            "unit": {"0": "Wyłączony", "1": "Załączony"},
+            "mapping": {
+                "paths": {
+                    "value": [{"group": "P6", "number": 61, "use": "v"}],
+                    "command": [{"group": "P6", "number": 61, "use": "v", "raw": "!![]"}],
+                    "min": [],
+                    "max": [],
+                    "unit": [],
+                    "status": [],
+                }
+            },
+            "writable": False,
+            "menu_kinds": ["status"],
+        },
+        {
+            "symbol": "PARAM_239",
+            "devid": "MOD1",
+            "pool": "P6",
+            "chan": "v",
+            "idx": 239,
+            "min": 0,
+            "max": 1,
+            "unit": {"0": "Nie", "1": "Tak"},
+            "mapping": {
+                "paths": {
+                    "command": [{"group": "P6", "number": 239, "use": "v"}],
+                }
+            },
+            "writable": False,
+            "menu_kinds": ["status"],
+        },
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+    by_symbol = {item["symbol"]: item for item in normalized}
+
+    assert by_symbol["PARAM_61"]["writable"] is True
+    assert by_symbol["PARAM_61"]["platform"] == "select"
+    assert by_symbol["PARAM_61"]["options"] == ["Wyłączony", "Załączony"]
+    assert by_symbol["PARAM_239"]["writable"] is True
+    assert by_symbol["PARAM_239"]["platform"] == "select"
+    assert by_symbol["PARAM_239"]["options"] == ["Nie", "Tak"]
+
+
+def test_normalize_cached_descriptors_treats_panel_only_param_with_write_path_as_number() -> None:
+    """PARAM16_* feeder setpoints have empty menu_kinds but still expose paths.command."""
+    descriptors = [
+        {
+            "symbol": "PARAM16_2",
+            "devid": "MOD1",
+            "pool": "P10",
+            "chan": "v",
+            "idx": 2,
+            "min": 259,
+            "max": 370,
+            "unit": None,
+            "mapping": {
+                "paths": {
+                    "value": [{"group": "P10", "number": 2, "use": "v"}],
+                    "command": [{"group": "P10", "number": 2, "use": "v", "raw": "!![]"}],
+                    "min": [{"group": "P10", "number": 2, "use": "n"}],
+                    "max": [{"group": "P10", "number": 2, "use": "x"}],
+                }
+            },
+            "writable": False,
+            "menu_kinds": [],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["writable"] is True
+    assert normalized[0]["platform"] == "number"
+
+
+def test_normalize_cached_descriptors_keeps_status_symbol_readonly_without_value_write() -> None:
+    descriptors = [
+        {
+            "symbol": "STATUS_P5_14",
+            "devid": "MOD1",
+            "pool": "P5",
+            "chan": "s",
+            "idx": 14,
+            "unit": "wn.9994",
+            "mapping": {
+                "paths": {
+                    "value": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 1,
+                                    "operation": "equalTo",
+                                    "value": [{"group": "P5", "number": 14, "use": "s", "bit": 1}],
+                                }
+                            ],
+                            "then": "ON",
+                        }
+                    ],
+                    "command": [],
+                },
+                "command_rules": [],
+            },
+            "writable": False,
+            "menu_kinds": ["status"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["writable"] is False
+    assert normalized[0]["platform"] == "binary_sensor"

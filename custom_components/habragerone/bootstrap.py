@@ -556,6 +556,49 @@ def _has_named_command_rule(mapping: dict[str, Any] | None) -> bool:
     return False
 
 
+def _mapping_has_parameter_write(mapping: dict[str, Any] | None) -> bool:
+    """Return whether the ParamMap declares a write to a value channel.
+
+    Live menus sometimes list editable PARAMs only under ``status`` (or omit
+    kinds entirely for panel-only candidates). Those still carry
+    ``paths.command`` entries such as ``{group: P6, number: 61, use: v}``.
+    """
+    if not isinstance(mapping, dict):
+        return False
+    paths = mapping.get("paths")
+    if not isinstance(paths, Mapping):
+        return False
+    commands = paths.get("command")
+    if not isinstance(commands, list):
+        return False
+    for entry in commands:
+        if not isinstance(entry, Mapping):
+            continue
+        group = entry.get("group") if entry.get("group") is not None else entry.get("pool")
+        number = entry.get("number")
+        if number is None:
+            number = entry.get("index")
+        if number is None:
+            number = entry.get("idx")
+        use = entry.get("use")
+        if use is None:
+            use = entry.get("path")
+        if use is None:
+            use = entry.get("pathType")
+        if use is None:
+            use = entry.get("chan")
+        if not isinstance(group, str) or not group.strip():
+            continue
+        if not isinstance(number, int):
+            continue
+        if not isinstance(use, str) or not use.strip():
+            continue
+        use_norm = use.strip().lower()
+        if use_norm in {"v", "value"}:
+            return True
+    return False
+
+
 def _command_rule_names(mapping: dict[str, Any] | None) -> set[str]:
     names: set[str] = set()
     if not isinstance(mapping, dict):
@@ -584,7 +627,12 @@ def _is_action_command_name(command: str) -> bool:
 def _is_menu_command_action(*, symbol: str, symbol_kinds: set[str], mapping: dict[str, Any] | None = None) -> bool:
     if "write" in symbol_kinds:
         return True
-    return "special" in symbol_kinds and (_is_command_like_symbol(symbol) or _has_named_command_rule(mapping))
+    if "special" in symbol_kinds and (_is_command_like_symbol(symbol) or _has_named_command_rule(mapping)):
+        return True
+    # STATUS_* computed rules must stay read-only even when they expose command_rules.
+    if symbol.upper().startswith("STATUS_"):
+        return False
+    return _mapping_has_parameter_write(mapping)
 
 
 def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescriptor]:
