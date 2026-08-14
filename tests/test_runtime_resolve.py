@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 from homeassistant.exceptions import HomeAssistantError
@@ -101,14 +101,21 @@ async def test_async_write_raw_command_route_requires_command_mapping() -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_logs_first_update() -> None:
+async def test_runtime_delivers_updates_to_listener() -> None:
     runtime, _api, gateway, _store = make_runtime()
-    delivered = MagicMock()
+    received: list[FakeParamUpdate] = []
+    delivered_event = asyncio.Event()
 
-    runtime.add_listener(delivered)
+    def _listener(update: FakeParamUpdate) -> None:
+        received.append(update)
+        delivered_event.set()
+
+    runtime.add_listener(_listener)
     await runtime.start()
-    gateway.bus.push(FakeParamUpdate(pool="P1", chan="v", idx=1, meta={"_source": "ws"}))
-    await __import__("asyncio").sleep(0.05)
-    await runtime.stop()
 
-    delivered.assert_called_once()
+    update = FakeParamUpdate(pool="P1", chan="v", idx=1, meta={"_source": "ws"})
+    gateway.bus.push(update)
+    await asyncio.wait_for(delivered_event.wait(), timeout=1.0)
+
+    assert received == [update]
+    await runtime.stop()
