@@ -658,9 +658,7 @@ async def _build_panel_groups_with_fallback(
 
     A failing ungated retry is left to propagate, as it did before the empty-result case was
     handled here. Setup then fails and Home Assistant retries it, which is recoverable; swallowing
-    the error would instead persist an empty descriptor list that survives restarts, because
-    ``_descriptors_require_refresh`` accepts an empty list and the entry is stamped with the
-    current ``BOOTSTRAP_VERSION``.
+    the error would instead hand back an empty result as if the extraction had succeeded.
 
     Args:
         resolver: Parameter resolver used for the extraction.
