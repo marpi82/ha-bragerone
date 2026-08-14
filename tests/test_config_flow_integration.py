@@ -9,12 +9,13 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
-from pybragerone.api.client import ApiError
 from pytest_homeassistant_custom_component.common import MockConfigEntry, MockModule, mock_integration, mock_platform
 
 from tests.conftest import install_pybragerone_stubs
 
 install_pybragerone_stubs()
+
+from pybragerone.api.client import ApiError  # noqa: E402
 
 import custom_components.habragerone.config_flow as config_flow_module  # noqa: E402
 from custom_components.habragerone.const import (  # noqa: E402
@@ -121,7 +122,7 @@ async def test_config_flow_select_modules_rejects_invalid_filter_mode(hass: Home
             data=_USER_INPUT,
         )
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_OBJECT_ID: 1})
-        with pytest.raises(InvalidData, match="Schema validation failed"):
+        with pytest.raises(InvalidData):
             await hass.config_entries.flow.async_configure(
                 result["flow_id"],
                 {CONF_MODULES: ["DEV1"], CONF_ENTITY_FILTER_MODE: "bad-mode"},

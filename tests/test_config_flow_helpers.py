@@ -6,7 +6,11 @@ from typing import Any
 
 import voluptuous as vol
 
-from custom_components.habragerone.config_flow import (
+from tests.conftest import install_pybragerone_stubs
+
+install_pybragerone_stubs()
+
+from custom_components.habragerone.config_flow import (  # noqa: E402
     _build_modules_step_schema,
     _entity_filter_mode_values,
     _extract_language_label,
@@ -16,7 +20,7 @@ from custom_components.habragerone.config_flow import (
     _module_choices,
     _ui_field_labels,
 )
-from custom_components.habragerone.const import CONF_ENTITY_FILTER_MODE, CONF_MODULES, FILTER_MODE_UI
+from custom_components.habragerone.const import CONF_ENTITY_FILTER_MODE, CONF_MODULES, FILTER_MODE_UI  # noqa: E402
 
 
 def test_module_choices_skips_empty_devid_and_formats_label() -> None:

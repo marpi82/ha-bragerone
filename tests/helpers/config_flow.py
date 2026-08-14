@@ -7,8 +7,6 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
-from pybragerone.api.client import ApiError
-
 
 def _module_model(*, devid: str = "DEV1", name: str = "Boiler module", version: str = "1.0") -> SimpleNamespace:
     return SimpleNamespace(
@@ -28,8 +26,13 @@ def make_fake_api(
     modules: list[SimpleNamespace] | None = None,
 ) -> AsyncMock:
     """Build a fake API client for config/options flow tests."""
+    from pybragerone.api.client import ApiError
+
     api = AsyncMock()
-    api.ensure_auth = AsyncMock(side_effect=ApiError(401, {"message": "auth"}) if auth_error else None)
+    if auth_error:
+        api.ensure_auth = AsyncMock(side_effect=ApiError(401, {"message": "auth"}))
+    else:
+        api.ensure_auth = AsyncMock(return_value=None)
     api.get_objects = AsyncMock(
         return_value=[
             SimpleNamespace(id=1, name="Site A"),
