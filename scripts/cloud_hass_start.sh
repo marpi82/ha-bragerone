@@ -43,6 +43,8 @@ for _ in $(seq 1 90); do
       echo "Attach logs: tmux attach -t $SESSION"
     fi
     echo "First visit shows onboarding unless .storage already exists."
+    echo "UI smoke login (local): username cursor / password cursor"
+    echo "READ-ONLY: do not toggle switches or change setpoints on live BragerOne entities."
     exit 0
   fi
   sleep 2

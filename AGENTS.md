@@ -70,6 +70,16 @@ USE_LOCAL_PYBRAGERONE=1 uv run poe hass-prepare && uv run poe hass-cloud
 ```
 
 - `hass-cloud` uses `--skip-pip` so `manifest.json` requirements do not overwrite the uv-managed venv (needed when testing editable sibling `py-bragerone`).
-- First browser visit is HA **onboarding** unless `config/.storage` already exists — create a local owner user, then add the BragerOne integration via UI (live Brager credentials required for end-to-end).
+- First browser visit is HA **onboarding** unless `config/.storage` already exists. Cloud smoke owner account (local only, not a secret): username `cursor` / password `cursor`.
 - Attach logs: `tmux -f /exec-daemon/tmux.portal.conf attach -t ha-bragerone` (or `tmux attach -t ha-bragerone`).
 - Offline unit tests remain the default gate: `uv run poe test` / `uv run poe validate`.
+
+### UI / integration testing — read-only hardware rule
+
+When exercising the live BragerOne / TiSConnect integration in Home Assistant (computer-use, Chrome, or manual):
+
+- **Do not change controller state.** Never toggle switches, press buttons, change `number`/`select` setpoints, or otherwise write to the device through the integration under test.
+- Allowed: open dashboards, inspect entity states/attributes, diagnostics (redacted), config-flow screens that only read/login, logs.
+- Forbidden without an explicit user request for that write: any entity service call or UI control that would send a command to the boiler / module.
+
+This protects a real heating system attached to live credentials. Offline unit tests with stubs remain unconstrained.
