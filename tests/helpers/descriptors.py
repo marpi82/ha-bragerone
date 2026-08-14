@@ -94,3 +94,108 @@ def switch_descriptor(
         "module_name": "module_a",
         "mapping": mapping,
     }
+
+
+def select_descriptor(
+    *,
+    symbol: str = "MODE_SELECT",
+    devid: str = "DEV1",
+    pool: str = "P6",
+    chan: str = "v",
+    idx: int = 0,
+    options: list[str] | None = None,
+    enum_map: dict[str, str | int] | None = None,
+    raw_to_label: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Build a select-platform descriptor with enum options."""
+    return {
+        "symbol": symbol,
+        "devid": devid,
+        "pool": pool,
+        "chan": chan,
+        "idx": idx,
+        "platform": "select",
+        "label": "Operating mode",
+        "module_name": "module_a",
+        "options": options or ["Eco", "Comfort"],
+        "enum_map": enum_map or {"Eco": 2, "Comfort": 3},
+        "raw_to_label": raw_to_label or {"2": "Eco", "3": "Comfort"},
+        "mapping": {"command_rules": []},
+    }
+
+
+def binary_sensor_descriptor(
+    *,
+    symbol: str = "FLAG_0",
+    devid: str = "DEV1",
+    pool: str = "P5",
+    chan: str = "s",
+    idx: int = 0,
+    command_rules: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build a binary_sensor-platform descriptor."""
+    return {
+        "symbol": symbol,
+        "devid": devid,
+        "pool": pool,
+        "chan": chan,
+        "idx": idx,
+        "platform": "binary_sensor",
+        "label": "Pump active",
+        "module_name": "module_a",
+        "mapping": {"command_rules": command_rules or []},
+    }
+
+
+def button_descriptor(
+    *,
+    symbol: str = "ACTION_BTN",
+    devid: str = "DEV1",
+    command_rules: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build a button-platform descriptor."""
+    return {
+        "symbol": symbol,
+        "devid": devid,
+        "pool": "P5",
+        "chan": "s",
+        "idx": 0,
+        "platform": "button",
+        "label": "Reset alarm",
+        "module_name": "module_a",
+        "mapping": {"command_rules": command_rules or [{"command": "RESET_ALARM", "value": True}]},
+    }
+
+
+def sensor_descriptor(
+    *,
+    symbol: str = "TEMP_1",
+    devid: str = "DEV1",
+    pool: str = "P6",
+    chan: str = "v",
+    idx: int = 0,
+    unit: str | None = "°C",
+    raw_to_label: dict[str, str] | None = None,
+    command_rules: list[dict[str, Any]] | None = None,
+    mapping_channels: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a sensor-platform descriptor."""
+    mapping: dict[str, Any] = {"command_rules": command_rules or []}
+    if mapping_channels is not None:
+        mapping["channels"] = mapping_channels
+    descriptor: dict[str, Any] = {
+        "symbol": symbol,
+        "devid": devid,
+        "pool": pool,
+        "chan": chan,
+        "idx": idx,
+        "platform": "sensor",
+        "label": "Boiler temperature",
+        "module_name": "module_a",
+        "mapping": mapping,
+    }
+    if unit is not None:
+        descriptor["unit"] = unit
+    if raw_to_label is not None:
+        descriptor["raw_to_label"] = raw_to_label
+    return descriptor
