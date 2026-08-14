@@ -6,11 +6,12 @@ from datetime import UTC, datetime
 
 import pytest
 from homeassistant.core import HomeAssistant
-from pybragerone.models.token import Token
 
 from tests.conftest import install_pybragerone_stubs
 
 install_pybragerone_stubs()
+
+from pybragerone.models.token import Token  # noqa: E402
 
 from custom_components.habragerone.token_store import HATokenStore  # noqa: E402
 

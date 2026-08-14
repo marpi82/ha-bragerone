@@ -86,4 +86,4 @@ def install_pybragerone_stubs() -> None:
 
     pybragerone_models_token_stub = types.ModuleType("pybragerone.models.token")
     pybragerone_models_token_stub.Token = _TokenStub
-    sys.modules.setdefault("pybragerone.models.token", pybragerone_models_token_stub)
+    sys.modules["pybragerone.models.token"] = pybragerone_models_token_stub
