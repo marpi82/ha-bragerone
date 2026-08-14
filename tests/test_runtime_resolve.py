@@ -101,7 +101,8 @@ async def test_async_write_raw_command_route_requires_command_mapping() -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_delivers_updates_to_listener() -> None:
+async def test_runtime_delivers_updates_when_meta_is_not_dict() -> None:
+    """Cover the non-dict update.meta branch in BragerRuntime._dispatch_updates."""
     runtime, _api, gateway, _store = make_runtime()
     received: list[FakeParamUpdate] = []
     delivered_event = asyncio.Event()
@@ -112,10 +113,11 @@ async def test_runtime_delivers_updates_to_listener() -> None:
 
     runtime.add_listener(_listener)
     await runtime.start()
-
-    update = FakeParamUpdate(pool="P1", chan="v", idx=1, meta={"_source": "ws"})
-    gateway.bus.push(update)
-    await asyncio.wait_for(delivered_event.wait(), timeout=1.0)
-
-    assert received == [update]
-    await runtime.stop()
+    try:
+        update = FakeParamUpdate(pool="P1", chan="v", idx=1)
+        update.meta = "ws"  # type: ignore[assignment]
+        gateway.bus.push(update)
+        await asyncio.wait_for(delivered_event.wait(), timeout=1.0)
+        assert received == [update]
+    finally:
+        await runtime.stop()
