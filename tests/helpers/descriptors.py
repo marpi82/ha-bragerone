@@ -45,8 +45,44 @@ def command_rule_descriptor(
     chan: str = "s",
     idx: int = 0,
     command_rules: list[dict[str, Any]],
+    platform: str = "switch",
+    label: str | None = None,
+    panel_path: str | None = None,
+    module_name: str | None = "boiler_module",
 ) -> dict[str, Any]:
     """Build a descriptor with command_rules (raw command route)."""
+    descriptor: dict[str, Any] = {
+        "symbol": symbol,
+        "devid": devid,
+        "pool": pool,
+        "chan": chan,
+        "idx": idx,
+        "platform": platform,
+        "mapping": {"command_rules": command_rules},
+    }
+    if label is not None:
+        descriptor["label"] = label
+    if panel_path is not None:
+        descriptor["panel_path"] = panel_path
+    if module_name is not None:
+        descriptor["module_name"] = module_name
+    return descriptor
+
+
+def switch_descriptor(
+    *,
+    symbol: str = "SWITCH_0",
+    devid: str = "DEV1",
+    pool: str = "P5",
+    chan: str = "s",
+    idx: int = 0,
+    mapping_inputs: list[dict[str, str]] | None = None,
+    command_rules: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build a switch-platform descriptor."""
+    mapping: dict[str, Any] = {"command_rules": command_rules or []}
+    if mapping_inputs:
+        mapping["inputs"] = mapping_inputs
     return {
         "symbol": symbol,
         "devid": devid,
@@ -54,5 +90,7 @@ def command_rule_descriptor(
         "chan": chan,
         "idx": idx,
         "platform": "switch",
-        "mapping": {"command_rules": command_rules},
+        "label": "Test switch",
+        "module_name": "module_a",
+        "mapping": mapping,
     }

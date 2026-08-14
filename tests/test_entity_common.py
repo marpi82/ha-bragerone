@@ -1,0 +1,169 @@
+"""Tests for shared entity_common helpers."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+from homeassistant.core import HomeAssistant
+
+from tests.conftest import install_pybragerone_stubs
+
+install_pybragerone_stubs()
+
+from custom_components.habragerone.const import (  # noqa: E402
+    CONF_ENTITY_DESCRIPTORS,
+    DATA_ENTITY_STATS,
+    DATA_RUNTIME,
+    DOMAIN,
+)
+from custom_components.habragerone.entity_common import (  # noqa: E402
+    descriptor_current_raw_value,
+    descriptor_enum_map,
+    descriptor_options,
+    descriptor_raw_to_label,
+    descriptor_refresh_keys,
+    device_info_from_descriptor,
+    get_runtime_and_descriptors,
+    record_platform_entity_stats,
+    store_value_for_address,
+)
+from tests.helpers.descriptors import switch_descriptor, writable_parameter_descriptor  # noqa: E402
+from tests.helpers.fakes import FakeStore, make_runtime  # noqa: E402
+from tests.helpers.hass import register_config_entry  # noqa: E402
+
+
+def test_descriptor_refresh_keys_direct_address() -> None:
+    descriptor = switch_descriptor(pool="P5", chan="s", idx=3)
+    assert descriptor_refresh_keys(descriptor) == {"P5.s3"}
+
+
+def test_descriptor_refresh_keys_mapping_inputs() -> None:
+    descriptor = {
+        "mapping": {
+            "inputs": [{"address": "P1.v2"}, {"address": " P6.s0 "}, {"address": ""}, "bad"],
+        },
+    }
+    assert descriptor_refresh_keys(descriptor) == {"P1.v2", "P6.s0"}
+
+
+def test_store_value_for_address_reads_family_channel() -> None:
+    store = FakeStore(flat_values={"P6.v0": 42, "P6.s0": 1})
+    assert store_value_for_address(store, "P6.v0") == 42
+    assert store_value_for_address(store, "P6.s9") is None
+
+
+def test_store_value_for_address_rejects_invalid_syntax() -> None:
+    store = FakeStore()
+    assert store_value_for_address(store, "invalid") is None
+    assert store_value_for_address(store, "P6.bad") is None
+
+
+def test_descriptor_current_raw_value_prefers_direct_mapping() -> None:
+    store = FakeStore(flat_values={"P5.s0": 0, "P1.v2": 99})
+    descriptor = switch_descriptor(
+        pool="P5",
+        chan="s",
+        idx=0,
+        mapping_inputs=[{"address": "P1.v2"}],
+    )
+    assert descriptor_current_raw_value(store, descriptor) == 0
+
+
+def test_descriptor_current_raw_value_falls_back_to_mapping_input() -> None:
+    store = FakeStore(flat_values={"P1.v2": 7})
+    descriptor = {
+        "pool": "P5",
+        "chan": "s",
+        "idx": 0,
+        "mapping": {"inputs": [{"address": "P1.v2"}]},
+    }
+    assert descriptor_current_raw_value(store, descriptor) == 7
+
+
+def test_descriptor_current_raw_value_returns_none_when_missing() -> None:
+    store = FakeStore()
+    assert descriptor_current_raw_value(store, switch_descriptor()) is None
+
+
+def test_descriptor_options_filters_invalid_entries() -> None:
+    descriptor: dict[str, Any] = {"options": [" Auto ", "", 3, None]}
+    assert descriptor_options(descriptor) == [" Auto ", "3", "None"]
+    assert descriptor_options({"options": "bad"}) == []
+
+
+def test_descriptor_enum_map_keeps_scalar_values_only() -> None:
+    descriptor: dict[str, Any] = {
+        "enum_map": {"On": 1, "Off": 0, "Bad": {"nested": True}, "Text": "x"},
+    }
+    assert descriptor_enum_map(descriptor) == {"On": 1, "Off": 0, "Text": "x"}
+    assert descriptor_enum_map({"enum_map": []}) == {}
+
+
+def test_descriptor_raw_to_label_normalizes_keys() -> None:
+    descriptor: dict[str, Any] = {"raw_to_label": {1: "On", 0: "Off"}}
+    assert descriptor_raw_to_label(descriptor) == {"1": "On", "0": "Off"}
+    assert descriptor_raw_to_label({"raw_to_label": "bad"}) == {}
+
+
+def test_device_info_from_descriptor_builds_registry_payload() -> None:
+    descriptor = writable_parameter_descriptor(
+        devid="DEV9",
+        symbol="TEMP",
+    )
+    descriptor.update(
+        {
+            "module_name": "boiler",
+            "module_title": "Boiler module",
+            "module_version": "1.2.3",
+        },
+    )
+    info = device_info_from_descriptor(descriptor, domain=DOMAIN)
+    assert info["identifiers"] == {(DOMAIN, "DEV9")}
+    assert info["manufacturer"] == "BragerOne"
+    assert info["name"] == "boiler"
+    assert info["model"] == "Boiler module"
+    assert info["sw_version"] == "1.2.3"
+
+
+@pytest.mark.asyncio
+async def test_get_runtime_and_descriptors_filters_platform(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime()
+    switch = switch_descriptor()
+    number = writable_parameter_descriptor(symbol="NUM")
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[switch, number])
+
+    result = get_runtime_and_descriptors(hass, entry, platform="switch")
+    assert result is not None
+    resolved_runtime, descriptors = result
+    assert resolved_runtime is runtime
+    assert descriptors == [switch]
+
+
+@pytest.mark.asyncio
+async def test_get_runtime_and_descriptors_returns_none_for_invalid_payload(hass: HomeAssistant) -> None:
+    entry = register_config_entry(hass, runtime=make_runtime()[0], descriptors=[])
+    hass.data[DOMAIN][entry.entry_id][DATA_RUNTIME] = "not-a-runtime"
+
+    assert get_runtime_and_descriptors(hass, entry, platform="switch") is None
+
+    hass.data[DOMAIN][entry.entry_id][DATA_RUNTIME] = make_runtime()[0]
+    hass.data[DOMAIN][entry.entry_id][CONF_ENTITY_DESCRIPTORS] = "bad"
+    assert get_runtime_and_descriptors(hass, entry, platform="switch") is None
+
+
+@pytest.mark.asyncio
+async def test_record_platform_entity_stats_persists_counts(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+
+    record_platform_entity_stats(
+        hass,
+        entry,
+        platform="switch",
+        descriptor_count=3,
+        created_count=2,
+    )
+
+    stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]
+    assert stats == {"switch": {"descriptor_count": 3, "created_count": 2}}
