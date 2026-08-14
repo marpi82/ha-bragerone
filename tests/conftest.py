@@ -1,10 +1,23 @@
 import asyncio
 import sys
 import types
+from datetime import datetime
+from typing import Any
 
 import pytest
+from pydantic import BaseModel, Field
 
 pytest.register_assert_rewrite("tests.test_sensor")
+
+
+class _TokenStub(BaseModel):
+    """Minimal Token stand-in for offline token_store tests."""
+
+    access_token: str | None = None
+    refresh_token: str | None = None
+    token_type: str = "bearer"
+    expires_at: datetime | None = None
+    objects: list[dict[str, Any]] = Field(default_factory=list)
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +37,7 @@ def install_pybragerone_stubs() -> None:
     pybragerone_stub.BragerOneApiClient = object
     pybragerone_stub.BragerOneGateway = object
     pybragerone_stub.__path__ = []
-    sys.modules.setdefault("pybragerone", pybragerone_stub)
+    sys.modules["pybragerone"] = pybragerone_stub
 
     pybragerone_api_stub = types.ModuleType("pybragerone.api")
     pybragerone_api_stub.__path__ = []
@@ -70,3 +83,7 @@ def install_pybragerone_stubs() -> None:
     pybragerone_models_catalog_stub = types.ModuleType("pybragerone.models.catalog")
     pybragerone_models_catalog_stub.LiveAssetsCatalog = object
     sys.modules.setdefault("pybragerone.models.catalog", pybragerone_models_catalog_stub)
+
+    pybragerone_models_token_stub = types.ModuleType("pybragerone.models.token")
+    pybragerone_models_token_stub.Token = _TokenStub
+    sys.modules.setdefault("pybragerone.models.token", pybragerone_models_token_stub)
