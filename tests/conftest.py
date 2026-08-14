@@ -34,6 +34,7 @@ def install_pybragerone_stubs() -> None:
 
     class _Platform:
         BRAGERONE = types.SimpleNamespace(value="bragerone")
+        TISCONNECT = types.SimpleNamespace(value="tisconnect")
 
     def _server_for(_platform: str) -> object:
         return object()
