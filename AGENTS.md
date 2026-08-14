@@ -53,3 +53,23 @@ New config/options/errors strings go into `strings.json` and English `translatio
 - `hacs.json` homeassistant minimum vs the `homeassistant` dependency in `pyproject.toml` (must match; `manifest.json` has no HA version field).
 - `manifest.json` `py-bragerone==X` pin vs `pyproject.toml` `py-bragerone>=X`.
 - ruff `target-version` vs actual runtime Python.
+
+## Cursor Cloud specific instructions
+
+Default Cloud Agent install syncs deps via the sibling `py-bragerone` `.cursor/environment.json` (`uv sync` for both repos). Use `uv run poe …` from this checkout. **Docker is not available** in the current Cloud Agent image — do not use `docker-compose` profiles here.
+
+### Local Home Assistant smoke (UI / pre-release)
+
+Native HA (no Docker), suitable for computer-use / Chrome against `http://127.0.0.1:8123`:
+
+```bash
+uv run poe hass-prepare          # config/ + symlink custom_components
+uv run poe hass-cloud            # tmux session `ha-bragerone`, --skip-pip, wait for :8123
+# optional unreleased library:
+USE_LOCAL_PYBRAGERONE=1 uv run poe hass-prepare && uv run poe hass-cloud
+```
+
+- `hass-cloud` uses `--skip-pip` so `manifest.json` requirements do not overwrite the uv-managed venv (needed when testing editable sibling `py-bragerone`).
+- First browser visit is HA **onboarding** unless `config/.storage` already exists — create a local owner user, then add the BragerOne integration via UI (live Brager credentials required for end-to-end).
+- Attach logs: `tmux -f /exec-daemon/tmux.portal.conf attach -t ha-bragerone` (or `tmux attach -t ha-bragerone`).
+- Offline unit tests remain the default gate: `uv run poe test` / `uv run poe validate`.

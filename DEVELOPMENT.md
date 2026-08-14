@@ -23,6 +23,17 @@ uv run pre-commit install --hook-type pre-push
 docker-compose up -d
 ```
 
+### Cursor Cloud / native HA (no Docker)
+
+When Docker is unavailable (Cloud Agent), use:
+
+```bash
+uv run poe hass-prepare
+uv run poe hass-cloud    # http://127.0.0.1:8123
+```
+
+See `AGENTS.md` → **Cursor Cloud specific instructions**.
+
 ### Running Tests
 
 ```bash
