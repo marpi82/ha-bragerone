@@ -168,4 +168,9 @@ def _normalize_text_state(value: Any) -> Any:
     head = text[0]
     if not head.isalpha():
         return text
+    # Keep unresolved ALL_CAPS enum tags (``STOP``) intact. Lowercasing only the
+    # first letter produced nonsense like ``sTOP`` when unit option labels missed.
+    letters = [ch for ch in text if ch.isalpha()]
+    if letters and all(ch.isupper() for ch in letters):
+        return text
     return f"{head.lower()}{text[1:]}"
