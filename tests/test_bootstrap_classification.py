@@ -552,9 +552,8 @@ def test_is_menu_command_action_uses_parameter_write_unless_status_symbol() -> N
         )
         is True
     )
-    assert (
-        _mapping_has_parameter_write({"paths": {"command": [{"group": "P6", "number": 1, "chan": "v"}]}}) is True
-    )
+    assert _mapping_has_parameter_write({"paths": {"command": [{"group": "P6", "number": 1, "chan": "v"}]}}) is True
+
 
 def test_normalize_cached_descriptors_treats_status_menu_param_with_write_path_as_select() -> None:
     """Editable Tak/Nie PARAMs listed only under menu status must become select."""
