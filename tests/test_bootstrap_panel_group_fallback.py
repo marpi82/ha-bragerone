@@ -186,11 +186,10 @@ def test_two_empty_panel_group_attempts_warn_without_failing_bootstrap(
     assert calls == [["DISPLAY_PARAMETER_LEVEL_1"], None]
     assert payload["entity_descriptors"] == []
 
+    # Assert the module is named, not the exact phrasing: rewording the log is not a behaviour change.
     warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
     assert len(warnings) == 1
-    message = warnings[0].getMessage()
-    assert "M1" in message
-    assert "no entities" in message
+    assert "M1" in warnings[0].getMessage()
 
 
 def test_failing_ungated_retry_propagates_instead_of_caching_emptiness() -> None:

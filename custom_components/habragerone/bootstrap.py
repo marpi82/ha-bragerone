@@ -682,8 +682,11 @@ async def _build_panel_groups_with_fallback(
     groups = await resolver.build_panel_groups(device_menu=device_menu, permissions=None, all_panels=True)
 
     if not _panel_group_symbols(groups):
+        # Scope the claim to panel-derived symbols: in permissions mode the later secondary pass
+        # can still contribute command-like entities that never came from a panel group.
         LOGGER.warning(
-            "No panel symbols discovered for module %s (with and without permissions); this module will get no entities",
+            "Panel-group discovery returned no symbols for module %s, with and without permissions; "
+            "no panel-derived entities will be created for it",
             devid,
         )
     return groups
