@@ -12,6 +12,13 @@ install_pybragerone_stubs()
 
 from tests.helpers.fakes import FakeParamUpdate, make_runtime  # noqa: E402
 
+_EXPECTED_RUNTIME_TASKS = frozenset({"habragerone-store-sync", "habragerone-update-dispatch"})
+
+
+def _runtime_task_names(runtime: object) -> set[str]:
+    tasks = getattr(runtime, "_tasks", [])
+    return {task.get_name() for task in tasks}
+
 
 @pytest.mark.asyncio
 async def test_runtime_start_and_stop_cancels_background_tasks() -> None:
@@ -20,7 +27,7 @@ async def test_runtime_start_and_stop_cancels_background_tasks() -> None:
     await asyncio.sleep(0)
     assert gateway.started
     assert store.run_started
-    assert len(runtime._tasks) == 2
+    assert _EXPECTED_RUNTIME_TASKS.issubset(_runtime_task_names(runtime))
 
     await runtime.stop()
     assert store.run_cancelled
@@ -61,13 +68,21 @@ async def test_runtime_dispatches_updates_to_listeners() -> None:
 async def test_runtime_listener_unsubscribe_stops_delivery() -> None:
     runtime, _api, gateway, _store = make_runtime()
     received: list[FakeParamUpdate] = []
+    callback_called = asyncio.Event()
 
-    remove = runtime.add_listener(received.append)
+    def _listener(update: FakeParamUpdate) -> None:
+        received.append(update)
+        callback_called.set()
+
+    remove = runtime.add_listener(_listener)
     remove()
 
     await runtime.start()
     gateway.bus.push(FakeParamUpdate(pool="P1", chan="v", idx=1))
-    await asyncio.sleep(0.05)
+    for _ in range(20):
+        await asyncio.sleep(0)
+        if callback_called.is_set():
+            break
 
     assert received == []
     await runtime.stop()
