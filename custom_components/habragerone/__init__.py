@@ -221,26 +221,23 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_migrate_entry(_hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate legacy entries to the current schema."""
+    if entry.version >= 2:
+        return True
+
     data: dict[str, Any] = dict(entry.data)
-    changed = False
+    legacy_renames = (
+        ("email", CONF_EMAIL),
+        ("password", CONF_PASSWORD),
+        ("object_id", CONF_OBJECT_ID),
+        ("modules", CONF_MODULES),
+    )
+    for legacy_key, conf_key in legacy_renames:
+        if legacy_key != conf_key and legacy_key in data and conf_key not in data:
+            data[conf_key] = data.pop(legacy_key)
 
-    if "email" in data and CONF_EMAIL not in data:
-        data[CONF_EMAIL] = data.pop("email")
-        changed = True
-    if "password" in data and CONF_PASSWORD not in data:
-        data[CONF_PASSWORD] = data.pop("password")
-        changed = True
-    if "object_id" in data and CONF_OBJECT_ID not in data:
-        data[CONF_OBJECT_ID] = data.pop("object_id")
-        changed = True
-    if "modules" in data and CONF_MODULES not in data:
-        data[CONF_MODULES] = data.pop("modules")
-        changed = True
-
-    if changed:
-        _hass.config_entries.async_update_entry(entry, data=data, version=2)
-        LOGGER.info("Migrated BragerOne config entry %s to version 2", entry.entry_id)
+    hass.config_entries.async_update_entry(entry, data=data, version=2)
+    LOGGER.info("Migrated BragerOne config entry %s to version 2", entry.entry_id)
 
     return True
