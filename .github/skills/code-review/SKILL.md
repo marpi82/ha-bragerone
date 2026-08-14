@@ -45,7 +45,7 @@ Review procedure for pull requests to this Home Assistant integration. Work thro
 
 - [ ] Write-path changes include the mandatory conversion/bounds/route tests (see `.github/instructions/tests.instructions.md`).
 - [ ] Bootstrap classification changes have per-platform descriptor fixtures.
-- [ ] Suite passes offline; coverage gate (70%) not weakened.
+- [ ] Suite passes offline; coverage gate (80%) not weakened.
 
 ## 7. Security
 
