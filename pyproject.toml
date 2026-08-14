@@ -21,7 +21,7 @@ keywords = [
 ]
 dependencies = [
     "homeassistant>=2026.3.0",
-    "py-bragerone>=2026.8.2",
+    "py-bragerone>=2026.8.3",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
