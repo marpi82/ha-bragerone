@@ -33,6 +33,13 @@ def enable_event_loop_debug() -> None:
 
 def install_pybragerone_stubs() -> None:
     """Install stub modules for optional `pybragerone` imports used by unit tests."""
+    if getattr(install_pybragerone_stubs, "_installed", False):
+        return
+
+    for module_name in list(sys.modules):
+        if module_name == "pybragerone" or module_name.startswith("pybragerone."):
+            del sys.modules[module_name]
+
     pybragerone_stub = types.ModuleType("pybragerone")
     pybragerone_stub.BragerOneApiClient = object
     pybragerone_stub.BragerOneGateway = object
@@ -41,7 +48,7 @@ def install_pybragerone_stubs() -> None:
 
     pybragerone_api_stub = types.ModuleType("pybragerone.api")
     pybragerone_api_stub.__path__ = []
-    sys.modules.setdefault("pybragerone.api", pybragerone_api_stub)
+    sys.modules["pybragerone.api"] = pybragerone_api_stub
 
     pybragerone_api_server_stub = types.ModuleType("pybragerone.api.server")
 
@@ -54,7 +61,7 @@ def install_pybragerone_stubs() -> None:
 
     pybragerone_api_server_stub.Platform = _Platform
     pybragerone_api_server_stub.server_for = _server_for
-    sys.modules.setdefault("pybragerone.api.server", pybragerone_api_server_stub)
+    sys.modules["pybragerone.api.server"] = pybragerone_api_server_stub
 
     pybragerone_api_client_stub = types.ModuleType("pybragerone.api.client")
 
@@ -62,28 +69,30 @@ def install_pybragerone_stubs() -> None:
         pass
 
     pybragerone_api_client_stub.ApiError = _ApiError
-    sys.modules.setdefault("pybragerone.api.client", pybragerone_api_client_stub)
+    sys.modules["pybragerone.api.client"] = pybragerone_api_client_stub
 
     pybragerone_models_stub = types.ModuleType("pybragerone.models")
     pybragerone_models_stub.__path__ = []
-    sys.modules.setdefault("pybragerone.models", pybragerone_models_stub)
+    sys.modules["pybragerone.models"] = pybragerone_models_stub
 
     pybragerone_models_param_stub = types.ModuleType("pybragerone.models.param")
     pybragerone_models_param_stub.ParamStore = object
-    sys.modules.setdefault("pybragerone.models.param", pybragerone_models_param_stub)
+    sys.modules["pybragerone.models.param"] = pybragerone_models_param_stub
 
     pybragerone_models_param_resolver_stub = types.ModuleType("pybragerone.models.param_resolver")
     pybragerone_models_param_resolver_stub.ParamResolver = object
-    sys.modules.setdefault("pybragerone.models.param_resolver", pybragerone_models_param_resolver_stub)
+    sys.modules["pybragerone.models.param_resolver"] = pybragerone_models_param_resolver_stub
 
     pybragerone_models_events_stub = types.ModuleType("pybragerone.models.events")
     pybragerone_models_events_stub.ParamUpdate = object
-    sys.modules.setdefault("pybragerone.models.events", pybragerone_models_events_stub)
+    sys.modules["pybragerone.models.events"] = pybragerone_models_events_stub
 
     pybragerone_models_catalog_stub = types.ModuleType("pybragerone.models.catalog")
     pybragerone_models_catalog_stub.LiveAssetsCatalog = object
-    sys.modules.setdefault("pybragerone.models.catalog", pybragerone_models_catalog_stub)
+    sys.modules["pybragerone.models.catalog"] = pybragerone_models_catalog_stub
 
     pybragerone_models_token_stub = types.ModuleType("pybragerone.models.token")
     pybragerone_models_token_stub.Token = _TokenStub
     sys.modules["pybragerone.models.token"] = pybragerone_models_token_stub
+
+    install_pybragerone_stubs._installed = True  # type: ignore[attr-defined]
