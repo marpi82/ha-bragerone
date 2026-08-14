@@ -13,8 +13,11 @@ This project uses:
 # Install dependencies
 uv sync --group dev --group test
 
-# Install pre-commit hooks
+# Install pre-commit hooks (commit-stage checks)
 uv run pre-commit install
+
+# Install pre-push hook (80% coverage gate on git push)
+uv run pre-commit install --hook-type pre-push
 
 # Start development environment
 docker-compose up -d
@@ -30,7 +33,7 @@ uv run pytest
 uv run pytest --cov=custom_components.habragerone --cov-report=term-missing
 ```
 
-CI uploads `coverage.xml` to Codecov (skipped for Dependabot/Renovate and fork PRs). Pull requests get a `codecov-commenter` report. Patch coverage target is 100%; overall project coverage is informational (the 80% floor is the pre-push hook).
+CI uploads `coverage.xml` to Codecov (skipped for Dependabot/Renovate and fork PRs). Pull requests get a `codecov-commenter` report. Patch coverage target is 100%; overall project coverage is informational (the 80% floor is the pre-push hook — see setup commands above).
 
 Same-repo PRs also re-request GitHub Copilot code review (`.github/workflows/copilot-rerequest.yml`, secret `COPILOT_REVIEW_TOKEN`). Issue and PR templates live under `.github/ISSUE_TEMPLATE/` and `.github/PULL_REQUEST_TEMPLATE.md`.
 
