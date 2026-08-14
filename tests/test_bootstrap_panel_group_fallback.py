@@ -193,7 +193,14 @@ def test_two_empty_panel_group_attempts_warn_without_failing_bootstrap(
     assert "no entities" in message
 
 
-def test_raising_gated_and_ungated_panel_groups_warn_without_raising(caplog: pytest.LogCaptureFixture) -> None:
+def test_failing_ungated_retry_propagates_instead_of_caching_emptiness() -> None:
+    """A broken ungated retry must fail setup, not persist a bootstrap with zero entities.
+
+    ``_descriptors_require_refresh`` accepts an empty descriptor list and the entry is stamped
+    with the current ``BOOTSTRAP_VERSION``, so swallowing this error would cache the empty state
+    across restarts. Letting it propagate keeps the failure retryable.
+    """
+
     class _AlwaysFailingResolver:
         async def build_panel_groups(
             self,
@@ -205,8 +212,8 @@ def test_raising_gated_and_ungated_panel_groups_warn_without_raising(caplog: pyt
             _ = device_menu, permissions, all_panels
             raise RuntimeError("extraction failed")
 
-    with caplog.at_level(logging.WARNING, logger=BOOTSTRAP_LOGGER):
-        groups = asyncio.run(
+    with pytest.raises(RuntimeError, match="extraction failed"):
+        asyncio.run(
             _build_panel_groups_with_fallback(
                 _AlwaysFailingResolver(),
                 device_menu="M1",
@@ -214,8 +221,3 @@ def test_raising_gated_and_ungated_panel_groups_warn_without_raising(caplog: pyt
                 devid="M1",
             )
         )
-
-    assert groups == {}
-    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
-    assert len(warnings) == 1
-    assert "M1" in warnings[0].getMessage()

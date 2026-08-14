@@ -656,6 +656,12 @@ async def _build_panel_groups_with_fallback(
     still return no symbols. Both are treated the same way and retried with ``permissions=None``,
     mirroring the symbol-kind fallback used later in the same bootstrap loop.
 
+    A failing ungated retry is left to propagate, as it did before the empty-result case was
+    handled here. Setup then fails and Home Assistant retries it, which is recoverable; swallowing
+    the error would instead persist an empty descriptor list that survives restarts, because
+    ``_descriptors_require_refresh`` accepts an empty list and the entry is stamped with the
+    current ``BOOTSTRAP_VERSION``.
+
     Args:
         resolver: Parameter resolver used for the extraction.
         device_menu: Device menu identifier of the module.
@@ -675,11 +681,7 @@ async def _build_panel_groups_with_fallback(
             return groups
         LOGGER.debug("Panel-group build returned no symbols for %s, retrying without permissions", devid)
 
-    try:
-        groups = await resolver.build_panel_groups(device_menu=device_menu, permissions=None, all_panels=True)
-    except Exception:
-        LOGGER.debug("Panel-group fallback build failed for %s", devid, exc_info=True)
-        groups = {}
+    groups = await resolver.build_panel_groups(device_menu=device_menu, permissions=None, all_panels=True)
 
     if not _panel_group_symbols(groups):
         LOGGER.warning(
