@@ -89,6 +89,24 @@ class FakeStore:
     def flatten(self) -> dict[str, object]:
         return dict(self._flat)
 
+    def get_family(self, pool: str, idx: int) -> dict[str, object] | None:
+        """Return channel map for one ParamStore family (``P<n>.<chan><idx>`` keys)."""
+        family: dict[str, object] = {}
+        for key, value in self._flat.items():
+            if not isinstance(key, str) or "." not in key:
+                continue
+            key_pool, rest = key.split(".", 1)
+            if key_pool != pool or len(rest) < 2:
+                continue
+            chan = rest[0]
+            try:
+                key_idx = int(rest[1:])
+            except ValueError:
+                continue
+            if key_idx == idx:
+                family[chan] = value
+        return family or None
+
     async def run_with_bus(self, _bus: object) -> None:
         self.run_started = True
         try:
