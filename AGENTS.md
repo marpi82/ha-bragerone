@@ -53,3 +53,35 @@ New config/options/errors strings go into `strings.json` and English `translatio
 - `hacs.json` homeassistant minimum vs the `homeassistant` dependency in `pyproject.toml` (must match; `manifest.json` has no HA version field).
 - `manifest.json` `py-bragerone==X` pin vs `pyproject.toml` `py-bragerone>=X`.
 - ruff `target-version` vs actual runtime Python.
+
+## Cursor Cloud specific instructions
+
+Default Cloud Agent install syncs deps via the sibling `py-bragerone` `.cursor/environment.json` (`uv sync` for both repos). Use `uv run poe …` from this checkout. **Docker is not available** in the current Cloud Agent image — do not use `docker-compose` profiles here.
+
+### Local Home Assistant smoke (UI / pre-release)
+
+Native HA (no Docker), suitable for computer-use / Chrome against `http://127.0.0.1:8123`:
+
+```bash
+uv run poe hass-prepare          # config/ + symlink custom_components
+uv run poe hass-cloud            # tmux session `ha-bragerone`, --skip-pip, wait for :8123
+# optional unreleased library:
+USE_LOCAL_PYBRAGERONE=1 uv run poe hass-prepare && uv run poe hass-cloud
+```
+
+- `hass-cloud` uses `--skip-pip` so `manifest.json` requirements do not overwrite the uv-managed venv (needed when testing editable sibling `py-bragerone`).
+- First browser visit is HA **onboarding** unless `config/.storage` already exists. Cloud smoke owner account (local only, not a secret): username `cursor` / password `cursor`.
+- Prefer **English** UI language on this Cloud HA instance (keeps screenshots/logs consistent for agents).
+- BragerOne / TiSConnect cloud credentials for re-adding the integration may be saved in the **Chrome password store** on this VM — use those if a config entry must be removed and recreated. Do not commit credentials.
+- Attach logs: `tmux -f /exec-daemon/tmux.portal.conf attach -t ha-bragerone` (or `tmux attach -t ha-bragerone`).
+- Offline unit tests remain the default gate: `uv run poe test` / `uv run poe validate`.
+
+### UI / integration testing — read-only hardware rule
+
+When exercising the live BragerOne / TiSConnect integration in Home Assistant (computer-use, Chrome, or manual):
+
+- **Do not change controller state.** Never toggle switches, press buttons, change `number`/`select` setpoints, or otherwise write to the device through the integration under test.
+- Allowed: open dashboards, inspect entity states/attributes, diagnostics (redacted), config-flow screens that only read/login, logs.
+- Forbidden without an explicit user request for that write: any entity service call or UI control that would send a command to the boiler / module.
+
+This protects a real heating system attached to live credentials. Offline unit tests with stubs remain unconstrained.

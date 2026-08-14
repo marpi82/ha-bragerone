@@ -162,6 +162,8 @@ cov = { cmd = "pytest -q --cov=custom_components.habragerone --cov-report=term-m
 # HA Development
 hass = { shell = "python -m homeassistant --config config --debug" }
 hass-restart = { shell = "pkill -f homeassistant || true && python -m homeassistant --config config --debug" }
+hass-prepare = { shell = "./scripts/cloud_hass_prepare.sh" }
+hass-cloud = { shell = "./scripts/cloud_hass_start.sh" }
 # Docker commands
 docker-up = { cmd = "docker-compose up -d" }
 docker-down = { cmd = "docker-compose down" }

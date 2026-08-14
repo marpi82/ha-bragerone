@@ -1,19 +1,21 @@
-# Home Assistant development configuration for ha-bragerone
-default_config:
+# Lean Home Assistant config for integration smoke tests (native / Cloud Agent).
+# Avoids ``default_config`` so ``--skip-pip`` does not fail on Bluetooth/cloud/ssdp/…
+# wheels that are irrelevant to BragerOne development.
 
-# Enable frontend
+homeassistant:
+
+http:
+
 frontend:
 
-# Logger configuration
+config:
+
 logger:
   default: info
   logs:
     custom_components.habragerone: debug
     pybragerone: debug
-# Development configuration
-# Uncomment for demo data
-# demo:
 
-# Your ha-bragerone integration configuration
-# habragerone:
-#   # Add your configuration here when implemented
+recorder:
+history:
+logbook:
