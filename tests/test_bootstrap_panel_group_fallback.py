@@ -194,11 +194,10 @@ def test_two_empty_panel_group_attempts_warn_without_failing_bootstrap(
 
 
 def test_failing_ungated_retry_propagates_instead_of_caching_emptiness() -> None:
-    """A broken ungated retry must fail setup, not persist a bootstrap with zero entities.
+    """A broken ungated retry must fail setup rather than report a bootstrap with zero entities.
 
-    ``_descriptors_require_refresh`` accepts an empty descriptor list and the entry is stamped
-    with the current ``BOOTSTRAP_VERSION``, so swallowing this error would cache the empty state
-    across restarts. Letting it propagate keeps the failure retryable.
+    Home Assistant retries a failed setup, so a transient upstream error recovers on its own.
+    Swallowing it would instead hand back an empty descriptor list as if it were a real result.
     """
 
     class _AlwaysFailingResolver:

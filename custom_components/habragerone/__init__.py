@@ -39,7 +39,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _descriptors_require_refresh(descriptors: Any) -> bool:
-    if not isinstance(descriptors, list):
+    # An empty list is never a legitimate steady state: a module that exists has parameters.
+    # Bootstrap can still produce zero descriptors transiently — an offline module has no primed
+    # values, so every symbol is dropped as `no_display_value`. Caching that would keep the entry
+    # entity-less long after the module returns, because nothing else invalidates the cache until
+    # BOOTSTRAP_VERSION changes. Re-bootstrapping on the next start is the recoverable choice.
+    if not isinstance(descriptors, list) or not descriptors:
         return True
     for descriptor in descriptors:
         if not isinstance(descriptor, dict):

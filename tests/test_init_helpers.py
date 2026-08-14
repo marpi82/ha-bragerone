@@ -19,6 +19,11 @@ def test_descriptors_require_refresh_rejects_non_list() -> None:
     assert _descriptors_require_refresh({"symbol": "X"}) is True
 
 
+def test_descriptors_require_refresh_rejects_empty_list() -> None:
+    """Zero entities is a transient failure (e.g. an offline module), never a valid cache."""
+    assert _descriptors_require_refresh([]) is True
+
+
 def test_descriptors_require_refresh_select_without_options() -> None:
     descriptors = [{"platform": "select", "symbol": "MODE"}]
     assert _descriptors_require_refresh(descriptors) is True
