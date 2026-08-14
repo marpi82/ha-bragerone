@@ -17,11 +17,11 @@ uv run poe fmt                   # ruff format
 uv run poe lint                  # ruff check --fix
 uv run poe typecheck             # mypy --strict (python_version 3.14, pydantic plugin)
 uv run poe test                  # pytest (pytest-homeassistant-custom-component)
-uv run poe cov                   # coverage report (the 70% threshold is enforced only by the pre-push hook)
+uv run poe cov                   # coverage report (the 80% threshold is enforced only by the pre-push hook)
 uv run poe validate              # fmt + lint + typecheck + security + test
 ```
 
-CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2026.3.0` (declared minimum — bump together with `hacs.json`/`pyproject.toml`) / `latest` / `dev`. Each workflow ends in an aggregate **gate job** (`CI`, `HA Integration Tests`, `HACS Validation`) that fails if any required job fails; the `protect-main` ruleset requires only these gates, so renaming jobs or matrix legs never requires ruleset changes — keep the gate job names stable. CI uploads `coverage.xml` to Codecov (`codecov-commenter` on PRs; skip Dependabot/Renovate and forks). Patch coverage target is 100%; project coverage is informational — the 70% floor stays on pre-push. Same-repo PRs re-request GitHub Copilot review via `.github/workflows/copilot-rerequest.yml` (`COPILOT_REVIEW_TOKEN`).
+CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2026.3.0` (declared minimum — bump together with `hacs.json`/`pyproject.toml`) / `latest` / `dev`. Each workflow ends in an aggregate **gate job** (`CI`, `HA Integration Tests`, `HACS Validation`) that fails if any required job fails; the `protect-main` ruleset requires only these gates, so renaming jobs or matrix legs never requires ruleset changes — keep the gate job names stable. CI uploads `coverage.xml` to Codecov (`codecov-commenter` on PRs; skip Dependabot/Renovate and forks). Patch coverage target is 100%; project coverage is informational — the 80% floor stays on pre-push. Same-repo PRs re-request GitHub Copilot review via `.github/workflows/copilot-rerequest.yml` (`COPILOT_REVIEW_TOKEN`).
 
 ## Architecture in one paragraph
 

@@ -88,6 +88,6 @@ repos:
       - id: pytest-pre-push
         name: pytest (coverage gate on push)
         language: system
-        entry: bash -lc 'uv run --group test pytest --maxfail=1 --disable-warnings -q --cov=custom_components.habragerone --cov-report=term-missing --cov-fail-under=70'
+        entry: bash -lc 'uv run --group test pytest --maxfail=1 --disable-warnings -q --cov=custom_components.habragerone --cov-report=term-missing --cov-fail-under=80'
         pass_filenames: false
         stages: [pre-push]
