@@ -44,19 +44,6 @@ def register_config_flow_platform(hass: HomeAssistant) -> None:
     mock_platform(hass, f"{DOMAIN}.config_flow", config_flow_module, built_in=False)
 
 
-from custom_components.habragerone.const import (  # noqa: E402
-    CONF_BACKEND_PLATFORM,
-    CONF_LANGUAGE,
-)
-
-_USER_INPUT = {
-    CONF_EMAIL: "user@example.com",
-    CONF_PASSWORD: "secret",
-    CONF_BACKEND_PLATFORM: "bragerone",
-    CONF_LANGUAGE: "en",
-}
-
-
 @pytest.mark.asyncio
 async def test_config_flow_user_step_shows_form(hass: HomeAssistant) -> None:
     with patch_config_flow_dependencies():
