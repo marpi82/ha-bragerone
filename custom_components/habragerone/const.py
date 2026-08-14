@@ -25,7 +25,7 @@ CONF_ENUM_MAP: Final = "enum_map"
 CONF_RAW_TO_LABEL: Final = "raw_to_label"
 CONF_BOOTSTRAP_DEBUG: Final = "bootstrap_debug"
 CONF_BOOTSTRAP_VERSION: Final = "bootstrap_version"
-BOOTSTRAP_VERSION: Final = 4
+BOOTSTRAP_VERSION: Final = 5
 
 DATA_API: Final = "api"
 DATA_GATEWAY: Final = "gateway"
