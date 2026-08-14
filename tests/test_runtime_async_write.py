@@ -1,0 +1,152 @@
+"""Tests for BragerRuntime.async_write and command-rule helpers."""
+
+from __future__ import annotations
+
+import pytest
+from homeassistant.exceptions import HomeAssistantError
+
+from tests.conftest import install_pybragerone_stubs
+
+install_pybragerone_stubs()
+
+from custom_components.habragerone.runtime import (  # noqa: E402
+    _compare_condition,
+    _read_target_actual,
+    _rule_command_name,
+    _select_command_rule,
+    _select_intent_command_rule,
+)
+from tests.helpers.descriptors import command_rule_descriptor, writable_parameter_descriptor  # noqa: E402
+from tests.helpers.fakes import FakeApi, make_runtime  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_async_write_missing_devid_raises() -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    descriptor = writable_parameter_descriptor(devid="")
+    with pytest.raises(HomeAssistantError, match="Missing device id"):
+        await runtime.async_write(descriptor=descriptor, input_display_value=1)
+
+
+@pytest.mark.asyncio
+async def test_async_write_maps_write_validation_error_to_home_assistant_error() -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    descriptor = writable_parameter_descriptor(raw_min=0, raw_max=5)
+    with pytest.raises(HomeAssistantError, match="exceeds maximum"):
+        await runtime.async_write(descriptor=descriptor, input_display_value=99)
+
+
+@pytest.mark.asyncio
+async def test_async_write_parameter_route_failure_raises() -> None:
+    runtime, _api, _gateway, _store = make_runtime(api=FakeApi(succeed=False))
+    descriptor = writable_parameter_descriptor()
+    with pytest.raises(HomeAssistantError, match="parameter route"):
+        await runtime.async_write(descriptor=descriptor, input_display_value=42)
+
+
+@pytest.mark.asyncio
+async def test_async_write_raw_command_failure_raises() -> None:
+    runtime, _api, _gateway, _store = make_runtime(api=FakeApi(succeed=False))
+    descriptor = command_rule_descriptor(
+        command_rules=[{"command": "BOILER_START", "value": "ON"}],
+    )
+    with pytest.raises(HomeAssistantError, match="raw command route"):
+        await runtime.async_write(descriptor=descriptor, input_display_value=True)
+
+
+@pytest.mark.asyncio
+async def test_async_write_applies_enum_mapping() -> None:
+    runtime, api, _gateway, _store = make_runtime()
+    descriptor = writable_parameter_descriptor()
+    await runtime.async_write(
+        descriptor=descriptor,
+        input_display_value="Eco",
+        enum_mapping={"Eco": 2, "Comfort": 3},
+    )
+    assert api.calls[0]["value"] == 2
+
+
+@pytest.mark.asyncio
+async def test_async_write_uses_group_target_address() -> None:
+    runtime, api, _gateway, _store = make_runtime(flat_values={"P7.s3": 0})
+    descriptor = command_rule_descriptor(
+        command_rules=[
+            {
+                "conditions": [
+                    {
+                        "operation": "equalTo",
+                        "expected": 0,
+                        "targets": [{"group": "P7", "use": "s", "number": 3}],
+                    }
+                ],
+                "command": "RELAY_ON",
+                "value": "ON",
+            }
+        ],
+    )
+    await runtime.async_write(descriptor=descriptor, input_display_value=True)
+    assert api.calls[0]["command"] == "RELAY_ON"
+
+
+@pytest.mark.asyncio
+async def test_async_write_uses_connected_at_store_getter() -> None:
+    runtime, api, _gateway, _store = make_runtime(
+        flat_values={},
+        modules_meta={"DEV1": {"connectedAt": "2026-04-06T10:00:00Z"}},
+    )
+    descriptor = command_rule_descriptor(
+        command_rules=[
+            {
+                "conditions": [
+                    {
+                        "operation": "equalTo",
+                        "expected": "2026-04-06T10:00:00Z",
+                        "targets": [{"storeGetter": "modules.connectedAt"}],
+                    }
+                ],
+                "command": "SYNC_OK",
+                "value": "OK",
+            }
+        ],
+    )
+    await runtime.async_write(descriptor=descriptor, input_display_value=True)
+    assert api.calls[0]["command"] == "SYNC_OK"
+
+
+def test_rule_command_name_rejects_void() -> None:
+    assert _rule_command_name({"command": "void 0"}) is None
+    assert _rule_command_name({"command": " BOILER_START "}) == "BOILER_START"
+
+
+def test_select_command_rule_matches_bool_logic() -> None:
+    rules = [
+        {"logic": "on", "command": "START", "value": "ON"},
+        {"logic": "off", "command": "STOP", "value": "OFF"},
+    ]
+    assert _rule_command_name(_select_command_rule(command_rules=rules, desired_value=True)) == "START"
+    assert _rule_command_name(_select_command_rule(command_rules=rules, desired_value=False)) == "STOP"
+
+
+def test_select_intent_command_rule_prefers_logic_tags() -> None:
+    rules = [
+        {"logic": "on", "command": "BOILER_START", "value": "ON"},
+        {"logic": "off", "command": "BOILER_STOP", "value": "OFF"},
+    ]
+    picked = _select_intent_command_rule(command_rules=rules, desired_value=False)
+    assert _rule_command_name(picked) == "BOILER_STOP"
+
+
+def test_compare_condition_supports_not_equal() -> None:
+    assert _compare_condition(operation="notEqualTo", actual=1, expected=0) is True
+    assert _compare_condition(operation="equalTo", actual=1, expected=1) is True
+    assert _compare_condition(operation="unknown.op", actual=1, expected=1) is False
+
+
+def test_read_target_actual_extracts_bit_from_address() -> None:
+    actual = _read_target_actual(
+        {"address": "P5.s0", "bit": 1},
+        flat_values={"P5.s0": 0b10},
+        devid="DEV1",
+        modules_meta={},
+    )
+    assert actual == 1

@@ -69,3 +69,65 @@ def test_route_selection_behavior() -> None:
 
     with pytest.raises(WriteValidationError, match="No command route available"):
         select_command_route(has_parameter_address=False, has_command_rule=False)
+
+
+def test_enum_display_to_raw_accepts_already_mapped_raw_value() -> None:
+    mapping = {"Eco": 2, "Comfort": 3}
+    assert enum_display_to_raw(2, mapping) == 2
+
+
+def test_enum_raw_to_display_returns_label_or_raw() -> None:
+    mapping = {"Eco": 2, "Comfort": 3}
+    assert enum_raw_to_display(2, mapping) == "Eco"
+    assert enum_raw_to_display(99, mapping) == 99
+
+
+def test_prepare_write_rejects_below_minimum() -> None:
+    context = WriteContext(
+        symbol="P4.v1",
+        has_parameter_address=True,
+        has_command_rule=False,
+        raw_min=10,
+        raw_max=100,
+    )
+    with pytest.raises(WriteValidationError, match="below minimum"):
+        prepare_write(5, context=context)
+
+
+def test_prepare_write_rejects_zero_scale_transform() -> None:
+    context = WriteContext(
+        symbol="P4.v1",
+        has_parameter_address=True,
+        has_command_rule=False,
+        transform=NumericTransform(scale=0.0, offset=0.0),
+        raw_min=0,
+        raw_max=100,
+    )
+    with pytest.raises(WriteValidationError, match="scale cannot be 0"):
+        prepare_write(10, context=context)
+
+
+def test_prepare_write_keeps_fractional_raw_value() -> None:
+    context = WriteContext(
+        symbol="P4.v1",
+        has_parameter_address=True,
+        has_command_rule=False,
+        transform=NumericTransform(scale=3.0, offset=0.0),
+        raw_min=0,
+        raw_max=100,
+    )
+    prepared = prepare_write(10.0, context=context)
+    assert prepared.raw_value == pytest.approx(10.0 / 3.0)
+
+
+def test_prepare_write_applies_enum_mapping_before_bounds() -> None:
+    context = WriteContext(
+        symbol="P4.u1",
+        has_parameter_address=True,
+        has_command_rule=False,
+        enum_mapping={"Eco": 2, "Comfort": 3},
+        raw_min=0,
+        raw_max=10,
+    )
+    prepared = prepare_write("Eco", context=context)
+    assert prepared.raw_value == 2
