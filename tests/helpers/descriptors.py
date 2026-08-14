@@ -164,9 +164,7 @@ def button_descriptor(
         "label": "Reset alarm",
         "module_name": "module_a",
         "mapping": {
-            "command_rules": command_rules
-            if command_rules is not None
-            else [{"command": "RESET_ALARM", "value": True}],
+            "command_rules": command_rules if command_rules is not None else [{"command": "RESET_ALARM", "value": True}],
         },
     }
 
