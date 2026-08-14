@@ -12,7 +12,7 @@ from tests.conftest import install_pybragerone_stubs
 
 install_pybragerone_stubs()
 
-from custom_components.habragerone.const import DATA_ENTITY_STATS, DOMAIN  # noqa: E402
+from custom_components.habragerone.const import DATA_ENTITY_STATS, DATA_RUNTIME, DOMAIN  # noqa: E402
 from custom_components.habragerone.switch import (  # noqa: E402
     BragerSymbolSwitch,
     _coerce_bool,
@@ -67,7 +67,7 @@ async def test_async_setup_entry_registers_entities_and_stats(hass: HomeAssistan
 @pytest.mark.asyncio
 async def test_async_setup_entry_noop_when_runtime_missing(hass: HomeAssistant) -> None:
     entry = register_config_entry(hass, runtime=make_runtime()[0], descriptors=[switch_descriptor()])
-    hass.data[DOMAIN][entry.entry_id].pop("runtime")
+    hass.data[DOMAIN][entry.entry_id].pop(DATA_RUNTIME)
     added: list[BragerSymbolSwitch] = []
     await async_setup_entry(hass, entry, added.extend)
 
