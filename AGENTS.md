@@ -71,6 +71,8 @@ USE_LOCAL_PYBRAGERONE=1 uv run poe hass-prepare && uv run poe hass-cloud
 
 - `hass-cloud` uses `--skip-pip` so `manifest.json` requirements do not overwrite the uv-managed venv (needed when testing editable sibling `py-bragerone`).
 - First browser visit is HA **onboarding** unless `config/.storage` already exists. Cloud smoke owner account (local only, not a secret): username `cursor` / password `cursor`.
+- Prefer **English** UI language on this Cloud HA instance (keeps screenshots/logs consistent for agents).
+- BragerOne / TiSConnect cloud credentials for re-adding the integration may be saved in the **Chrome password store** on this VM — use those if a config entry must be removed and recreated. Do not commit credentials.
 - Attach logs: `tmux -f /exec-daemon/tmux.portal.conf attach -t ha-bragerone` (or `tmux attach -t ha-bragerone`).
 - Offline unit tests remain the default gate: `uv run poe test` / `uv run poe validate`.
 
