@@ -631,6 +631,64 @@ def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescr
     return normalized
 
 
+def _panel_group_symbols(groups: Mapping[str, list[str]]) -> set[str]:
+    """Flatten a panel-group mapping into the set of symbols it contains.
+
+    Args:
+        groups: Mapping of panel name to the symbols assigned to that panel.
+
+    Returns:
+        Set of non-empty symbols found across every panel.
+    """
+    return {symbol for panel_symbols in groups.values() for symbol in panel_symbols if symbol}
+
+
+async def _build_panel_groups_with_fallback(
+    resolver: Any,
+    *,
+    device_menu: Any,
+    permissions: list[str],
+    devid: str,
+) -> dict[str, list[str]]:
+    """Build panel groups, retrying without permissions when the gated attempt yields nothing.
+
+    The permission-gated extraction can fail in two ways: it can raise, or it can succeed and
+    still return no symbols. Both are treated the same way and retried with ``permissions=None``,
+    mirroring the symbol-kind fallback used later in the same bootstrap loop.
+
+    Args:
+        resolver: Parameter resolver used for the extraction.
+        device_menu: Device menu identifier of the module.
+        permissions: Permission strings reported by the API for this module.
+        devid: Module device identifier, used for logging only.
+
+    Returns:
+        Mapping of panel name to symbols, empty when neither attempt produced symbols.
+    """
+    groups: dict[str, list[str]] = {}
+    try:
+        groups = await resolver.build_panel_groups(device_menu=device_menu, permissions=permissions, all_panels=True)
+    except Exception:
+        LOGGER.debug("Panel-group build failed for %s, retrying without permissions", devid, exc_info=True)
+    else:
+        if _panel_group_symbols(groups):
+            return groups
+        LOGGER.debug("Panel-group build returned no symbols for %s, retrying without permissions", devid)
+
+    try:
+        groups = await resolver.build_panel_groups(device_menu=device_menu, permissions=None, all_panels=True)
+    except Exception:
+        LOGGER.debug("Panel-group fallback build failed for %s", devid, exc_info=True)
+        groups = {}
+
+    if not _panel_group_symbols(groups):
+        LOGGER.warning(
+            "No panel symbols discovered for module %s (with and without permissions); this module will get no entities",
+            devid,
+        )
+    return groups
+
+
 class BootstrapPayload(TypedDict):
     """Container persisted in ConfigEntry data for fast startup."""
 
@@ -684,21 +742,14 @@ async def async_build_bootstrap_payload(
         symbols: set[str] = set()
         panel_paths: dict[str, str] = {}
 
-        try:
-            groups = await resolver.build_panel_groups(
-                device_menu=module.deviceMenu,
-                permissions=module_permissions,
-                all_panels=True,
-            )
-        except Exception:
-            LOGGER.debug("Panel-group build failed for %s, retrying without permissions", module.devid, exc_info=True)
-            groups = await resolver.build_panel_groups(
-                device_menu=module.deviceMenu,
-                permissions=None,
-                all_panels=True,
-            )
+        groups = await _build_panel_groups_with_fallback(
+            resolver,
+            device_menu=module.deviceMenu,
+            permissions=module_permissions,
+            devid=str(module.devid),
+        )
 
-        symbols = {symbol for panel_symbols in groups.values() for symbol in panel_symbols if symbol}
+        symbols = _panel_group_symbols(groups)
         for panel_name, panel_symbols in groups.items():
             panel_title = _normalize_panel_path(str(panel_name))
             if not panel_title:
