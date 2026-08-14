@@ -53,3 +53,15 @@ New config/options/errors strings go into `strings.json` and English `translatio
 - `hacs.json` homeassistant minimum vs the `homeassistant` dependency in `pyproject.toml` (must match; `manifest.json` has no HA version field).
 - `manifest.json` `py-bragerone==X` pin vs `pyproject.toml` `py-bragerone>=X`.
 - ruff `target-version` vs actual runtime Python.
+
+## Cursor Bugbot (local + PR)
+
+- Rules: `.cursor/BUGBOT.md` (also applied on GitHub Bugbot reviews).
+- Before push (Cursor 3.7+ / [cursor.com/agents](https://cursor.com/agents)): `/review-bugbot` or `/review`. Docs: https://cursor.com/docs/bugbot
+- Pre-push prints a soft reminder only — Bugbot CLI/hook is not available yet; cannot hard-gate push.
+- Patch-ID dedup can skip a duplicate GitHub Bugbot review for an unchanged diff; Copilot re-request remains separate.
+
+## Cursor Cloud specific instructions
+
+- Default Cloud Agent install syncs deps via the sibling `py-bragerone` `.cursor/environment.json` (`uv sync` for both repos). Use `uv run poe …` from this checkout.
+- Optional local HA smoke: `uv run poe hass` then open `http://localhost:8123` (Chrome / computer-use). Docker Compose profiles are not available in the current Cloud Agent image (no Docker). Live Brager config needs credentials.

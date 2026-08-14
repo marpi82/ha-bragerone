@@ -20,6 +20,7 @@
 - [ ] Docs / translations updated when user-facing behavior changes (`README.md`, `docs/`, `strings.json` + `translations/en.json`)
 - [ ] Version pins stay consistent (`manifest.json` `py-bragerone==X` ↔ `pyproject.toml`; `hacs.json` HA minimum ↔ `homeassistant` dependency)
 - [ ] No secrets / credentials / real device dumps committed; diagnostics remain redacted
+- [ ] Ran Cursor `/review-bugbot` (or `/review`) on the final diff before push when using Cursor 3.7+ (see `.cursor/BUGBOT.md`)
 
 ## Test plan
 
