@@ -40,6 +40,7 @@ Documentation = "https://github.com/marpi82/ha-bragerone"
 Repository = "https://github.com/marpi82/ha-bragerone"
 Issues = "https://github.com/marpi82/ha-bragerone/issues"
 Changelog = "https://github.com/marpi82/ha-bragerone/blob/main/CHANGELOG.md"
+Security = "https://github.com/marpi82/ha-bragerone/security/advisories"
 
 [project.scripts]
 hass-dev = "homeassistant.__main__:main"

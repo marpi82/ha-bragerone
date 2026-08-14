@@ -1,0 +1,9 @@
+# Default owner for the whole repository
+*       @marpi82
+
+# Critical paths
+/.github/                              @marpi82
+/custom_components/habragerone/        @marpi82
+/SECURITY.md                           @marpi82
+/pyproject.toml                        @marpi82
+/hacs.json                             @marpi82

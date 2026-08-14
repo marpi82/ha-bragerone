@@ -39,14 +39,16 @@ The integration can be configured through the Home Assistant UI. You will need:
 
 ## Contributions are welcome!
 
-If you want to contribute to this, please read the [Contributing guidelines](CONTRIBUTING.md) and [Development guidelines](DEVELOPMENT.md).
+If you want to contribute to this, please read the [Contributing guidelines](CONTRIBUTING.md) and [Development guidelines](DEVELOPMENT.md). Use the [issue forms](https://github.com/marpi82/ha-bragerone/issues/new/choose) and the pull request template.
 
 ## Support
 
 For issues and questions:
 
-- GitHub Issues: https://github.com/marpi82/ha-bragerone/issues
+- GitHub Issues (templated): https://github.com/marpi82/ha-bragerone/issues/new/choose
 - Home Assistant Community: https://community.home-assistant.io/
+
+Do **not** file security issues publicly — see [SECURITY.md](SECURITY.md).
 
 ## License
 

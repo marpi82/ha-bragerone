@@ -62,6 +62,15 @@ Add/maintain tests for:
 - min/max rejection behavior,
 - command route selection behavior.
 
+## CI/CD & GitHub Workflows
+
+- **ci.yml**: lint, mypy, tests (pytest + Codecov upload), hassfest, security, wheel-compat, aggregate `CI` gate
+- **ha-integration-test.yml**: Docker matrix against HA `2026.3.0` / `latest` / `dev`
+- **hacs.yml**: HACS validation
+- **copilot-rerequest.yml**: re-request GitHub Copilot review on same-repo PRs (`COPILOT_REVIEW_TOKEN`)
+
+Issue forms live in `.github/ISSUE_TEMPLATE/`; the PR body template is `.github/PULL_REQUEST_TEMPLATE.md`.
+
 ## Change Discipline
 - Keep changes focused and minimal.
 - Do not modify unrelated files.
