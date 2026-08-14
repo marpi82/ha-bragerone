@@ -18,7 +18,7 @@ def writable_parameter_descriptor(
     command_rules: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a descriptor that routes writes through the parameter path."""
-    mapping: dict[str, Any] = {"command_rules": command_rules or []}
+    mapping: dict[str, Any] = {"command_rules": command_rules if command_rules is not None else []}
     if parameter_name is not None:
         mapping["raw"] = {"name": parameter_name}
     descriptor: dict[str, Any] = {
@@ -80,7 +80,7 @@ def switch_descriptor(
     command_rules: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a switch-platform descriptor."""
-    mapping: dict[str, Any] = {"command_rules": command_rules or []}
+    mapping: dict[str, Any] = {"command_rules": command_rules if command_rules is not None else []}
     if mapping_inputs:
         mapping["inputs"] = mapping_inputs
     return {
@@ -117,9 +117,9 @@ def select_descriptor(
         "platform": "select",
         "label": "Operating mode",
         "module_name": "module_a",
-        "options": options or ["Eco", "Comfort"],
-        "enum_map": enum_map or {"Eco": 2, "Comfort": 3},
-        "raw_to_label": raw_to_label or {"2": "Eco", "3": "Comfort"},
+        "options": ["Eco", "Comfort"] if options is None else options,
+        "enum_map": {"Eco": 2, "Comfort": 3} if enum_map is None else enum_map,
+        "raw_to_label": {"2": "Eco", "3": "Comfort"} if raw_to_label is None else raw_to_label,
         "mapping": {"command_rules": []},
     }
 
@@ -143,7 +143,7 @@ def binary_sensor_descriptor(
         "platform": "binary_sensor",
         "label": "Pump active",
         "module_name": "module_a",
-        "mapping": {"command_rules": command_rules or []},
+        "mapping": {"command_rules": command_rules if command_rules is not None else []},
     }
 
 
@@ -163,7 +163,11 @@ def button_descriptor(
         "platform": "button",
         "label": "Reset alarm",
         "module_name": "module_a",
-        "mapping": {"command_rules": command_rules or [{"command": "RESET_ALARM", "value": True}]},
+        "mapping": {
+            "command_rules": command_rules
+            if command_rules is not None
+            else [{"command": "RESET_ALARM", "value": True}],
+        },
     }
 
 
@@ -180,7 +184,7 @@ def sensor_descriptor(
     mapping_channels: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a sensor-platform descriptor."""
-    mapping: dict[str, Any] = {"command_rules": command_rules or []}
+    mapping: dict[str, Any] = {"command_rules": command_rules if command_rules is not None else []}
     if mapping_channels is not None:
         mapping["channels"] = mapping_channels
     descriptor: dict[str, Any] = {
