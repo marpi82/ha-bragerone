@@ -176,27 +176,35 @@ async def test_async_update_listener_reloads_entry(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_migrate_entry_returns_true_for_legacy_style_entry(hass: HomeAssistant) -> None:
+async def test_async_migrate_entry_bumps_legacy_v1_entry_to_version_2(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            CONF_EMAIL: "user@example.com",
-            CONF_PASSWORD: "secret",
-            CONF_OBJECT_ID: 1,
-            CONF_MODULES: ["DEV1"],
+            "email": "user@example.com",
+            "password": "secret",
+            "object_id": 1,
+            "modules": ["DEV1"],
         },
         version=1,
     )
     entry.add_to_hass(hass)
 
     assert await async_migrate_entry(hass, entry) is True
+    assert entry.version == 2
+    assert entry.data[CONF_EMAIL] == "user@example.com"
+    assert entry.data[CONF_PASSWORD] == "secret"
+    assert entry.data[CONF_OBJECT_ID] == 1
+    assert entry.data[CONF_MODULES] == ["DEV1"]
 
 
 @pytest.mark.asyncio
 async def test_async_migrate_entry_noop_when_already_current(hass: HomeAssistant) -> None:
     entry = make_config_entry()
     entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(entry, version=2)
     before = dict(entry.data)
+    before_version = entry.version
 
     assert await async_migrate_entry(hass, entry) is True
     assert entry.data == before
+    assert entry.version == before_version
