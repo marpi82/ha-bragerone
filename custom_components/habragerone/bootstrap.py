@@ -699,15 +699,12 @@ async def _build_panel_groups_with_fallback(
     devid: str,
     web_ui_only: bool = False,
 ) -> dict[str, list[str]]:
-    """Build panel groups, retrying without permissions when the gated attempt yields nothing.
+    """Build panel groups for *permissions* only — never retry with ``permissions=None``.
 
-    The permission-gated extraction can fail in two ways: it can raise, or it can succeed and
-    still return no symbols. Both are treated the same way and retried with ``permissions=None``,
-    mirroring the symbol-kind fallback used later in the same bootstrap loop.
-
-    A failing ungated retry is left to propagate, as it did before the empty-result case was
-    handled here. Setup then fails and Home Assistant retries it, which is recoverable; swallowing
-    the error would instead hand back an empty result as if the extraction had succeeded.
+    Ungating the menu tree would contradict SPA ``isRouteVisible`` (permission +
+    module permission) and silently create entities the account cannot see. An empty
+    permission-gated result is a valid empty set; extraction errors propagate so
+    Home Assistant can retry setup.
 
     Args:
         resolver: Parameter resolver used for the extraction.
@@ -719,35 +716,17 @@ async def _build_panel_groups_with_fallback(
             status checks still run separately for UI filter mode.
 
     Returns:
-        Mapping of panel name to symbols, empty when neither attempt produced symbols.
+        Mapping of panel name to symbols (possibly empty).
     """
-    groups: dict[str, list[str]] = {}
-    try:
-        groups = await resolver.build_panel_groups(
-            device_menu=device_menu,
-            permissions=permissions,
-            all_panels=True,
-            web_ui_only=web_ui_only,
-        )
-    except Exception:
-        LOGGER.debug("Panel-group build failed for %s, retrying without permissions", devid, exc_info=True)
-    else:
-        if _panel_group_symbols(groups):
-            return groups
-        LOGGER.debug("Panel-group build returned no symbols for %s, retrying without permissions", devid)
-
     groups = await resolver.build_panel_groups(
         device_menu=device_menu,
-        permissions=None,
+        permissions=permissions,
         all_panels=True,
         web_ui_only=web_ui_only,
     )
-
     if not _panel_group_symbols(groups):
-        # Scope the claim to panel-derived symbols: in permissions mode the later secondary pass
-        # can still contribute command-like entities that never came from a panel group.
         LOGGER.warning(
-            "Panel-group discovery returned no symbols for module %s, with and without permissions; "
+            "Panel-group discovery returned no symbols for module %s with the module permissions; "
             "no panel-derived entities will be created for it",
             devid,
         )
@@ -846,18 +825,22 @@ async def async_build_bootstrap_payload(
             except Exception:
                 LOGGER.debug("Menu kind extraction failed for %s", module.devid, exc_info=True)
         if not per_module_symbol_kinds[module.devid] and assets is not None and hasattr(assets, "get_module_menu"):
+            # Retry menu metadata with the same permission set only — never ungate.
             try:
-                menu_all = await assets.get_module_menu(device_menu=module.deviceMenu, permissions=None)
-                per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu_all)
-                per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu_all)
+                menu_retry = await assets.get_module_menu(
+                    device_menu=module.deviceMenu,
+                    permissions=module_permissions or None,
+                )
+                per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu_retry)
+                per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu_retry)
                 per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
-                    menu_all,
+                    menu_retry,
                     all_panels=True,
                     web_ui_only=web_ui_only,
                     routes_i18n=await resolver._i18n.get_namespace("routes"),
                 )
             except Exception:
-                LOGGER.debug("Menu kind fallback extraction failed for %s", module.devid, exc_info=True)
+                LOGGER.debug("Menu kind retry extraction failed for %s", module.devid, exc_info=True)
         all_candidate_symbols.update(symbols)
 
     details = await resolver.describe_symbols(sorted(all_candidate_symbols))
@@ -914,19 +897,18 @@ async def async_build_bootstrap_payload(
             symbol_kinds = per_module_symbol_kinds.get(module.devid, {}).get(symbol, set())
             mapping_raw = payload.get("mapping")
             mapping_dict = mapping_raw if isinstance(mapping_raw, dict) else None
-            is_menu_write = _is_menu_command_action(symbol=symbol, symbol_kinds=symbol_kinds, mapping=mapping_dict)
             panel_path = per_module_panel_paths.get(module.devid, {}).get(symbol, "")
             resolved_value: Any = None
             resolved_value_label: Any = None
-            keep_without_value = False
             has_runtime_raw = False
             visible_diag: Any = None
             try:
                 resolved = await resolver.resolve_value(symbol)
                 resolved_value = resolved.value
                 resolved_value_label = resolved.value_label
-                keep_without_value = is_menu_write and (_is_command_like_symbol(symbol) or _has_named_command_rule(mapping_dict))
-                if not keep_without_value and not _has_display_value(value=resolved.value, value_label=resolved.value_label):
+                # SPA ``isParameterVisible`` requires ``parameter.value !== undefined``.
+                # Command-like writes without a display value are not shown on the web UI.
+                if not _has_display_value(value=resolved.value, value_label=resolved.value_label):
                     if len(module_rejections) < 500:
                         module_rejections.append(
                             {
@@ -960,7 +942,6 @@ async def async_build_bootstrap_payload(
                             "symbol": symbol,
                             "panel_path": panel_path,
                             "menu_kinds": sorted(symbol_kinds),
-                            "keep_without_value": keep_without_value,
                             "has_runtime_raw": has_runtime_raw,
                             "value": resolved_value,
                             "value_label": resolved_value_label,
@@ -972,7 +953,6 @@ async def async_build_bootstrap_payload(
                         {
                             "symbol": symbol,
                             "menu_kinds": sorted(symbol_kinds),
-                            "keep_without_value": keep_without_value,
                             "has_runtime_raw": has_runtime_raw,
                             "value": resolved_value,
                             "value_label": resolved_value_label,

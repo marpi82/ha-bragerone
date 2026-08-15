@@ -42,8 +42,8 @@ def test_ui_field_labels_supports_polish_and_english() -> None:
 
 
 def test_entity_filter_mode_values_supports_polish_and_english() -> None:
-    assert "Filtrowanie po menu UI" in _entity_filter_mode_values(ui_language="pl").values()
-    assert "UI menu filtering" in _entity_filter_mode_values(ui_language="en").values()
+    assert "Filtrowanie po menu UI (codzienny web UI)" in _entity_filter_mode_values(ui_language="pl").values()
+    assert "UI menu filtering (everyday web UI)" in _entity_filter_mode_values(ui_language="en").values()
 
 
 def test_extract_selected_module_filter_modes_rejects_invalid_mode() -> None:
