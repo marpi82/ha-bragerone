@@ -49,6 +49,10 @@ def test_descriptor_display_name_rejects_empty_and_dot_paths() -> None:
     assert descriptor_display_name({"panel_path": "   ", "label": "Praca pompy"}) == "Praca pompy"
     assert descriptor_display_name({"panel_path": "//", "label": "Praca pompy"}) == "Praca pompy"
     assert descriptor_display_name({"menu_title": "/", "label": "Praca pompy"}) == "Praca pompy"
+    assert descriptor_display_name({"panel_path": ".", "label": "Praca pompy"}) == "Praca pompy"
+    assert descriptor_display_name({"panel_path": "..", "label": "Praca pompy"}) == "Praca pompy"
+    assert descriptor_display_name({"menu_title": ".", "label": "Praca pompy"}) == "Praca pompy"
+    assert descriptor_display_name({"menu_title": "..", "label": "Praca pompy"}) == "Praca pompy"
 
 
 def test_descriptor_display_name_prefers_menu_title_over_path() -> None:
