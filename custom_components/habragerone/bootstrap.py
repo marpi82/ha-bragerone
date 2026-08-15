@@ -714,7 +714,9 @@ async def _build_panel_groups_with_fallback(
         device_menu: Device menu identifier of the module.
         permissions: Permission strings reported by the API for this module.
         devid: Module device identifier, used for logging only.
-        web_ui_only: When True, exclude installer/service routes (everyday web-UI panels only).
+        web_ui_only: When True, apply SPA side-menu gating (hide installer routes /
+            ``isVisibleOnSideMenu=False``). Per-parameter SPA ``isParameterVisible``
+            status checks still run separately for UI filter mode.
 
     Returns:
         Mapping of panel name to symbols, empty when neither attempt produced symbols.
