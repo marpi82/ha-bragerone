@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Pasirinkti modulius",
-        "description": "Pasirinkite modulius ir esybių filtravimo režimą.",
+        "description": "Pasirinkite modulius, objektų filtravimo režimą ir įrenginių grupavimą.",
         "data": {
           "modules": "Moduliai",
-          "entity_filter_mode": "Esybių filtravimo režimas"
+          "entity_filter_mode": "Esybių filtravimo režimas",
+          "device_grouping": "Įrenginių grupavimas"
+        },
+        "data_description": {
+          "device_grouping": "Plokščias = vienas HA įrenginys moduliui. Grupuoti pagal meniu = antriniai įrenginiai pagal stabilų meniu raktą (via_device). Pakeitimas perskirsto įrenginių priklausomybę (automatizacijos/skydeliai)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Pasirinkti modulius",
         "data": {
           "modules": "Moduliai",
-          "entity_filter_mode": "Esybių filtravimo režimas"
+          "entity_filter_mode": "Esybių filtravimo režimas",
+          "device_grouping": "Įrenginių grupavimas"
+        },
+        "data_description": {
+          "device_grouping": "Plokščias = vienas HA įrenginys moduliui. Grupuoti pagal meniu = antriniai įrenginiai pagal stabilų meniu raktą (via_device). Pakeitimas perskirsto įrenginių priklausomybę (automatizacijos/skydeliai)."
         }
       }
     }

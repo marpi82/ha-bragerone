@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Izbira modulov",
-        "description": "Izberite module in način filtriranja entitet.",
+        "description": "Izberite module, način filtriranja entitet in združevanje naprav.",
         "data": {
           "modules": "Moduli",
-          "entity_filter_mode": "Način filtriranja entitet"
+          "entity_filter_mode": "Način filtriranja entitet",
+          "device_grouping": "Združevanje naprav"
+        },
+        "data_description": {
+          "device_grouping": "Ravno = ena naprava HA na modul. Združi po meniju = podrejene naprave po stabilnem ključu menija (via_device). Sprememba prerazporedi pripadnost naprav (avtomatizacije/nadzorne plošče)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Izbira modulov",
         "data": {
           "modules": "Moduli",
-          "entity_filter_mode": "Način filtriranja entitet"
+          "entity_filter_mode": "Način filtriranja entitet",
+          "device_grouping": "Združevanje naprav"
+        },
+        "data_description": {
+          "device_grouping": "Ravno = ena naprava HA na modul. Združi po meniju = podrejene naprave po stabilnem ključu menija (via_device). Sprememba prerazporedi pripadnost naprav (avtomatizacije/nadzorne plošče)."
         }
       }
     }

@@ -11,6 +11,7 @@ from homeassistant.util import slugify
 from pybragerone.models.param import ParamStore
 
 from .const import (
+    CONF_DEVICE_GROUPING,
     CONF_ENTITY_DESCRIPTORS,
     CONF_ENUM_MAP,
     CONF_OPTIONS,
@@ -18,9 +19,36 @@ from .const import (
     CONF_RAW_TO_LABEL,
     DATA_ENTITY_STATS,
     DATA_RUNTIME,
+    DEFAULT_DEVICE_GROUPING,
+    DEVICE_GROUPING_BY_MENU,
+    DEVICE_GROUPING_MODES,
     DOMAIN,
 )
 from .runtime import BragerRuntime
+
+
+def device_grouping_mode(entry: ConfigEntry) -> str:
+    """Return the configured device grouping mode for *entry* (flat default)."""
+    raw = entry.options.get(CONF_DEVICE_GROUPING, entry.data.get(CONF_DEVICE_GROUPING, DEFAULT_DEVICE_GROUPING))
+    mode = str(raw or "").strip().lower()
+    if mode in DEVICE_GROUPING_MODES:
+        return mode
+    return DEFAULT_DEVICE_GROUPING
+
+
+def _menu_device_display_name(descriptor: dict[str, Any]) -> str:
+    """Localized child-device name from menu title / panel path leaf."""
+    title = str(descriptor.get("menu_title") or "").strip()
+    if title:
+        return title
+    panel_path = str(descriptor.get("panel_path") or "").strip()
+    if panel_path:
+        leaf = panel_path.rsplit("/", 1)[-1].strip()
+        if leaf:
+            return leaf
+        return panel_path
+    menu_key = str(descriptor.get("menu_key") or "").strip()
+    return menu_key or "menu"
 
 
 def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
@@ -116,16 +144,39 @@ def get_runtime_and_descriptors(
     return runtime, filtered
 
 
-def device_info_from_descriptor(descriptor: dict[str, Any], *, domain: str) -> DeviceInfo:
-    """Build DeviceInfo object from cached descriptor fields."""
+def device_info_from_descriptor(
+    descriptor: dict[str, Any],
+    *,
+    domain: str,
+    grouping: str = DEFAULT_DEVICE_GROUPING,
+) -> DeviceInfo:
+    """Build DeviceInfo object from cached descriptor fields.
+
+    Flat mode (default) keeps one device per internet module ``devid``.
+    Group-by-menu mode attaches entities with a stable ``menu_key`` to a child
+    device ``{devid}:{menu_key}`` linked via ``via_device`` to the module.
+    Entities without a resolvable ``menu_key`` stay on the parent module device.
+    """
     devid = str(descriptor.get("devid") or "")
     module_name = str(descriptor.get("module_name") or devid)
     module_version = str(descriptor.get("module_version") or "")
+    module_model = str(descriptor.get("module_title") or "Brager module")
+    mode = str(grouping or "").strip().lower()
+    menu_key = str(descriptor.get("menu_key") or "").strip()
+    if mode == DEVICE_GROUPING_BY_MENU and menu_key:
+        return DeviceInfo(
+            identifiers={(domain, f"{devid}:{menu_key}")},
+            manufacturer="BragerOne",
+            name=_menu_device_display_name(descriptor),
+            model=module_model,
+            sw_version=module_version or None,
+            via_device=(domain, devid),
+        )
     return DeviceInfo(
         identifiers={(domain, devid)},
         manufacturer="BragerOne",
         name=module_name,
-        model=str(descriptor.get("module_title") or "Brager module"),
+        model=module_model,
         sw_version=module_version or None,
     )
 

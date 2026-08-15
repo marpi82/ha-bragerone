@@ -43,6 +43,8 @@ class EntityDescriptor(TypedDict, total=False):
     module_version: str
     device_menu: int
     panel_path: str
+    menu_key: str
+    menu_title: str
     label: str
     unit: str | dict[str, str] | None
     pool: str | None
@@ -495,6 +497,52 @@ def _collect_symbol_route_meta_from_menu(menu: Any) -> dict[str, list[dict[str, 
             for child in reversed(children):
                 stack.append(child)
     return symbol_routes
+
+
+def _is_stable_menu_route_name(name: str) -> bool:
+    """Return whether *name* looks like a stable SPA router name (not i18n)."""
+    token = name.strip()
+    if not token:
+        return False
+    lower = token.lower()
+    return (
+        lower.startswith("modules.menu.")
+        or lower.startswith("companies.modules.menu.")
+        or token.startswith("MAINMENU_")
+        or token.startswith("MENU_")
+    )
+
+
+def _stable_menu_key_from_route_meta(routes: list[dict[str, Any]]) -> str | None:
+    """Pick one stable menu key from collected route meta (first wins).
+
+    Prefers router ``name`` markers such as ``modules.menu.boiler``, then
+    ``path`` segments such as ``dhw`` / ``valve1``. Localized display titles are
+    never used as identifiers.
+    """
+    for route in routes:
+        name = route.get("name")
+        if isinstance(name, str) and _is_stable_menu_route_name(name):
+            return name.strip()
+    for route in routes:
+        path = route.get("path")
+        if isinstance(path, str):
+            token = path.strip().strip("/")
+            if token and token not in {".", ".."}:
+                return token
+    for route in routes:
+        name = route.get("name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return None
+
+
+def _menu_title_from_panel_path(panel_path: str) -> str:
+    """Return the leaf segment of a localized panel path for device display names."""
+    normalized = _normalize_panel_path(panel_path)
+    if not normalized:
+        return ""
+    return normalized.rsplit("/", 1)[-1].strip()
 
 
 def _collect_symbols_from_menu(menu: Any) -> set[str]:
@@ -1103,6 +1151,8 @@ async def async_build_bootstrap_payload(
             writable = _is_menu_command_action(symbol=symbol, symbol_kinds=symbol_kinds, mapping=mapping)
             label = str(payload.get("label")) if isinstance(payload.get("label"), str) else symbol
             panel_path = per_module_panel_paths.get(module.devid, {}).get(symbol, "")
+            menu_key = _stable_menu_key_from_route_meta(per_module_symbol_routes.get(module.devid, {}).get(symbol, []))
+            menu_title = _menu_title_from_panel_path(panel_path)
             unit_value = payload.get("unit")
             if unit_value is None and isinstance(mapping, dict):
                 unit_candidates: list[Any] = []
@@ -1152,6 +1202,10 @@ async def async_build_bootstrap_payload(
                 "writable": writable,
                 "menu_kinds": sorted(symbol_kinds),
             }
+            if menu_key:
+                descriptor["menu_key"] = menu_key
+            if menu_title:
+                descriptor["menu_title"] = menu_title
 
             if not _is_exposable_descriptor(
                 writable=writable,

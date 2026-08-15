@@ -20,6 +20,7 @@ from pybragerone.models.catalog import LiveAssetsCatalog
 from .bootstrap import async_build_bootstrap_payload
 from .const import (
     CONF_BACKEND_PLATFORM,
+    CONF_DEVICE_GROUPING,
     CONF_ENTITY_DESCRIPTORS,
     CONF_ENTITY_FILTER_MODE,
     CONF_LANGUAGE,
@@ -27,7 +28,10 @@ from .const import (
     CONF_MODULES,
     CONF_MODULES_META,
     CONF_OBJECT_ID,
+    DEFAULT_DEVICE_GROUPING,
     DEFAULT_ENTITY_FILTER_MODE,
+    DEVICE_GROUPING_BY_MENU,
+    DEVICE_GROUPING_FLAT,
     DOMAIN,
     FILTER_MODE_PERMISSIONS,
     FILTER_MODE_UI,
@@ -122,6 +126,26 @@ def _entity_filter_mode_values(*, ui_language: str | None = None) -> dict[str, s
     }
 
 
+def _device_grouping_values(*, ui_language: str | None = None) -> dict[str, str]:
+    lang = (ui_language or "").strip().lower()
+    if lang.startswith("pl"):
+        return {
+            DEVICE_GROUPING_FLAT: "Płasko — jedno urządzenie HA na moduł internetowy",
+            DEVICE_GROUPING_BY_MENU: "Grupuj po menu — urządzenia potomne (via_device)",
+        }
+    return {
+        DEVICE_GROUPING_FLAT: "Flat — one HA device per internet module",
+        DEVICE_GROUPING_BY_MENU: "Group by menu — child devices via the module",
+    }
+
+
+def _normalize_device_grouping(value: Any, *, default: str = DEFAULT_DEVICE_GROUPING) -> str:
+    mode = str(value or "").strip().lower()
+    if mode in {DEVICE_GROUPING_FLAT, DEVICE_GROUPING_BY_MENU}:
+        return mode
+    return default
+
+
 def _extract_selected_module_filter_modes(
     *,
     user_input: dict[str, Any],
@@ -143,11 +167,14 @@ def _build_modules_step_schema(
     default_modules: list[str],
     module_filter_defaults: dict[str, str],
     filter_values: dict[str, str],
+    grouping_values: dict[str, str],
+    default_grouping: str = DEFAULT_DEVICE_GROUPING,
 ) -> vol.Schema:
     default_mode = next(iter(module_filter_defaults.values()), DEFAULT_ENTITY_FILTER_MODE)
     data_schema: dict[Any, Any] = {
         vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
         vol.Required(CONF_ENTITY_FILTER_MODE, default=default_mode): vol.In(filter_values),
+        vol.Required(CONF_DEVICE_GROUPING, default=default_grouping): vol.In(grouping_values),
     }
     return vol.Schema(data_schema)
 
@@ -255,6 +282,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._platform: str = Platform.BRAGERONE.value
         self._language: str | None = None
         self._entity_filter_mode: str = DEFAULT_ENTITY_FILTER_MODE
+        self._device_grouping: str = DEFAULT_DEVICE_GROUPING
         self._module_filter_modes: dict[str, str] = {}
         self._object_choices: list[tuple[int, str]] = []
         self._module_choices: list[tuple[str, str]] = []
@@ -512,9 +540,11 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         default_modules = [module_id for module_id, _ in self._module_choices]
         ui_language = str(getattr(self.hass.config, "language", "") or "").strip().lower()
         filter_values = _entity_filter_mode_values(ui_language=ui_language)
+        grouping_values = _device_grouping_values(ui_language=ui_language)
         default_mode = str(self._entity_filter_mode or DEFAULT_ENTITY_FILTER_MODE).strip().lower()
         if default_mode not in filter_values:
             default_mode = DEFAULT_ENTITY_FILTER_MODE
+        default_grouping = _normalize_device_grouping(self._device_grouping)
 
         module_filter_defaults = {
             module_id: str(self._module_filter_modes.get(module_id, default_mode)).strip().lower()
@@ -524,16 +554,21 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if mode not in filter_values:
                 module_filter_defaults[module_id] = default_mode
 
+        def _modules_schema(*, modules: list[str]) -> vol.Schema:
+            return _build_modules_step_schema(
+                module_choices=self._module_choices,
+                module_values=module_values,
+                default_modules=modules,
+                module_filter_defaults=module_filter_defaults,
+                filter_values=filter_values,
+                grouping_values=grouping_values,
+                default_grouping=default_grouping,
+            )
+
         if user_input is None:
             return self.async_show_form(
                 step_id="select_modules",
-                data_schema=_build_modules_step_schema(
-                    module_choices=self._module_choices,
-                    module_values=module_values,
-                    default_modules=default_modules,
-                    module_filter_defaults=module_filter_defaults,
-                    filter_values=filter_values,
-                ),
+                data_schema=_modules_schema(modules=default_modules),
             )
 
         selected_modules = [str(module) for module in user_input.get(CONF_MODULES, [])]
@@ -544,33 +579,26 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             default_mode=default_mode,
             ui_language=ui_language,
         )
+        selected_grouping = _normalize_device_grouping(
+            user_input.get(CONF_DEVICE_GROUPING, default_grouping),
+            default=default_grouping,
+        )
         if not selected_modules or any(module not in available_codes for module in selected_modules):
             return self.async_show_form(
                 step_id="select_modules",
                 errors={"base": "invalid_response"},
-                data_schema=_build_modules_step_schema(
-                    module_choices=self._module_choices,
-                    module_values=module_values,
-                    default_modules=default_modules,
-                    module_filter_defaults=module_filter_defaults,
-                    filter_values=filter_values,
-                ),
+                data_schema=_modules_schema(modules=default_modules),
             )
         if selected_filter_modes is None:
             return self.async_show_form(
                 step_id="select_modules",
                 errors={"base": "invalid_response"},
-                data_schema=_build_modules_step_schema(
-                    module_choices=self._module_choices,
-                    module_values=module_values,
-                    default_modules=selected_modules,
-                    module_filter_defaults=module_filter_defaults,
-                    filter_values=filter_values,
-                ),
+                data_schema=_modules_schema(modules=selected_modules),
             )
 
         self._module_filter_modes = selected_filter_modes
         self._entity_filter_mode = next(iter(selected_filter_modes.values()), default_mode)
+        self._device_grouping = selected_grouping
 
         await self.async_set_unique_id(f"{self._platform}:{self._email}:{self._selected_object_id}")
         self._abort_if_unique_id_configured()
@@ -589,26 +617,14 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_show_form(
                 step_id="select_modules",
                 errors={"base": "cannot_connect"},
-                data_schema=_build_modules_step_schema(
-                    module_choices=self._module_choices,
-                    module_values=module_values,
-                    default_modules=selected_modules,
-                    module_filter_defaults=module_filter_defaults,
-                    filter_values=filter_values,
-                ),
+                data_schema=_modules_schema(modules=selected_modules),
             )
         except Exception:
             LOGGER.exception("Bootstrap payload build failed during config flow")
             return self.async_show_form(
                 step_id="select_modules",
                 errors={"base": "invalid_response"},
-                data_schema=_build_modules_step_schema(
-                    module_choices=self._module_choices,
-                    module_values=module_values,
-                    default_modules=selected_modules,
-                    module_filter_defaults=module_filter_defaults,
-                    filter_values=filter_values,
-                ),
+                data_schema=_modules_schema(modules=selected_modules),
             )
 
         data = {
@@ -617,6 +633,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_BACKEND_PLATFORM: self._platform,
             CONF_LANGUAGE: self._language,
             CONF_ENTITY_FILTER_MODE: self._entity_filter_mode,
+            CONF_DEVICE_GROUPING: self._device_grouping,
             CONF_MODULE_FILTER_MODES: bootstrap.get(CONF_MODULE_FILTER_MODES, self._module_filter_modes),
             CONF_OBJECT_ID: self._selected_object_id,
             CONF_MODULES: selected_modules,
@@ -779,6 +796,7 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
 
         ui_language = str(getattr(self.hass.config, "language", "") or "").strip().lower()
         filter_values = _entity_filter_mode_values(ui_language=ui_language)
+        grouping_values = _device_grouping_values(ui_language=ui_language)
         default_filter_mode = (
             str(
                 self._config_entry.options.get(
@@ -791,6 +809,12 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
         )
         if default_filter_mode not in filter_values:
             default_filter_mode = DEFAULT_ENTITY_FILTER_MODE
+        default_grouping = _normalize_device_grouping(
+            self._config_entry.options.get(
+                CONF_DEVICE_GROUPING,
+                self._config_entry.data.get(CONF_DEVICE_GROUPING, DEFAULT_DEVICE_GROUPING),
+            )
+        )
 
         existing_module_modes_raw = self._config_entry.options.get(
             CONF_MODULE_FILTER_MODES,
@@ -805,16 +829,21 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
             if mode not in filter_values:
                 module_filter_defaults[module_id] = default_filter_mode
 
+        def _modules_schema(*, modules: list[str]) -> vol.Schema:
+            return _build_modules_step_schema(
+                module_choices=self._module_choices,
+                module_values=module_values,
+                default_modules=modules,
+                module_filter_defaults=module_filter_defaults,
+                filter_values=filter_values,
+                grouping_values=grouping_values,
+                default_grouping=default_grouping,
+            )
+
         if user_input is None:
             return self.async_show_form(
                 step_id="modules",
-                data_schema=_build_modules_step_schema(
-                    module_choices=self._module_choices,
-                    module_values=module_values,
-                    default_modules=default_modules,
-                    module_filter_defaults=module_filter_defaults,
-                    filter_values=filter_values,
-                ),
+                data_schema=_modules_schema(modules=default_modules),
             )
 
         selected_modules = [str(module) for module in user_input.get(CONF_MODULES, [])]
@@ -824,29 +853,21 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
             default_mode=default_filter_mode,
             ui_language=ui_language,
         )
+        selected_grouping = _normalize_device_grouping(
+            user_input.get(CONF_DEVICE_GROUPING, default_grouping),
+            default=default_grouping,
+        )
         if not selected_modules or any(module not in module_values for module in selected_modules):
             return self.async_show_form(
                 step_id="modules",
                 errors={"base": "invalid_response"},
-                data_schema=_build_modules_step_schema(
-                    module_choices=self._module_choices,
-                    module_values=module_values,
-                    default_modules=default_modules,
-                    module_filter_defaults=module_filter_defaults,
-                    filter_values=filter_values,
-                ),
+                data_schema=_modules_schema(modules=default_modules),
             )
         if selected_filter_modes is None:
             return self.async_show_form(
                 step_id="modules",
                 errors={"base": "invalid_response"},
-                data_schema=_build_modules_step_schema(
-                    module_choices=self._module_choices,
-                    module_values=module_values,
-                    default_modules=selected_modules,
-                    module_filter_defaults=module_filter_defaults,
-                    filter_values=filter_values,
-                ),
+                data_schema=_modules_schema(modules=selected_modules),
             )
 
         selected_filter_mode = next(iter(selected_filter_modes.values()), default_filter_mode)
@@ -858,5 +879,6 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
                 CONF_MODULES: selected_modules,
                 CONF_ENTITY_FILTER_MODE: selected_filter_mode,
                 CONF_MODULE_FILTER_MODES: selected_filter_modes,
+                CONF_DEVICE_GROUPING: selected_grouping,
             },
         )

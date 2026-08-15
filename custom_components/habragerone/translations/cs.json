@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Výběr modulů",
-        "description": "Vyberte moduly a režim filtrování entit.",
+        "description": "Vyberte moduly, režim filtrování entit a seskupování zařízení.",
         "data": {
           "modules": "Moduly",
-          "entity_filter_mode": "Režim filtrování entit"
+          "entity_filter_mode": "Režim filtrování entit",
+          "device_grouping": "Seskupování zařízení"
+        },
+        "data_description": {
+          "device_grouping": "Ploché = jedno HA zařízení na modul. Seskupit podle menu = podřízená zařízení podle stabilního klíče menu (via_device). Změna přemapuje příslušnost zařízení (automatizace/nástěnky)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Výběr modulů",
         "data": {
           "modules": "Moduly",
-          "entity_filter_mode": "Režim filtrování entit"
+          "entity_filter_mode": "Režim filtrování entit",
+          "device_grouping": "Seskupování zařízení"
+        },
+        "data_description": {
+          "device_grouping": "Ploché = jedno HA zařízení na modul. Seskupit podle menu = podřízená zařízení podle stabilního klíče menu (via_device). Změna přemapuje příslušnost zařízení (automatizace/nástěnky)."
         }
       }
     }

@@ -24,6 +24,7 @@ from .entity_common import (
     descriptor_display_name,
     descriptor_refresh_keys,
     descriptor_suggested_object_id,
+    device_grouping_mode,
     device_info_from_descriptor,
     entity_is_available,
     get_runtime_and_descriptors,
@@ -102,6 +103,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
 
     def __init__(self, *, entry: ConfigEntry, runtime: BragerRuntime, descriptor: dict[str, Any]) -> None:
         """Initialize binary sensor entity from one cached descriptor."""
+        self._entry = entry
         self._runtime = runtime
         self._descriptor = descriptor
         self._symbol = str(descriptor.get("symbol") or "")
@@ -120,7 +122,11 @@ class BragerStatusBinarySensor(BinarySensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device metadata for HA device registry."""
-        return device_info_from_descriptor(self._descriptor, domain=DOMAIN)
+        return device_info_from_descriptor(
+            self._descriptor,
+            domain=DOMAIN,
+            grouping=device_grouping_mode(self._entry),
+        )
 
     async def async_added_to_hass(self) -> None:
         """Attach runtime listeners when entity is added."""

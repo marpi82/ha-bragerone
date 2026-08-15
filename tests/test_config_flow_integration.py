@@ -20,11 +20,14 @@ from pybragerone.api.client import ApiError  # noqa: E402
 import custom_components.habragerone.config_flow as config_flow_module  # noqa: E402
 from custom_components.habragerone.const import (  # noqa: E402
     CONF_BACKEND_PLATFORM,
+    CONF_DEVICE_GROUPING,
     CONF_ENTITY_DESCRIPTORS,
     CONF_ENTITY_FILTER_MODE,
     CONF_LANGUAGE,
     CONF_MODULES,
     CONF_OBJECT_ID,
+    DEFAULT_DEVICE_GROUPING,
+    DEVICE_GROUPING_BY_MENU,
     DOMAIN,
     FILTER_MODE_UI,
 )
@@ -109,8 +112,31 @@ async def test_config_flow_happy_path_creates_entry(hass: HomeAssistant) -> None
     assert result["data"][CONF_OBJECT_ID] == 1
     assert result["data"][CONF_MODULES] == ["DEV1"]
     assert result["data"][CONF_ENTITY_DESCRIPTORS]
+    assert result["data"][CONF_DEVICE_GROUPING] == DEFAULT_DEVICE_GROUPING
     api.ensure_auth.assert_awaited()
     bootstrap_mock.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_config_flow_select_modules_persists_group_by_menu(hass: HomeAssistant) -> None:
+    with patch_config_flow_dependencies():
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_USER},
+            data=_USER_INPUT,
+        )
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_OBJECT_ID: 1})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_MODULES: ["DEV1"],
+                CONF_ENTITY_FILTER_MODE: FILTER_MODE_UI,
+                CONF_DEVICE_GROUPING: DEVICE_GROUPING_BY_MENU,
+            },
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_DEVICE_GROUPING] == DEVICE_GROUPING_BY_MENU
 
 
 @pytest.mark.asyncio
@@ -230,12 +256,17 @@ async def test_options_flow_updates_module_scope(hass: HomeAssistant) -> None:
 
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
-            {CONF_MODULES: ["DEV1"], CONF_ENTITY_FILTER_MODE: FILTER_MODE_UI},
+            {
+                CONF_MODULES: ["DEV1"],
+                CONF_ENTITY_FILTER_MODE: FILTER_MODE_UI,
+                CONF_DEVICE_GROUPING: DEVICE_GROUPING_BY_MENU,
+            },
         )
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_OBJECT_ID] == 1
     assert result["data"][CONF_MODULES] == ["DEV1"]
+    assert result["data"][CONF_DEVICE_GROUPING] == DEVICE_GROUPING_BY_MENU
 
 
 @pytest.mark.asyncio

@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Selecionar módulos",
-        "description": "Escolha módulos e o modo de filtragem de entidades.",
+        "description": "Escolha módulos, modo de filtragem de entidades e agrupamento de dispositivos.",
         "data": {
           "modules": "Módulos",
-          "entity_filter_mode": "Modo de filtragem de entidades"
+          "entity_filter_mode": "Modo de filtragem de entidades",
+          "device_grouping": "Agrupamento de dispositivos"
+        },
+        "data_description": {
+          "device_grouping": "Plano = um dispositivo HA por módulo. Agrupar por menu = dispositivos filhos por chave de menu estável (via_device). A alteração remapeia a associação de dispositivos (automações/painéis)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Selecionar módulos",
         "data": {
           "modules": "Módulos",
-          "entity_filter_mode": "Modo de filtragem de entidades"
+          "entity_filter_mode": "Modo de filtragem de entidades",
+          "device_grouping": "Agrupamento de dispositivos"
+        },
+        "data_description": {
+          "device_grouping": "Plano = um dispositivo HA por módulo. Agrupar por menu = dispositivos filhos por chave de menu estável (via_device). A alteração remapeia a associação de dispositivos (automações/painéis)."
         }
       }
     }

@@ -29,6 +29,7 @@ from .entity_common import (
     descriptor_raw_to_label,
     descriptor_refresh_keys,
     descriptor_suggested_object_id,
+    device_grouping_mode,
     device_info_from_descriptor,
     entity_is_available,
     get_runtime_and_descriptors,
@@ -114,7 +115,11 @@ class BragerSymbolSensor(SensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device registry information for this entity."""
-        return device_info_from_descriptor(self._descriptor, domain=DOMAIN)
+        return device_info_from_descriptor(
+            self._descriptor,
+            domain=DOMAIN,
+            grouping=device_grouping_mode(self._entry),
+        )
 
     async def async_update(self) -> None:
         """Fetch latest value from ParamStore (no heavy resolver call)."""

@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Modulok kiválasztása",
-        "description": "Válassza ki a modulokat és az entitásszűrés módját.",
+        "description": "Válassza ki a modulokat, az entitásszűrési módot és az eszközcsoportosítást.",
         "data": {
           "modules": "Modulok",
-          "entity_filter_mode": "Entitásszűrés módja"
+          "entity_filter_mode": "Entitásszűrés módja",
+          "device_grouping": "Eszközcsoportosítás"
+        },
+        "data_description": {
+          "device_grouping": "Lapos = egy HA eszköz modulonként. Csoportosítás menü szerint = gyermekeszközök stabil menükulcs szerint (via_device). A változás újratérképezi az eszközhovatartozást (automatizálások/irányítópultok)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Modulok kiválasztása",
         "data": {
           "modules": "Modulok",
-          "entity_filter_mode": "Entitásszűrés módja"
+          "entity_filter_mode": "Entitásszűrés módja",
+          "device_grouping": "Eszközcsoportosítás"
+        },
+        "data_description": {
+          "device_grouping": "Lapos = egy HA eszköz modulonként. Csoportosítás menü szerint = gyermekeszközök stabil menükulcs szerint (via_device). A változás újratérképezi az eszközhovatartozást (automatizálások/irányítópultok)."
         }
       }
     }

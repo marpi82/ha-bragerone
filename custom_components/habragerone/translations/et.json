@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Moodulite valimine",
-        "description": "Valige moodulid ja olemite filtreerimisrežiim.",
+        "description": "Valige moodulid, olemite filtreerimisrežiim ja seadmete rühmitamine.",
         "data": {
           "modules": "Moodulid",
-          "entity_filter_mode": "Olemite filtreerimisrežiim"
+          "entity_filter_mode": "Olemite filtreerimisrežiim",
+          "device_grouping": "Seadmete rühmitamine"
+        },
+        "data_description": {
+          "device_grouping": "Lame = üks HA seade mooduli kohta. Rühmita menüü järgi = alamseadmed stabiilse menüüvõtme järgi (via_device). Muutus ümberkaardistab seadmete kuuluvuse (automaatikad/armatuurlauad)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Moodulite valimine",
         "data": {
           "modules": "Moodulid",
-          "entity_filter_mode": "Olemite filtreerimisrežiim"
+          "entity_filter_mode": "Olemite filtreerimisrežiim",
+          "device_grouping": "Seadmete rühmitamine"
+        },
+        "data_description": {
+          "device_grouping": "Lame = üks HA seade mooduli kohta. Rühmita menüü järgi = alamseadmed stabiilse menüüvõtme järgi (via_device). Muutus ümberkaardistab seadmete kuuluvuse (automaatikad/armatuurlauad)."
         }
       }
     }

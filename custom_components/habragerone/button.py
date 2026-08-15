@@ -14,6 +14,7 @@ from .const import DOMAIN
 from .entity_common import (
     descriptor_display_name,
     descriptor_suggested_object_id,
+    device_grouping_mode,
     device_info_from_descriptor,
     get_runtime_and_descriptors,
     module_is_reachable,
@@ -48,6 +49,7 @@ class BragerActionButton(ButtonEntity):
 
     def __init__(self, *, entry: ConfigEntry, runtime: BragerRuntime, descriptor: dict[str, Any]) -> None:
         """Initialize action button from one cached descriptor."""
+        self._entry = entry
         self._runtime = runtime
         self._descriptor = descriptor
         self._symbol = str(descriptor.get("symbol") or "")
@@ -63,7 +65,11 @@ class BragerActionButton(ButtonEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device metadata for HA device registry."""
-        return device_info_from_descriptor(self._descriptor, domain=DOMAIN)
+        return device_info_from_descriptor(
+            self._descriptor,
+            domain=DOMAIN,
+            grouping=device_grouping_mode(self._entry),
+        )
 
     async def async_added_to_hass(self) -> None:
         """Attach connectivity listener when entity is added."""

@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Selectare module",
-        "description": "Alege modulele și modul de filtrare al entităților.",
+        "description": "Alegeți modulele, modul de filtrare a entităților și gruparea dispozitivelor.",
         "data": {
           "modules": "Module",
-          "entity_filter_mode": "Mod de filtrare al entităților"
+          "entity_filter_mode": "Mod de filtrare al entităților",
+          "device_grouping": "Gruparea dispozitivelor"
+        },
+        "data_description": {
+          "device_grouping": "Plat = un dispozitiv HA per modul. Grupare după meniu = dispozitive copil pe cheie stabilă de meniu (via_device). Schimbarea remapă apartenența dispozitivelor (automatizări/panouri)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Selectare module",
         "data": {
           "modules": "Module",
-          "entity_filter_mode": "Mod de filtrare al entităților"
+          "entity_filter_mode": "Mod de filtrare al entităților",
+          "device_grouping": "Gruparea dispozitivelor"
+        },
+        "data_description": {
+          "device_grouping": "Plat = un dispozitiv HA per modul. Grupare după meniu = dispozitive copil pe cheie stabilă de meniu (via_device). Schimbarea remapă apartenența dispozitivelor (automatizări/panouri)."
         }
       }
     }
