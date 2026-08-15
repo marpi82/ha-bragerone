@@ -62,6 +62,11 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
+# Exact tag existence (avoid grep regex false positives on CalVer dots).
+tag_exists() {
+    git rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1
+}
+
 # Construct tag name based on release type (no "v" prefix — matches existing tags)
 case $RELEASE_TYPE in
     stable)
@@ -70,7 +75,7 @@ case $RELEASE_TYPE in
     alpha)
         # Find next alpha number
         ALPHA_NUM=1
-        while git tag | grep -q "${VERSION}a${ALPHA_NUM}"; do
+        while tag_exists "${VERSION}a${ALPHA_NUM}"; do
             ((ALPHA_NUM++))
         done
         TAG="${VERSION}a${ALPHA_NUM}"
@@ -78,7 +83,7 @@ case $RELEASE_TYPE in
     beta)
         # Find next beta number
         BETA_NUM=1
-        while git tag | grep -q "${VERSION}b${BETA_NUM}"; do
+        while tag_exists "${VERSION}b${BETA_NUM}"; do
             ((BETA_NUM++))
         done
         TAG="${VERSION}b${BETA_NUM}"
@@ -86,7 +91,7 @@ case $RELEASE_TYPE in
     rc)
         # Find next rc number
         RC_NUM=1
-        while git tag | grep -q "${VERSION}rc${RC_NUM}"; do
+        while tag_exists "${VERSION}rc${RC_NUM}"; do
             ((RC_NUM++))
         done
         TAG="${VERSION}rc${RC_NUM}"
@@ -99,7 +104,7 @@ case $RELEASE_TYPE in
 esac
 
 # Check if tag already exists
-if git tag | grep -q "^$TAG$"; then
+if tag_exists "$TAG"; then
     log_error "Tag $TAG already exists"
     exit 1
 fi
@@ -107,9 +112,11 @@ fi
 log_info "Preparing release $TAG ($RELEASE_TYPE)"
 
 # HACS zip embeds manifest.json — version must match the tag.
-MANIFEST_VERSION="$(python3 -c "import json; print(json.load(open(\"custom_components/habragerone/manifest.json\"))[\"version\"])" 2>/dev/null || true)"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+MANIFEST_PATH="$REPO_ROOT/custom_components/habragerone/manifest.json"
+MANIFEST_VERSION="$(python3 -c "import json; print(json.load(open(\"$MANIFEST_PATH\"))[\"version\"])" 2>/dev/null || true)"
 if [ -z "$MANIFEST_VERSION" ]; then
-    log_error "Could not read custom_components/habragerone/manifest.json version"
+    log_error "Could not read $MANIFEST_PATH version"
     exit 1
 fi
 if [ "$MANIFEST_VERSION" != "$TAG" ]; then
