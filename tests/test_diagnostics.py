@@ -146,6 +146,24 @@ async def test_diagnostics_connectivity_without_gateway_modules_list(hass: HomeA
 
 
 @pytest.mark.asyncio
+async def test_diagnostics_skips_blank_devid_connectivity(hass: HomeAssistant) -> None:
+    from custom_components.habragerone.const import DATA_RUNTIME
+    from tests.helpers.fakes import make_runtime
+
+    runtime, _api, gateway, _store = make_runtime(
+        modules_meta={"": {"name": "bad"}, "DEV1": {"name": "Boiler", "connectedAt": 1}}
+    )
+    gateway.modules = ["", "DEV1"]
+    runtime._module_online["DEV1"] = True
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.data[DOMAIN][entry.entry_id][DATA_RUNTIME] = runtime
+
+    payload = await async_get_config_entry_diagnostics(hass, entry)
+    assert "" not in payload["connectivity"]
+    assert payload["connectivity"]["DEV1"]["online"] is True
+
+
+@pytest.mark.asyncio
 async def test_diagnostics_skips_connectivity_when_entry_data_not_dict(hass: HomeAssistant) -> None:
     entry = register_config_entry(hass, runtime=object(), descriptors=[])
     hass.data[DOMAIN][entry.entry_id] = "not-a-dict"  # type: ignore[assignment]

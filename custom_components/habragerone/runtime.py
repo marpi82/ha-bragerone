@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import time
 from collections.abc import Callable, Mapping
@@ -177,12 +178,33 @@ class BragerRuntime:
         flipped = previous is not online if online_changed is None else online_changed
         for callback in list(self._connectivity_listeners):
             try:
-                callback(devid, online, flipped)
-            except TypeError:
-                # Older test doubles / listeners that still take (devid, online).
-                callback(devid, online)  # type: ignore[call-arg]
+                self._invoke_connectivity_listener(callback, devid, online, flipped)
             except Exception:
                 LOGGER.exception("Connectivity listener failed for devid=%s", devid)
+
+    @staticmethod
+    def _invoke_connectivity_listener(
+        callback: ConnectivityCallback,
+        devid: str,
+        online: bool,
+        flipped: bool,
+    ) -> None:
+        """Call a connectivity listener with 2- or 3-arg compatibility.
+
+        Signature inspection avoids treating a ``TypeError`` raised *inside* a
+        modern 3-arg listener as an old 2-arg signature mismatch.
+        """
+        try:
+            parameters = inspect.signature(callback).parameters.values()
+        except TypeError, ValueError:
+            callback(devid, online, flipped)
+            return
+        positional = [param for param in parameters if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD)]
+        accepts_varargs = any(param.kind == param.VAR_POSITIONAL for param in parameters)
+        if accepts_varargs or len(positional) >= 3:
+            callback(devid, online, flipped)
+            return
+        callback(devid, online)  # type: ignore[call-arg]
 
     async def async_write(
         self,

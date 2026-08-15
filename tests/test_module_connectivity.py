@@ -299,9 +299,19 @@ async def test_runtime_connectivity_listener_compat_and_seed_edges() -> None:
         raise RuntimeError("listener boom")
 
     runtime.add_connectivity_listener(_boom)
+
+    type_error_calls = 0
+
+    def _type_error_inside(_devid: str, _online: bool, _flipped: bool = True) -> None:
+        nonlocal type_error_calls
+        type_error_calls += 1
+        raise TypeError("raised inside a 3-arg listener")
+
+    runtime.add_connectivity_listener(_type_error_inside)
     runtime._apply_module_online("DEV1", True, connected_at=1)
     assert two_arg == [("DEV1", True)]
     assert boom_calls == 1
+    assert type_error_calls == 1
 
     # Bad gateway events are ignored.
     runtime._on_gateway_connectivity(object())

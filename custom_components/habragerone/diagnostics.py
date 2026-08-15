@@ -41,6 +41,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
             if isinstance(gateway_modules, list):
                 devids.update(str(devid) for devid in gateway_modules)
             for devid in sorted(devids):
+                if not devid:
+                    continue
                 meta = brager_runtime.modules_meta.get(devid, {})
                 connected_at = meta.get("connectedAt") if isinstance(meta, dict) else None
                 connectivity[devid] = {
