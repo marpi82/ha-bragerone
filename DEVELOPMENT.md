@@ -50,16 +50,40 @@ Issue and PR templates live under `.github/ISSUE_TEMPLATE/` and `.github/PULL_RE
 
 ### Publishing Releases
 
-The project publishes releases through GitHub Actions:
+Do **not** cut a stable HACS tag until the same version has been smoke-tested as a HACS **pre-release** on a live Home Assistant install. Tooling already supports this (`scripts/release.sh` + `.github/workflows/release.yml`); skipping the beta/rc step is a process failure, not a tooling gap.
+
+#### Release checklist (maintainers)
+
+1. Land the release candidates on `main` (CI green).
+2. Tag a **pre-release** (prefer `beta`, then `rc` if needed):
+
+   ```bash
+   ./scripts/release.sh 2026.x.y beta   # pushes v2026.x.yb1 → GitHub pre-release
+   ```
+
+3. In HACS, enable **Show beta versions** (or equivalent) and install/update the pre-release on a **live** HA instance.
+4. Smoke-test at least: config flow / reconfigure, entity count and naming, a few writes, reconnect / module connectivity.
+5. Fix blockers on `main` and retag another `beta`/`rc` if needed.
+6. Only then cut **stable**:
+
+   ```bash
+   ./scripts/release.sh 2026.x.y stable # pushes v2026.x.y → GitHub release (HACS default)
+   ```
+
+Tag suffix matters: `.github/workflows/release.yml` (`Detect tag and pre-release`) sets `prerelease=true` when the tag matches `(a|b|rc)[0-9]+$` (`v2026.x.ya1`, `…b1`, `…rc1`). HACS surfaces those as opt-in pre-releases; unsuffixed `v2026.x.y` is the stable channel.
+
+#### Commands
 
 ```bash
-# Create stable release
-./scripts/release.sh 2025.1.0
+# Pre-release (alpha / beta / rc) — always before the matching stable
+./scripts/release.sh 2026.x.y beta
 
-# Create pre-release
-./scripts/release.sh 2025.1.0 alpha  # or beta, rc
+# Stable — only after live smoke on the pre-release
+./scripts/release.sh 2026.x.y
+# or explicitly:
+./scripts/release.sh 2026.x.y stable
 ```
 
-Releases are automatically built and published on GitHub:
-- **GitHub Releases** for stable tags (`v2025.1.0`)
-- **GitHub pre-releases** for pre-release tags (`v2025.1.0a1`, `v2025.1.0b1`, `v2025.1.0rc1`)
+GitHub Actions then builds the package and publishes:
+- **GitHub Releases** for stable tags (`v2026.x.y`)
+- **GitHub pre-releases** for suffixed tags (`v2026.x.ya1`, `v2026.x.yb1`, `v2026.x.yrc1`)

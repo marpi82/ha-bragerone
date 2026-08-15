@@ -33,6 +33,8 @@ This custom component provides integration between Home Assistant and the Brager
 3. Restart Home Assistant
 4. Configure the integration
 
+Testers: enable HACS **Show beta versions** to install `alpha` / `beta` / `rc` tags before they hit the default (stable) channel. Maintainers always smoke-test a pre-release on a live HA instance before cutting the matching stable tag — see [DEVELOPMENT.md](DEVELOPMENT.md#publishing-releases).
+
 ## Configuration
 
 The integration can be configured through the Home Assistant UI. You will need:
