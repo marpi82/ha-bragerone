@@ -38,6 +38,7 @@ class _RecordingResolver:
     gated_groups: ClassVar[object] = {}
     ungated_groups: ClassVar[object] = {}
     calls: ClassVar[list[list[str] | None]] = []
+    web_ui_flags: ClassVar[list[bool]] = []
 
     @classmethod
     def from_api(cls, api: object, store: object, lang: object) -> _RecordingResolver:
@@ -50,9 +51,11 @@ class _RecordingResolver:
         device_menu: str,
         permissions: list[str] | None,
         all_panels: bool,
+        web_ui_only: bool = False,
     ) -> dict[str, list[str]]:
         _ = device_menu, all_panels
         type(self).calls.append(permissions)
+        type(self).web_ui_flags.append(web_ui_only)
         result = self.gated_groups if permissions else self.ungated_groups
         if isinstance(result, Exception):
             raise result
@@ -125,10 +128,12 @@ def _run_bootstrap(
     *,
     gated_groups: object,
     ungated_groups: object,
-) -> tuple[dict[str, Any], list[list[str] | None]]:
+    entity_filter_mode: str = "ui",
+) -> tuple[dict[str, Any], list[list[str] | None], list[bool]]:
     _RecordingResolver.gated_groups = gated_groups
     _RecordingResolver.ungated_groups = ungated_groups
     _RecordingResolver.calls = []
+    _RecordingResolver.web_ui_flags = []
 
     monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
     monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _RecordingResolver)
@@ -139,35 +144,51 @@ def _run_bootstrap(
             object_id=1,
             modules=["M1"],
             language="en",
+            entity_filter_mode=entity_filter_mode,
         )
     )
-    return cast(dict[str, Any], payload), _RecordingResolver.calls
+    return cast(dict[str, Any], payload), _RecordingResolver.calls, _RecordingResolver.web_ui_flags
 
 
 def test_empty_gated_panel_groups_fall_back_to_ungated_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload, calls = _run_bootstrap(
+    payload, calls, web_ui_flags = _run_bootstrap(
         monkeypatch,
         gated_groups={},
         ungated_groups={"Panel": ["SYM_FALLBACK"]},
     )
 
     assert calls == [["DISPLAY_PARAMETER_LEVEL_1"], None]
+    assert web_ui_flags == [True, True]
     assert {item["symbol"] for item in payload["entity_descriptors"]} == {"SYM_FALLBACK"}
 
 
 def test_non_empty_gated_panel_groups_skip_the_fallback_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload, calls = _run_bootstrap(
+    payload, calls, web_ui_flags = _run_bootstrap(
         monkeypatch,
         gated_groups={"Panel": ["SYM_GATED"]},
         ungated_groups={"Panel": ["SYM_FALLBACK"]},
     )
 
     assert calls == [["DISPLAY_PARAMETER_LEVEL_1"]]
+    assert web_ui_flags == [True]
+    assert {item["symbol"] for item in payload["entity_descriptors"]} == {"SYM_GATED"}
+
+
+def test_permissions_mode_does_not_request_web_ui_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload, calls, web_ui_flags = _run_bootstrap(
+        monkeypatch,
+        gated_groups={"Panel": ["SYM_GATED"]},
+        ungated_groups={"Panel": ["SYM_FALLBACK"]},
+        entity_filter_mode="permissions",
+    )
+
+    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"]]
+    assert web_ui_flags == [False]
     assert {item["symbol"] for item in payload["entity_descriptors"]} == {"SYM_GATED"}
 
 
 def test_raising_gated_panel_groups_fall_back_to_ungated_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload, calls = _run_bootstrap(
+    payload, calls, _web_ui_flags = _run_bootstrap(
         monkeypatch,
         gated_groups=RuntimeError("gated extraction failed"),
         ungated_groups={"Panel": ["SYM_FALLBACK"]},
@@ -181,7 +202,7 @@ def test_two_empty_panel_group_attempts_warn_without_failing_bootstrap(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     with caplog.at_level(logging.WARNING, logger=BOOTSTRAP_LOGGER):
-        payload, calls = _run_bootstrap(monkeypatch, gated_groups={}, ungated_groups={"Panel": []})
+        payload, calls, _web_ui_flags = _run_bootstrap(monkeypatch, gated_groups={}, ungated_groups={"Panel": []})
 
     assert calls == [["DISPLAY_PARAMETER_LEVEL_1"], None]
     assert payload["entity_descriptors"] == []
@@ -206,8 +227,9 @@ def test_failing_ungated_retry_propagates_instead_of_caching_emptiness() -> None
             device_menu: str,
             permissions: list[str] | None,
             all_panels: bool,
+            web_ui_only: bool = False,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels
+            _ = device_menu, permissions, all_panels, web_ui_only
             raise RuntimeError("extraction failed")
 
     with pytest.raises(RuntimeError, match="extraction failed"):

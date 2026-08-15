@@ -691,12 +691,59 @@ def _panel_group_symbols(groups: Mapping[str, list[str]]) -> set[str]:
     return {symbol for panel_symbols in groups.values() for symbol in panel_symbols if symbol}
 
 
+async def _resolver_build_panel_groups(
+    resolver: Any,
+    *,
+    device_menu: Any,
+    permissions: list[str] | None,
+    web_ui_only: bool,
+) -> dict[str, list[str]]:
+    """Call ``build_panel_groups``, tolerating older py-bragerone without ``web_ui_only``."""
+    kwargs: dict[str, Any] = {
+        "device_menu": device_menu,
+        "permissions": permissions,
+        "all_panels": True,
+        "web_ui_only": web_ui_only,
+    }
+    try:
+        return cast(dict[str, list[str]], await resolver.build_panel_groups(**kwargs))
+    except TypeError:
+        if not web_ui_only:
+            raise
+        kwargs.pop("web_ui_only")
+        LOGGER.warning(
+            "py-bragerone build_panel_groups lacks web_ui_only; UI filter cannot exclude service menus until upgraded"
+        )
+        return cast(dict[str, list[str]], await resolver.build_panel_groups(**kwargs))
+
+
+def _resolver_panel_route_diagnostics(
+    resolver: Any,
+    menu: Any,
+    *,
+    web_ui_only: bool,
+    routes_i18n: Any,
+) -> list[dict[str, Any]]:
+    """Call panel-route diagnostics with optional ``web_ui_only`` for older libraries."""
+    kwargs: dict[str, Any] = {
+        "all_panels": True,
+        "web_ui_only": web_ui_only,
+        "routes_i18n": routes_i18n,
+    }
+    try:
+        return cast(list[dict[str, Any]], resolver.panel_route_diagnostics_from_menu(menu, **kwargs))
+    except TypeError:
+        kwargs.pop("web_ui_only")
+        return cast(list[dict[str, Any]], resolver.panel_route_diagnostics_from_menu(menu, **kwargs))
+
+
 async def _build_panel_groups_with_fallback(
     resolver: Any,
     *,
     device_menu: Any,
     permissions: list[str],
     devid: str,
+    web_ui_only: bool = False,
 ) -> dict[str, list[str]]:
     """Build panel groups, retrying without permissions when the gated attempt yields nothing.
 
@@ -713,13 +760,19 @@ async def _build_panel_groups_with_fallback(
         device_menu: Device menu identifier of the module.
         permissions: Permission strings reported by the API for this module.
         devid: Module device identifier, used for logging only.
+        web_ui_only: When True, exclude installer/service routes (everyday web-UI panels only).
 
     Returns:
         Mapping of panel name to symbols, empty when neither attempt produced symbols.
     """
     groups: dict[str, list[str]] = {}
     try:
-        groups = await resolver.build_panel_groups(device_menu=device_menu, permissions=permissions, all_panels=True)
+        groups = await _resolver_build_panel_groups(
+            resolver,
+            device_menu=device_menu,
+            permissions=permissions,
+            web_ui_only=web_ui_only,
+        )
     except Exception:
         LOGGER.debug("Panel-group build failed for %s, retrying without permissions", devid, exc_info=True)
     else:
@@ -727,7 +780,12 @@ async def _build_panel_groups_with_fallback(
             return groups
         LOGGER.debug("Panel-group build returned no symbols for %s, retrying without permissions", devid)
 
-    groups = await resolver.build_panel_groups(device_menu=device_menu, permissions=None, all_panels=True)
+    groups = await _resolver_build_panel_groups(
+        resolver,
+        device_menu=device_menu,
+        permissions=None,
+        web_ui_only=web_ui_only,
+    )
 
     if not _panel_group_symbols(groups):
         # Scope the claim to panel-derived symbols: in permissions mode the later secondary pass
@@ -792,12 +850,15 @@ async def async_build_bootstrap_payload(
         module_permissions = [str(perm) for perm in getattr(module, "permissions", []) or []]
         symbols: set[str] = set()
         panel_paths: dict[str, str] = {}
+        module_mode = normalized_module_modes.get(str(module.devid), filter_mode)
+        web_ui_only = module_mode == FILTER_MODE_UI
 
         groups = await _build_panel_groups_with_fallback(
             resolver,
             device_menu=module.deviceMenu,
             permissions=module_permissions,
             devid=str(module.devid),
+            web_ui_only=web_ui_only,
         )
 
         symbols = _panel_group_symbols(groups)
@@ -820,9 +881,10 @@ async def async_build_bootstrap_payload(
                 menu = await assets.get_module_menu(device_menu=module.deviceMenu, permissions=module_permissions)
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu)
                 per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu)
-                per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
+                per_module_route_diagnostics[module.devid] = _resolver_panel_route_diagnostics(
+                    resolver,
                     menu,
-                    all_panels=True,
+                    web_ui_only=web_ui_only,
                     routes_i18n=await resolver._i18n.get_namespace("routes"),
                 )
             except Exception:
@@ -832,9 +894,10 @@ async def async_build_bootstrap_payload(
                 menu_all = await assets.get_module_menu(device_menu=module.deviceMenu, permissions=None)
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu_all)
                 per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu_all)
-                per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
+                per_module_route_diagnostics[module.devid] = _resolver_panel_route_diagnostics(
+                    resolver,
                     menu_all,
-                    all_panels=True,
+                    web_ui_only=web_ui_only,
                     routes_i18n=await resolver._i18n.get_namespace("routes"),
                 )
             except Exception:

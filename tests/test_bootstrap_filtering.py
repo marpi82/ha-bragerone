@@ -73,8 +73,9 @@ def test_async_build_bootstrap_payload_applies_filter_mode_per_module(monkeypatc
             device_menu: str,
             permissions: list[str] | None,
             all_panels: bool,
+            web_ui_only: bool = False,
         ) -> dict[str, list[str]]:
-            _ = permissions, all_panels
+            _ = permissions, all_panels, web_ui_only
             return {"panel": [f"SYM_{device_menu}"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
@@ -217,8 +218,9 @@ def test_async_build_bootstrap_payload_ui_excludes_non_panel_actions(monkeypatch
             device_menu: str,
             permissions: list[str] | None,
             all_panels: bool,
+            web_ui_only: bool = False,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels
+            _ = device_menu, permissions, all_panels, web_ui_only
             return {"Kocioł": ["SYM_PANEL"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
