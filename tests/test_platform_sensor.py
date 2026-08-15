@@ -105,6 +105,7 @@ async def test_sensor_update_uses_status_resolver_for_status_symbols(hass: HomeA
     runtime = SimpleNamespace(
         store=store,
         add_listener=lambda _cb: lambda: None,
+        module_online=lambda _devid: None,
         async_resolve_status_label=resolve_status,
     )
     descriptor = sensor_descriptor(symbol="STATUS_BOILER", pool="P5", chan="s", idx=5, unit=None)
@@ -126,6 +127,7 @@ async def test_sensor_update_uses_dynamic_unit_resolver(hass: HomeAssistant) -> 
     runtime = SimpleNamespace(
         store=store,
         add_listener=lambda _cb: lambda: None,
+        module_online=lambda _devid: None,
         async_resolve_symbol_with_unit=resolve_with_unit,
     )
     descriptor = sensor_descriptor(
