@@ -16,7 +16,7 @@
           "device_grouping": "Eszközcsoportosítás"
         },
         "data_description": {
-          "device_grouping": "Lapos = egy HA eszköz modulonként. Csoportosítás menü szerint = gyermekeszközök stabil menükulcs szerint (via_device). A változás újratérképezi az eszközhovatartozást (automatizálások/irányítópultok)."
+          "device_grouping": "Lapos = egy HA eszköz modulonként. Csoportosítás menü szerint = gyermekeszközök stabil menükulcs szerint (via_device). A változás újratérképezi az eszközhovatartozást (automatizálások/irányítópultok). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
         }
       }
     }
@@ -31,7 +31,7 @@
           "device_grouping": "Eszközcsoportosítás"
         },
         "data_description": {
-          "device_grouping": "Lapos = egy HA eszköz modulonként. Csoportosítás menü szerint = gyermekeszközök stabil menükulcs szerint (via_device). A változás újratérképezi az eszközhovatartozást (automatizálások/irányítópultok)."
+          "device_grouping": "Lapos = egy HA eszköz modulonként. Csoportosítás menü szerint = gyermekeszközök stabil menükulcs szerint (via_device). A változás újratérképezi az eszközhovatartozást (automatizálások/irányítópultok). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
         }
       }
     }

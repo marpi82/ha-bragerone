@@ -16,7 +16,7 @@
           "device_grouping": "Zoskupovanie zariadení"
         },
         "data_description": {
-          "device_grouping": "Ploché = jedno HA zariadenie na modul. Zoskupiť podľa menu = podriadené zariadenia podľa stabilného kľúča menu (via_device). Zmena premapuje príslušnosť zariadení (automatizácie/nástenky)."
+          "device_grouping": "Ploché = jedno HA zariadenie na modul. Zoskupiť podľa menu = podriadené zariadenia podľa stabilného kľúča menu (via_device). Zmena premapuje príslušnosť zariadení (automatizácie/nástenky). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
         }
       }
     }
@@ -31,7 +31,7 @@
           "device_grouping": "Zoskupovanie zariadení"
         },
         "data_description": {
-          "device_grouping": "Ploché = jedno HA zariadenie na modul. Zoskupiť podľa menu = podriadené zariadenia podľa stabilného kľúča menu (via_device). Zmena premapuje príslušnosť zariadení (automatizácie/nástenky)."
+          "device_grouping": "Ploché = jedno HA zariadenie na modul. Zoskupiť podľa menu = podriadené zariadenia podľa stabilného kľúča menu (via_device). Zmena premapuje príslušnosť zariadení (automatizácie/nástenky). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
         }
       }
     }

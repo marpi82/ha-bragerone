@@ -16,7 +16,7 @@
           "device_grouping": "Regroupement des appareils"
         },
         "data_description": {
-          "device_grouping": "Plat = un appareil HA par module. Grouper par menu = appareils enfants par clé de menu stable (via_device). Le changement remappe l'appartenance aux appareils (automatisations/tableaux de bord)."
+          "device_grouping": "Plat = un appareil HA par module. Grouper par menu = appareils enfants par clé de menu stable (via_device). Le changement remappe l'appartenance aux appareils (automatisations/tableaux de bord). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
         }
       }
     }
@@ -31,7 +31,7 @@
           "device_grouping": "Regroupement des appareils"
         },
         "data_description": {
-          "device_grouping": "Plat = un appareil HA par module. Grouper par menu = appareils enfants par clé de menu stable (via_device). Le changement remappe l'appartenance aux appareils (automatisations/tableaux de bord)."
+          "device_grouping": "Plat = un appareil HA par module. Grouper par menu = appareils enfants par clé de menu stable (via_device). Le changement remappe l'appartenance aux appareils (automatisations/tableaux de bord). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
         }
       }
     }

@@ -16,7 +16,7 @@
           "device_grouping": "デバイスのグループ化"
         },
         "data_description": {
-          "device_grouping": "フラット = モジュールごとに1つのHAデバイス。メニューでグループ化 = 安定したメニューキーごとの子デバイス（via_device）。変更するとデバイス所属が再マッピングされます（オートメーション/ダッシュボード）。"
+          "device_grouping": "フラット = モジュールごとに1つのHAデバイス。メニューでグループ化 = 安定したメニューキーごとの子デバイス（via_device）。変更するとデバイス所属が再マッピングされます（オートメーション/ダッシュボード）。. Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
         }
       }
     }
@@ -31,7 +31,7 @@
           "device_grouping": "デバイスのグループ化"
         },
         "data_description": {
-          "device_grouping": "フラット = モジュールごとに1つのHAデバイス。メニューでグループ化 = 安定したメニューキーごとの子デバイス（via_device）。変更するとデバイス所属が再マッピングされます（オートメーション/ダッシュボード）。"
+          "device_grouping": "フラット = モジュールごとに1つのHAデバイス。メニューでグループ化 = 安定したメニューキーごとの子デバイス（via_device）。変更するとデバイス所属が再マッピングされます（オートメーション/ダッシュボード）。. Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
         }
       }
     }
