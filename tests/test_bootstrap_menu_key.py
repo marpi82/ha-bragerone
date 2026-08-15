@@ -140,8 +140,7 @@ def test_stable_menu_key_accepts_mainmenu_tokens() -> None:
 
 def test_stable_menu_key_accepts_companies_prefix_and_menu_token() -> None:
     assert (
-        _stable_menu_key_from_route_meta([{"name": "companies.modules.menu.dhw", "path": "dhw"}])
-        == "companies.modules.menu.dhw"
+        _stable_menu_key_from_route_meta([{"name": "companies.modules.menu.dhw", "path": "dhw"}]) == "companies.modules.menu.dhw"
     )
     assert _stable_menu_key_from_route_meta([{"name": "MENU_BOILER", "path": ""}]) == "MENU_BOILER"
 
