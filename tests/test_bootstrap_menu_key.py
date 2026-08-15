@@ -11,8 +11,10 @@ install_pybragerone_stubs()
 from custom_components.habragerone.bootstrap import (  # noqa: E402
     _collect_symbol_route_meta_from_menu,
     _menu_group_title_from_panel_path,
+    _menu_keys_by_panel_path,
     _menu_title_from_panel_path,
     _path_menu_token,
+    _resolve_menu_key_for_symbol,
     _stable_menu_key_from_route_meta,
 )
 
@@ -173,3 +175,106 @@ def test_menu_group_title_from_panel_path_uses_root() -> None:
     assert _menu_group_title_from_panel_path("Menu termostatów/Zawór 1") == "Menu termostatów"
     assert _menu_group_title_from_panel_path("Kocioł") == "Kocioł"
     assert _menu_group_title_from_panel_path("  ") == ""
+
+
+def test_resolve_menu_key_inherits_from_panel_sibling() -> None:
+    """Panel-only PARAM16_* can inherit Podajnik menu_key from a routed sibling."""
+    panel_paths = {
+        "STATUS_FEEDER": "Podajnik",
+        "PARAM16_2": "Podajnik",
+    }
+    symbol_routes = {
+        "STATUS_FEEDER": [{"name": "modules.menu.feeder", "path": "feeder", "ancestors": []}],
+        # PARAM16_2 intentionally missing from routes (panel-only / empty kinds)
+    }
+    panel_menu_keys = _menu_keys_by_panel_path(panel_paths, symbol_routes)
+    assert panel_menu_keys["Podajnik"] == "modules.menu.feeder"
+    assert (
+        _resolve_menu_key_for_symbol(
+            symbol="PARAM16_2",
+            panel_path="Podajnik",
+            symbol_routes=symbol_routes,
+            panel_menu_keys=panel_menu_keys,
+        )
+        == "modules.menu.feeder"
+    )
+
+
+def test_resolve_menu_key_inherits_via_group_title() -> None:
+    panel_paths = {
+        "STATUS_VALVE": "Menu termostatów/Zawór 1",
+        "PARAM_ORPHAN": "Menu termostatów/Zawór 2",
+    }
+    symbol_routes = {
+        "STATUS_VALVE": [
+            {
+                "name": "modules.menu.valve1",
+                "path": "valve1",
+                "ancestors": [{"name": "modules.menu.thermostats", "path": "thermostats"}],
+            }
+        ],
+    }
+    panel_menu_keys = _menu_keys_by_panel_path(panel_paths, symbol_routes)
+    assert (
+        _resolve_menu_key_for_symbol(
+            symbol="PARAM_ORPHAN",
+            panel_path="Menu termostatów/Zawór 2",
+            symbol_routes=symbol_routes,
+            panel_menu_keys=panel_menu_keys,
+        )
+        == "modules.menu.thermostats"
+    )
+
+
+def test_resolve_menu_key_prefers_own_route_meta() -> None:
+    panel_paths = {"PARAM_A": "Podajnik", "PARAM_B": "Podajnik"}
+    symbol_routes = {
+        "PARAM_A": [{"name": "modules.menu.feeder", "path": "feeder"}],
+        "PARAM_B": [{"name": "modules.menu.other", "path": "other"}],
+    }
+    panel_menu_keys = _menu_keys_by_panel_path(panel_paths, symbol_routes)
+    assert (
+        _resolve_menu_key_for_symbol(
+            symbol="PARAM_B",
+            panel_path="Podajnik",
+            symbol_routes=symbol_routes,
+            panel_menu_keys=panel_menu_keys,
+        )
+        == "modules.menu.other"
+    )
+
+
+def test_menu_keys_by_panel_path_skips_blank_and_non_string_paths() -> None:
+    panel_paths = {
+        "STATUS_OK": "Podajnik",
+        "BAD_BLANK": "   ",
+        "BAD_TYPE": 12,  # type: ignore[dict-item]
+    }
+    symbol_routes = {
+        "STATUS_OK": [{"name": "modules.menu.feeder", "path": "feeder"}],
+        "BAD_BLANK": [{"name": "modules.menu.feeder", "path": "feeder"}],
+        "BAD_TYPE": [{"name": "modules.menu.feeder", "path": "feeder"}],
+    }
+    panel_menu_keys = _menu_keys_by_panel_path(panel_paths, symbol_routes)  # type: ignore[arg-type]
+    assert panel_menu_keys == {"Podajnik": "modules.menu.feeder"}
+
+
+def test_resolve_menu_key_returns_none_without_path_or_sibling() -> None:
+    assert (
+        _resolve_menu_key_for_symbol(
+            symbol="PARAM_ORPHAN",
+            panel_path="   ",
+            symbol_routes={},
+            panel_menu_keys={"Podajnik": "modules.menu.feeder"},
+        )
+        is None
+    )
+    assert (
+        _resolve_menu_key_for_symbol(
+            symbol="PARAM_ORPHAN",
+            panel_path="Inny panel",
+            symbol_routes={},
+            panel_menu_keys={"Podajnik": "modules.menu.feeder"},
+        )
+        is None
+    )
