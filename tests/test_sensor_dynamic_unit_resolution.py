@@ -8,8 +8,12 @@ from unittest.mock import AsyncMock
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
     PERCENTAGE,
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
     UnitOfEnergy,
+    UnitOfFrequency,
     UnitOfPower,
+    UnitOfPressure,
     UnitOfTemperature,
     UnitOfVolumeFlowRate,
 )
@@ -53,7 +57,14 @@ def test_sensor_normalizes_common_units_to_ha_constants() -> None:
     assert BragerSymbolSensor._normalize_unit("%") == PERCENTAGE
     assert BragerSymbolSensor._normalize_unit("l/min") == UnitOfVolumeFlowRate.LITERS_PER_MINUTE
     assert BragerSymbolSensor._normalize_unit({"pl": "°C", "en": "C"}) == UnitOfTemperature.CELSIUS
+    assert BragerSymbolSensor._normalize_unit({"pl": "bar"}) == UnitOfPressure.BAR
     assert BragerSymbolSensor._normalize_unit("wn.9998") is None
+    assert BragerSymbolSensor._normalize_unit("units.foo") is None
+    assert BragerSymbolSensor._normalize_unit("app.bar") is None
+    assert BragerSymbolSensor._normalize_unit("   ") is None
+    assert BragerSymbolSensor._normalize_unit({"en": "  "}) is None
+    assert BragerSymbolSensor._normalize_unit(None) is None
+    assert BragerSymbolSensor._normalize_unit("weird.token") == "weird.token"
 
 
 def test_sensor_infers_energy_and_power_classes_from_unit() -> None:
@@ -73,9 +84,28 @@ def test_sensor_infers_energy_and_power_classes_from_unit() -> None:
     assert flow_class == SensorDeviceClass.VOLUME_FLOW_RATE
     assert flow_state == SensorStateClass.MEASUREMENT
 
+    pressure_class, pressure_state = BragerSymbolSensor._infer_sensor_classes(UnitOfPressure.BAR)
+    assert pressure_class == SensorDeviceClass.PRESSURE
+    assert pressure_state == SensorStateClass.MEASUREMENT
+
+    current_class, current_state = BragerSymbolSensor._infer_sensor_classes(UnitOfElectricCurrent.AMPERE)
+    assert current_class == SensorDeviceClass.CURRENT
+    assert current_state == SensorStateClass.MEASUREMENT
+
+    voltage_class, voltage_state = BragerSymbolSensor._infer_sensor_classes(UnitOfElectricPotential.VOLT)
+    assert voltage_class == SensorDeviceClass.VOLTAGE
+    assert voltage_state == SensorStateClass.MEASUREMENT
+
+    freq_class, freq_state = BragerSymbolSensor._infer_sensor_classes(UnitOfFrequency.HERTZ)
+    assert freq_class == SensorDeviceClass.FREQUENCY
+    assert freq_state == SensorStateClass.MEASUREMENT
+
     pct_class, pct_state = BragerSymbolSensor._infer_sensor_classes(PERCENTAGE)
     assert pct_class is None
     assert pct_state == SensorStateClass.MEASUREMENT
+
+    assert BragerSymbolSensor._infer_sensor_classes(None) == (None, None)
+    assert BragerSymbolSensor._infer_sensor_classes("unknown") == (None, None)
 
 
 def test_sensor_entity_applies_classes_from_descriptor_unit() -> None:

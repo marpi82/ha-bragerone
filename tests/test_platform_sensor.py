@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 
 from tests.conftest import install_pybragerone_stubs
@@ -56,7 +58,9 @@ async def test_sensor_entity_identity_and_device_info(hass: HomeAssistant) -> No
 
     assert entity._attr_name == "Boiler temperature"
     assert entity._attr_unique_id == f"{entry.entry_id}_dev1_temp_boiler"
-    assert entity._attr_native_unit_of_measurement == "°C"
+    assert entity._attr_native_unit_of_measurement == UnitOfTemperature.CELSIUS
+    assert entity._attr_device_class == SensorDeviceClass.TEMPERATURE
+    assert entity._attr_state_class == SensorStateClass.MEASUREMENT
     assert entity.device_info["identifiers"] == {(DOMAIN, "DEV1")}
 
 
@@ -150,7 +154,42 @@ async def test_sensor_update_uses_dynamic_unit_resolver(hass: HomeAssistant) -> 
 
     assert entity.native_value == 42.0
     assert entity.native_unit_of_measurement == "%"
+    assert entity._attr_device_class is None
+    assert entity._attr_state_class == SensorStateClass.MEASUREMENT
     resolve_with_unit.assert_awaited_once_with("PARAM16_2")
+
+
+@pytest.mark.asyncio
+async def test_sensor_dynamic_unit_resolver_skips_unresolved_unit_token(hass: HomeAssistant) -> None:
+    store = FakeStore(flat_values={"P10.v2": 33})
+    resolve_with_unit = AsyncMock(return_value=(None, "wn.9998"))
+    runtime = SimpleNamespace(
+        store=store,
+        add_listener=lambda _cb: lambda: None,
+        module_online=lambda _devid: None,
+        async_resolve_symbol_with_unit=resolve_with_unit,
+        async_resolve_status_label=AsyncMock(return_value=None),
+    )
+    descriptor = sensor_descriptor(
+        symbol="PARAM16_2",
+        pool="P10",
+        chan="v",
+        idx=2,
+        unit=None,
+        mapping_channels={
+            "value": [{"address": "P10.v2"}],
+            "unit": [{"address": "P10.u2"}],
+        },
+    )
+    entry = register_config_entry(hass, runtime=make_runtime()[0], descriptors=[descriptor])
+    entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)  # type: ignore[arg-type]
+    entity.hass = hass
+    entity.entity_id = "sensor.test_power"
+
+    await entity.async_update()
+
+    assert entity.native_unit_of_measurement is None
+    assert entity.native_value == 33
 
 
 @pytest.mark.asyncio
