@@ -95,6 +95,46 @@ class _ParseResolver:
 
 
 @pytest.mark.asyncio
+async def test_resolve_descriptor_numeric_transform_unit_meta_non_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pybragerone.models.param_resolver as resolver_mod
+
+    monkeypatch.setattr(resolver_mod, "ParamResolver", _ParseResolver)
+
+    class _Resolver:
+        async def _resolve_unit_meta(self, *, raw_unit_code: Any) -> str:
+            return "not-a-mapping"
+
+    unit_code, scale, offset, precision = await _resolve_descriptor_numeric_transform(
+        _Resolver(),  # type: ignore[arg-type]
+        {"unit_code": 49},
+    )
+    assert unit_code == 49
+    assert (scale, offset, precision) == (None, None, None)
+
+
+@pytest.mark.asyncio
+async def test_resolve_descriptor_numeric_transform_units_source_code_non_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pybragerone.models.param_resolver as resolver_mod
+
+    monkeypatch.setattr(resolver_mod, "ParamResolver", _ParseResolver)
+
+    class _Resolver:
+        async def _resolve_unit_meta(self, *, raw_unit_code: Any) -> list[str]:
+            return ["not-a-mapping"]
+
+    unit_code, scale, offset, precision = await _resolve_descriptor_numeric_transform(
+        _Resolver(),  # type: ignore[arg-type]
+        {"mapping": {"units_source": 66}},
+    )
+    assert unit_code == 66
+    assert (scale, offset, precision) == (None, None, None)
+
+
+@pytest.mark.asyncio
 async def test_resolve_descriptor_numeric_transform_from_unit_code(monkeypatch: pytest.MonkeyPatch) -> None:
     import pybragerone.models.param_resolver as resolver_mod
 

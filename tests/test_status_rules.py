@@ -152,6 +152,9 @@ def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:
     bare = {"mapping": {"command_rules": [{"value": "ON", "conditions": [{"operation": "equalTo", "expected": 1}]}]}}
     assert resolve_entity_bool(descriptor=bare, flat_values={}, default_actual=64) is False
 
+    # Non-mapping ``mapping`` skips the inputs path entirely.
+    assert resolve_entity_bool(descriptor={"mapping": "bad"}, flat_values={}, default_actual=1) is True
+
     # Single mapping input bit recovers state when rules cannot match.
     with_input = {
         "mapping": {
@@ -161,6 +164,21 @@ def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:
     }
     assert resolve_entity_bool(descriptor=with_input, flat_values={"P5.s0": 64}, default_actual=64) is False
     assert resolve_entity_bool(descriptor=with_input, flat_values={"P5.s0": 65}, default_actual=65) is True
+
+    # Zero / multiple bit inputs → fall back to raw coercion.
+    no_bits = {"mapping": {"command_rules": [], "inputs": [{"address": "P5.s0"}]}}
+    assert resolve_entity_bool(descriptor=no_bits, flat_values={"P5.s0": 1}, default_actual=1) is True
+    many_bits = {
+        "mapping": {
+            "command_rules": [],
+            "inputs": [{"address": "P5.s0", "bit": 0}, {"address": "P5.s0", "bit": 1}],
+        }
+    }
+    assert resolve_entity_bool(descriptor=many_bits, flat_values={"P5.s0": 65}, default_actual=65) is False
+
+    # Bit input present but actual is non-numeric → raw fallback.
+    weird = {"mapping": {"command_rules": [], "inputs": [{"address": "P5.s0", "bit": 0}]}}
+    assert resolve_entity_bool(descriptor=weird, flat_values={"P5.s0": "on"}, default_actual="on") is True
 
 
 def test_compare_condition_supports_prefixed_and_not_equal_operations() -> None:
