@@ -573,6 +573,61 @@ def _stable_menu_key_from_route_meta(routes: list[dict[str, Any]]) -> str | None
     return None
 
 
+def _menu_keys_by_panel_path(
+    panel_paths: dict[str, str],
+    symbol_routes: dict[str, list[dict[str, Any]]],
+) -> dict[str, str]:
+    """Map localized panel paths to a stable ``menu_key`` from siblings.
+
+    Some panel-only symbols (e.g. feeder ``PARAM16_*``) appear in permission
+    panel groups with a ``panel_path`` but never in the HA menu-route walk, so
+    they lack route meta. Inherit the ``menu_key`` of any other symbol that
+    shares the same ``panel_path`` (or the same root segment) and does have
+    route meta — so group-by-menu keeps them under the Podajnik / Dmuchawa
+    device instead of the bare module.
+    """
+    by_exact: dict[str, str] = {}
+    by_group: dict[str, str] = {}
+    for symbol, panel_path in panel_paths.items():
+        if not isinstance(panel_path, str) or not panel_path.strip():
+            continue
+        key = _stable_menu_key_from_route_meta(symbol_routes.get(symbol, []))
+        if not key:
+            continue
+        normalized = _normalize_panel_path(panel_path)
+        if normalized and normalized not in by_exact:
+            by_exact[normalized] = key
+        group = _menu_group_title_from_panel_path(panel_path)
+        if group and group not in by_group:
+            by_group[group] = key
+    # Exact path wins; expose group titles under the same map for one lookup API.
+    merged = dict(by_group)
+    merged.update(by_exact)
+    return merged
+
+
+def _resolve_menu_key_for_symbol(
+    *,
+    symbol: str,
+    panel_path: str,
+    symbol_routes: dict[str, list[dict[str, Any]]],
+    panel_menu_keys: dict[str, str],
+) -> str | None:
+    """Resolve ``menu_key`` from route meta, then inherit from panel siblings."""
+    key = _stable_menu_key_from_route_meta(symbol_routes.get(symbol, []))
+    if key:
+        return key
+    if not panel_path.strip():
+        return None
+    normalized = _normalize_panel_path(panel_path)
+    if normalized and normalized in panel_menu_keys:
+        return panel_menu_keys[normalized]
+    group = _menu_group_title_from_panel_path(panel_path)
+    if group and group in panel_menu_keys:
+        return panel_menu_keys[group]
+    return None
+
+
 def _menu_title_from_panel_path(panel_path: str) -> str:
     """Return the leaf segment of a localized panel path for entity name prefixes."""
     normalized = _normalize_panel_path(panel_path)
@@ -991,8 +1046,15 @@ async def async_build_bootstrap_payload(
         module_candidates = per_module_candidate_symbols.get(module.devid, set())
         kinds_map = per_module_symbol_kinds.get(module.devid, {})
         routes_map = per_module_symbol_routes.get(module.devid, {})
+        panel_paths_map = per_module_panel_paths.get(module.devid, {})
+        panel_menu_keys = _menu_keys_by_panel_path(panel_paths_map, routes_map)
         kinds_symbols = set(kinds_map.keys())
         not_in_candidates = sorted(kinds_symbols - module_candidates)
+        panels_without_routes = sorted(
+            symbol
+            for symbol, path in panel_paths_map.items()
+            if path and symbol not in routes_map and symbol in module_candidates
+        )
         bootstrap_debug["modules"][module.devid] = {
             "candidate_count": len(module_candidates),
             "candidate_symbols_sample": sorted(module_candidates)[:200],
@@ -1000,6 +1062,8 @@ async def async_build_bootstrap_payload(
             "menu_symbols_not_in_candidates_count": len(not_in_candidates),
             "menu_symbols_not_in_candidates_sample": not_in_candidates[:200],
             "menu_symbol_routes_sample": {symbol: routes_map.get(symbol, [])[:5] for symbol in not_in_candidates[:50]},
+            "panel_symbols_without_routes_count": len(panels_without_routes),
+            "panel_symbols_without_routes_sample": panels_without_routes[:200],
             "accepted_count": 0,
             "rejection_count": 0,
             "rejections": module_rejections,
@@ -1195,7 +1259,12 @@ async def async_build_bootstrap_payload(
             writable = _is_menu_command_action(symbol=symbol, symbol_kinds=symbol_kinds, mapping=mapping)
             label = str(payload.get("label")) if isinstance(payload.get("label"), str) else symbol
             panel_path = per_module_panel_paths.get(module.devid, {}).get(symbol, "")
-            menu_key = _stable_menu_key_from_route_meta(per_module_symbol_routes.get(module.devid, {}).get(symbol, []))
+            menu_key = _resolve_menu_key_for_symbol(
+                symbol=symbol,
+                panel_path=panel_path,
+                symbol_routes=routes_map,
+                panel_menu_keys=panel_menu_keys,
+            )
             menu_title = _menu_title_from_panel_path(panel_path)
             menu_group_title = _menu_group_title_from_panel_path(panel_path)
             unit_value = payload.get("unit")
