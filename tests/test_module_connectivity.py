@@ -217,6 +217,58 @@ async def test_async_setup_skips_non_dict_connection_rows(hass: HomeAssistant) -
 
 
 @pytest.mark.asyncio
+async def test_async_setup_skips_non_list_connection_descriptors(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **entry.data,
+            CONF_MODULES_META: {"DEV1": {"name": "Boiler"}},
+            CONF_CONNECTION_DESCRIPTORS: "not-a-list",
+        },
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    added: list[object] = []
+    await async_setup_entry(hass, entry, added.extend)
+    assert not any(isinstance(entity, BragerModuleConnectivityBinarySensor) for entity in added)
+
+
+@pytest.mark.asyncio
+async def test_connectivity_sensor_attrs_without_optional_fields(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.modules_meta["DEV1"] = {
+        "name": "Boiler",
+        "connectedAt": "bad",
+        "gateway": {"address": None, "interface": "", "version": None},
+    }
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerModuleConnectivityBinarySensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta=runtime.modules_meta["DEV1"],
+        connection_descriptor={
+            "label": "Status",
+            "labels": {"connection.connected": 1, "connection.notConnected": None},
+            "menu_key": "module.connection",
+        },
+    )
+    attrs = entity.extra_state_attributes
+    assert "connected_at" not in attrs
+    assert "gateway_address" not in attrs
+    assert "gateway_interface" not in attrs
+    assert "gateway_version" not in attrs
+    assert "state_label_on" not in attrs
+
+    runtime.modules_meta["DEV1"] = {"name": "Boiler", "gateway": "not-a-dict"}
+    assert "gateway_address" not in entity.extra_state_attributes
+
+    await entity.async_will_remove_from_hass()
+    assert entity._unsubscribe_connectivity is None
+
+
+@pytest.mark.asyncio
 async def test_connectivity_sensor_requires_spa_label(hass: HomeAssistant) -> None:
     runtime, *_rest = make_runtime()
     entry = register_config_entry(hass, runtime=runtime, descriptors=[])
@@ -325,3 +377,25 @@ async def test_runtime_connectivity_listener_compat_and_seed_edges() -> None:
     runtime.gateway = _NonBoolOnline()  # type: ignore[assignment]
     runtime._seed_module_online_from_gateway()
     assert runtime.module_online("DEV1") is False
+
+    # Metadata-only apply (no connected_at) and start without connectivity API.
+    runtime._apply_module_online("DEV1", True, connected_at=None, gateway={"address": ""})
+    assert runtime.modules_meta["DEV1"].get("gateway") == {"address": ""}
+
+    class _NoConnectivityApi:
+        modules: ClassVar[list[str]] = ["DEV1"]
+
+        def __init__(self) -> None:
+            from tests.helpers.fakes import FakeBus
+
+            self.bus = FakeBus()
+
+        async def start(self) -> None:
+            return None
+
+        async def stop(self) -> None:
+            return None
+
+    runtime.gateway = _NoConnectivityApi()  # type: ignore[assignment]
+    await runtime.start()
+    await runtime.stop()

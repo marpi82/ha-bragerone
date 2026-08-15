@@ -292,6 +292,43 @@ def test_connection_label_non_dict_skips_descriptors(monkeypatch: pytest.MonkeyP
     )
     assert payload["connection_descriptors"] == []
 
+def test_connection_descriptors_skipped_quietly_without_label_api(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.DEBUG, logger=BOOTSTRAP_LOGGER):
+        payload, _calls, _web_ui = _run_bootstrap(monkeypatch, gated_groups={"Panel": ["SYM"]}, ungated_groups={})
+    assert payload["connection_descriptors"] == []
+    assert any("connection-label API unavailable" in record.getMessage() for record in caplog.records)
+
+
+def test_connection_descriptors_skipped_when_no_effective_modules(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _EmptyApi(_FakeApi):
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return []
+
+    class _EmptyLabels(_RecordingResolver):
+        async def resolve_module_connection_labels(self, *, lang: str | None = None) -> dict[str, str]:
+            _ = lang
+            return {}
+
+    _RecordingResolver.gated_groups = {}
+    _RecordingResolver.ungated_groups = {}
+    _RecordingResolver.calls = []
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _EmptyLabels)
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _EmptyApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=[],
+            language="en",
+        )
+    )
+    assert payload["connection_descriptors"] == []
+
+
+
 def test_failing_panel_group_build_propagates_instead_of_caching_emptiness() -> None:
     """A broken panel extraction must fail setup rather than report zero entities."""
 

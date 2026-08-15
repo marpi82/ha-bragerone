@@ -99,6 +99,10 @@ async def test_button_connectivity_listener_lifecycle(hass: HomeAssistant) -> No
     await entity.async_will_remove_from_hass()
     assert entity._unsubscribe_connectivity is None
 
+    bare = BragerActionButton(entry=entry, runtime=runtime, descriptor=descriptor)
+    await bare.async_will_remove_from_hass()
+    assert bare._unsubscribe_connectivity is None
+
 
 @pytest.mark.asyncio
 async def test_button_press_defaults_value_when_rule_missing(hass: HomeAssistant) -> None:

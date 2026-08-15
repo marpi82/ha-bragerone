@@ -156,3 +156,7 @@ async def test_binary_sensor_runtime_update_schedules_refresh_for_matching_key(h
     entity.async_schedule_update_ha_state.assert_not_called()
     entity._on_connectivity("DEV1", False)
     entity.async_schedule_update_ha_state.assert_called_once_with(True)
+
+    bare = BragerStatusBinarySensor(entry=entry, runtime=runtime, descriptor=descriptor)
+    await bare.async_will_remove_from_hass()
+    assert bare._unsubscribe_connectivity is None
