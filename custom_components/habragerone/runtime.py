@@ -196,7 +196,7 @@ class BragerRuntime:
         """
         try:
             parameters = inspect.signature(callback).parameters.values()
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             callback(devid, online, flipped)
             return
         positional = [param for param in parameters if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD)]

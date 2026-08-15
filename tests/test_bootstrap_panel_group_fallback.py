@@ -292,6 +292,7 @@ def test_connection_label_non_dict_skips_descriptors(monkeypatch: pytest.MonkeyP
     )
     assert payload["connection_descriptors"] == []
 
+
 def test_connection_descriptors_skipped_quietly_without_label_api(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -328,10 +329,8 @@ def test_connection_descriptors_skipped_when_no_effective_modules(monkeypatch: p
     assert payload["connection_descriptors"] == []
 
 
-
 def test_failing_panel_group_build_propagates_instead_of_caching_emptiness() -> None:
     """A broken panel extraction must fail setup rather than report zero entities."""
-
 
     class _AlwaysFailingResolver:
         async def build_panel_groups(
