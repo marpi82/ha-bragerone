@@ -583,8 +583,8 @@ def _menu_keys_by_panel_path(
     panel groups with a ``panel_path`` but never in the HA menu-route walk, so
     they lack route meta. Inherit the ``menu_key`` of any other symbol that
     shares the same ``panel_path`` (or the same root segment) and does have
-    route meta — so group-by-menu keeps them under the Podajnik / Dmuchawa
-    device instead of the bare module.
+    route meta — so group-by-menu keeps them under the matching menu child
+    device (e.g. feeder / fan panels) instead of the bare module.
     """
     by_exact: dict[str, str] = {}
     by_group: dict[str, str] = {}

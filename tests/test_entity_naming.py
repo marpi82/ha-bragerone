@@ -64,6 +64,31 @@ def test_descriptor_display_name_prefers_menu_title_over_path() -> None:
     assert descriptor_display_name(descriptor) == "Zawór 1 - Status"
 
 
+def test_descriptor_display_name_omits_prefix_when_it_matches_group_device() -> None:
+    from custom_components.habragerone.const import DEVICE_GROUPING_BY_MENU, DEVICE_GROUPING_FLAT
+
+    descriptor = {
+        "panel_path": "Dmuchawa",
+        "menu_title": "Dmuchawa",
+        "menu_group_title": "Dmuchawa",
+        "label": "Wydajność dmuchawy",
+    }
+    assert descriptor_display_name(descriptor, grouping=DEVICE_GROUPING_BY_MENU) == "Wydajność dmuchawy"
+    assert descriptor_display_name(descriptor, grouping=DEVICE_GROUPING_FLAT) == "Dmuchawa - Wydajność dmuchawy"
+
+
+def test_descriptor_display_name_keeps_leaf_under_parent_group_device() -> None:
+    from custom_components.habragerone.const import DEVICE_GROUPING_BY_MENU
+
+    descriptor = {
+        "panel_path": "Menu termostatów/Zawór 1",
+        "menu_title": "Zawór 1",
+        "menu_group_title": "Menu termostatów",
+        "label": "Status",
+    }
+    assert descriptor_display_name(descriptor, grouping=DEVICE_GROUPING_BY_MENU) == "Zawór 1 - Status"
+
+
 def test_descriptor_suggested_object_id_uses_devid_and_symbol() -> None:
     descriptor = {
         "devid": "MODABC123",

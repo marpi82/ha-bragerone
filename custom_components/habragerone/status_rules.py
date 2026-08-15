@@ -43,11 +43,53 @@ def resolve_rule_bool(
     if not isinstance(display, str):
         return None
     norm = display.strip().casefold()
-    if norm in {"on", "on manual", "enabled", "true", "yes"}:
+    if norm in _BOOL_TRUE_TOKENS:
         return True
-    if norm in {"off", "off manual", "disabled", "false", "no"}:
+    if norm in _BOOL_FALSE_TOKENS:
         return False
     return None
+
+
+_BOOL_TRUE_TOKENS = frozenset(
+    {
+        "on",
+        "on manual",
+        "enabled",
+        "true",
+        "yes",
+        "1",
+        "tak",
+        "włączony",
+        "wlaczony",
+        "włączone",
+        "wlaczone",
+        "włączono",
+        "wlaczono",
+        "załączony",
+        "zalaczony",
+        "załączone",
+        "zalaczone",
+        "załączono",
+        "zalaczono",
+    }
+)
+_BOOL_FALSE_TOKENS = frozenset(
+    {
+        "off",
+        "off manual",
+        "disabled",
+        "false",
+        "no",
+        "0",
+        "nie",
+        "wyłączony",
+        "wylaczony",
+        "wyłączone",
+        "wylaczone",
+        "wyłączono",
+        "wylaczono",
+    }
+)
 
 
 def rule_matches(rule: Mapping[str, Any], *, flat_values: Mapping[str, Any], default_actual: Any) -> bool:
