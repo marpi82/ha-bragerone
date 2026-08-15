@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from .const import (
     CONF_BOOTSTRAP_DEBUG,
+    CONF_CONNECTION_DESCRIPTORS,
     CONF_ENTITY_DESCRIPTORS,
     CONF_ENTITY_FILTER_MODE,
     CONF_ENUM_MAP,
@@ -18,6 +19,7 @@ from .const import (
     CONF_OPTIONS,
     CONF_PLATFORM,
     CONF_RAW_TO_LABEL,
+    CONNECTION_MENU_KEY,
     DEFAULT_ENTITY_FILTER_MODE,
     FILTER_MODE_PERMISSIONS,
     FILTER_MODE_UI,
@@ -740,6 +742,7 @@ class BootstrapPayload(TypedDict):
     """Container persisted in ConfigEntry data for fast startup."""
 
     entity_descriptors: list[EntityDescriptor]
+    connection_descriptors: list[dict[str, Any]]
     modules_meta: dict[str, dict[str, Any]]
     entity_filter_mode: str
     module_filter_modes: dict[str, str]
@@ -1143,12 +1146,76 @@ async def async_build_bootstrap_payload(
             )
             descriptors.append(descriptor)
 
+    connection_labels, connection_labels_supported = await _resolve_connection_labels(resolver, language=language)
+    connection_descriptors: list[dict[str, Any]] = []
+    if connection_labels.get("connection.status") or connection_labels.get("serverConnection"):
+        for module in effective_modules:
+            connection_descriptors.append(
+                _build_connection_descriptor(
+                    module=module,
+                    labels=connection_labels,
+                )
+            )
+    elif effective_modules and connection_labels_supported:
+        LOGGER.warning(
+            "Skipping connection_descriptors: SPA module connection i18n labels unavailable (would persist untranslated keys)"
+        )
+    elif effective_modules:
+        LOGGER.debug("Skipping connection_descriptors: pybragerone connection-label API unavailable")
+
     return {
         CONF_ENTITY_DESCRIPTORS: descriptors,
+        CONF_CONNECTION_DESCRIPTORS: connection_descriptors,
         CONF_MODULES_META: modules_meta,
         CONF_ENTITY_FILTER_MODE: filter_mode,
         CONF_MODULE_FILTER_MODES: {
             str(module.devid): normalized_module_modes.get(str(module.devid), filter_mode) for module in effective_modules
         },
         CONF_BOOTSTRAP_DEBUG: bootstrap_debug,
+    }
+
+
+async def _resolve_connection_labels(resolver: Any, *, language: str | None) -> tuple[dict[str, str], bool]:
+    """Load SPA ``module`` / ``module.connection.*`` labels via pybragerone i18n.
+
+    Returns ``(labels, supported)`` where ``supported`` is False when the installed
+    pybragerone build lacks ``resolve_module_connection_labels`` (expected under unit
+    stubs / older pins — log at DEBUG, not WARNING).
+    """
+    resolve = getattr(resolver, "resolve_module_connection_labels", None)
+    if not callable(resolve):
+        LOGGER.debug("pybragerone lacks resolve_module_connection_labels; connection labels unavailable")
+        return {}, False
+    try:
+        labels = await resolve(lang=language)
+    except Exception:
+        LOGGER.exception("Failed to resolve module connection i18n labels")
+        return {}, True
+    if not isinstance(labels, dict):
+        return {}, True
+    return (
+        {str(key): str(value) for key, value in labels.items() if isinstance(key, str) and isinstance(value, str)},
+        True,
+    )
+
+
+def _build_connection_descriptor(*, module: Any, labels: Mapping[str, str]) -> dict[str, Any]:
+    """Build a non-menu connection descriptor for one module (HA #165-ready)."""
+    devid = str(getattr(module, "devid", "") or "")
+    module_name = str(getattr(module, "name", "") or devid)
+    status_label = str(labels.get("connection.status") or labels.get("serverConnection") or "").strip()
+    index_label = str(labels.get("connection.index") or status_label).strip()
+    device_name = f"{module_name} — {index_label}" if index_label else module_name
+    return {
+        "kind": "module_connection",
+        "source": "module_i18n",
+        "menu_key": CONNECTION_MENU_KEY,
+        "devid": devid,
+        "module_name": module_name,
+        "module_title": str(getattr(module, "moduleTitle", "") or ""),
+        "module_version": str(getattr(module, "moduleVersion", "") or ""),
+        "label": status_label,
+        "device_name": device_name,
+        "labels": dict(labels),
+        CONF_PLATFORM: "binary_sensor",
     }

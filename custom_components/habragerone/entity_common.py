@@ -130,6 +130,23 @@ def device_info_from_descriptor(descriptor: dict[str, Any], *, domain: str) -> D
     )
 
 
+def module_is_reachable(runtime: BragerRuntime, devid: str) -> bool:
+    """Return whether entities for *devid* should be treated as reachable.
+
+    Unknown connectivity (``None``) keeps previous value-based availability so
+    startups before the first REST poll do not blank the UI.
+    """
+    online = runtime.module_online(devid)
+    if online is None:
+        return True
+    return online
+
+
+def entity_is_available(runtime: BragerRuntime, *, devid: str, has_value: bool) -> bool:
+    """Combine ParamStore value presence with module cloud connectivity."""
+    return bool(has_value) and module_is_reachable(runtime, devid)
+
+
 def descriptor_options(descriptor: dict[str, Any]) -> list[str]:
     """Return select options from descriptor."""
     options = descriptor.get(CONF_OPTIONS, [])

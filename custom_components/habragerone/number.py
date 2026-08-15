@@ -18,6 +18,7 @@ from .entity_common import (
     descriptor_refresh_keys,
     descriptor_suggested_object_id,
     device_info_from_descriptor,
+    entity_is_available,
     get_runtime_and_descriptors,
     record_platform_entity_stats,
 )
@@ -64,6 +65,7 @@ class BragerSymbolNumber(NumberEntity):
         self._attr_available = True
         self._refresh_keys = descriptor_refresh_keys(descriptor)
         self._unsubscribe_listener: Any = None
+        self._unsubscribe_connectivity: Any = None
 
         min_value = descriptor.get("min")
         max_value = descriptor.get("max")
@@ -78,24 +80,30 @@ class BragerSymbolNumber(NumberEntity):
         return device_info_from_descriptor(self._descriptor, domain=DOMAIN)
 
     async def async_added_to_hass(self) -> None:
-        """Attach runtime listener when entity is added."""
+        """Attach runtime listeners when entity is added."""
         self._unsubscribe_listener = self._runtime.add_listener(self._on_runtime_update)
+        self._unsubscribe_connectivity = self._runtime.add_connectivity_listener(self._on_connectivity)
         self.async_schedule_update_ha_state(True)
 
     async def async_will_remove_from_hass(self) -> None:
-        """Detach runtime listener before entity removal."""
+        """Detach runtime listeners before entity removal."""
         if callable(self._unsubscribe_listener):
             self._unsubscribe_listener()
             self._unsubscribe_listener = None
+        if callable(self._unsubscribe_connectivity):
+            self._unsubscribe_connectivity()
+            self._unsubscribe_connectivity = None
 
     async def async_update(self) -> None:
         """Refresh numeric value from ParamStore."""
         raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
+        self._attr_available = entity_is_available(
+            self._runtime,
+            devid=self._devid,
+            has_value=raw_value is not None,
+        )
         if raw_value is None:
-            self._attr_available = False
             return
-
-        self._attr_available = True
         if isinstance(raw_value, int | float) and not isinstance(raw_value, bool):
             self._attr_native_value = float(raw_value)
 
@@ -107,5 +115,10 @@ class BragerSymbolNumber(NumberEntity):
     def _on_runtime_update(self, _update: ParamUpdate) -> None:
         update_key = f"{_update.pool}.{_update.chan}{_update.idx}"
         if self._refresh_keys and update_key not in self._refresh_keys:
+            return
+        self.async_schedule_update_ha_state(True)
+
+    def _on_connectivity(self, devid: str, _online: bool, online_changed: bool = True) -> None:
+        if devid != self._devid or not online_changed:
             return
         self.async_schedule_update_ha_state(True)

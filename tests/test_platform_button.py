@@ -74,6 +74,37 @@ async def test_button_press_dispatches_first_rule_value(hass: HomeAssistant) -> 
 
 
 @pytest.mark.asyncio
+async def test_button_connectivity_listener_lifecycle(hass: HomeAssistant) -> None:
+    from unittest.mock import MagicMock
+
+    runtime, *_rest = make_runtime()
+    descriptor = button_descriptor(symbol="RESET_ALARM")
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerActionButton(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "button.test_reset"
+    entity.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+
+    await entity.async_added_to_hass()
+    assert callable(entity._unsubscribe_connectivity)
+    await entity.async_update()
+    assert entity.available is True
+
+    entity.async_schedule_update_ha_state.reset_mock()
+    entity._on_connectivity("OTHER", False)
+    entity.async_schedule_update_ha_state.assert_not_called()
+    entity._on_connectivity("DEV1", False)
+    entity.async_schedule_update_ha_state.assert_called_once_with(True)
+
+    await entity.async_will_remove_from_hass()
+    assert entity._unsubscribe_connectivity is None
+
+    bare = BragerActionButton(entry=entry, runtime=runtime, descriptor=descriptor)
+    await bare.async_will_remove_from_hass()
+    assert bare._unsubscribe_connectivity is None
+
+
+@pytest.mark.asyncio
 async def test_button_press_defaults_value_when_rule_missing(hass: HomeAssistant) -> None:
     runtime, api, _gateway, _store = make_runtime()
     descriptor = button_descriptor(command_rules=[{"command": "PING"}])

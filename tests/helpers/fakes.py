@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import types
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any
 
 
 @dataclass
@@ -58,10 +59,19 @@ class FakeApi:
 class FakeGateway:
     """Gateway with controllable start/stop and a fake event bus."""
 
-    modules: ClassVar[list[object]] = []
-
-    def __init__(self, *, start_error: Exception | None = None, start_delay: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        start_error: Exception | None = None,
+        start_delay: bool = False,
+        modules: list[str] | None = None,
+    ) -> None:
         self.bus = FakeBus()
+        self.modules: list[str] = list(modules) if modules is not None else ["DEV1"]
+        self._online: dict[str, bool] = {}
+        self._connected_at: dict[str, int] = {}
+        self._gateway: dict[str, dict[str, object]] = {}
+        self._connectivity_callbacks: list[Any] = []
         self._start_error = start_error
         self._start_delay = start_delay
         self.started = False
@@ -76,6 +86,50 @@ class FakeGateway:
 
     async def stop(self) -> None:
         self.stopped = True
+
+    def on_module_connectivity(self, callback: Any) -> None:
+        """Register a ModuleConnectivity callback (mirrors BragerOneGateway)."""
+        self._connectivity_callbacks.append(callback)
+
+    def module_online(self, devid: str) -> bool | None:
+        """Return cached online flag, or ``None`` when unknown."""
+        return self._online.get(devid)
+
+    def module_connected_at(self, devid: str) -> int | None:
+        """Return cached REST ``connectedAt`` epoch seconds when known."""
+        return self._connected_at.get(devid)
+
+    def module_gateway(self, devid: str) -> dict[str, object] | None:
+        """Return cached gateway blob when known."""
+        gateway = self._gateway.get(devid)
+        return dict(gateway) if isinstance(gateway, dict) else None
+
+    def emit_connectivity(
+        self,
+        devid: str,
+        online: bool,
+        *,
+        connected_at: int | None = None,
+        source: str = "derived",
+        gateway: dict[str, object] | None = None,
+    ) -> None:
+        """Update online cache and notify registered connectivity callbacks."""
+        if connected_at is not None:
+            self._connected_at[devid] = connected_at
+        if gateway is not None:
+            self._gateway[devid] = dict(gateway)
+        self._online[devid] = online
+        event = types.SimpleNamespace(
+            devid=devid,
+            online=online,
+            source=source,
+            connected_at=connected_at if connected_at is not None else self._connected_at.get(devid),
+            gateway=self._gateway.get(devid),
+            online_changed=True,
+            metadata_changed=False,
+        )
+        for callback in list(self._connectivity_callbacks):
+            callback(event)
 
 
 class FakeStore:

@@ -105,6 +105,7 @@ async def test_sensor_update_uses_status_resolver_for_status_symbols(hass: HomeA
     runtime = SimpleNamespace(
         store=store,
         add_listener=lambda _cb: lambda: None,
+        module_online=lambda _devid: None,
         async_resolve_status_label=resolve_status,
     )
     descriptor = sensor_descriptor(symbol="STATUS_BOILER", pool="P5", chan="s", idx=5, unit=None)
@@ -126,6 +127,7 @@ async def test_sensor_update_uses_dynamic_unit_resolver(hass: HomeAssistant) -> 
     runtime = SimpleNamespace(
         store=store,
         add_listener=lambda _cb: lambda: None,
+        module_online=lambda _devid: None,
         async_resolve_symbol_with_unit=resolve_with_unit,
     )
     descriptor = sensor_descriptor(
@@ -194,3 +196,15 @@ async def test_sensor_runtime_update_schedules_refresh_for_matching_key(hass: Ho
     entity.async_schedule_update_ha_state.reset_mock()
     entity._on_runtime_update(FakeParamUpdate(pool="P9", chan="v", idx=1))
     entity.async_schedule_update_ha_state.assert_not_called()
+
+    entity.async_schedule_update_ha_state.reset_mock()
+    entity._on_connectivity("OTHER", False)
+    entity.async_schedule_update_ha_state.assert_not_called()
+    entity._on_connectivity("DEV1", False, online_changed=False)
+    entity.async_schedule_update_ha_state.assert_not_called()
+    entity._on_connectivity("DEV1", False)
+    entity.async_schedule_update_ha_state.assert_called_once_with(True)
+
+    bare = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)
+    await bare.async_will_remove_from_hass()
+    assert bare._unsubscribe_connectivity is None
