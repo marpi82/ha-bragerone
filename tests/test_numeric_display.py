@@ -89,6 +89,8 @@ class _ParseResolver:
             return SimpleNamespace(shift=0.0, factor=0.0, precision=None)
         if "invalid" in raw_expr:
             return None
+        if "bool_precision" in raw_expr:
+            return SimpleNamespace(shift=0.0, factor=0.1, precision=True)
         if "toFixed" in raw_expr:
             return SimpleNamespace(shift=0.0, factor=0.1, precision=1)
         return SimpleNamespace(shift=0.0, factor=0.1, precision=None)
@@ -214,6 +216,24 @@ async def test_resolve_descriptor_numeric_transform_handles_missing_parser(
     assert unit_code is None
     assert scale is None
     assert offset is None
+    assert precision is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_descriptor_numeric_transform_rejects_bool_precision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pybragerone.models.param_resolver as resolver_mod
+
+    monkeypatch.setattr(resolver_mod, "ParamResolver", _ParseResolver)
+
+    unit_code, scale, offset, precision = await _resolve_descriptor_numeric_transform(
+        SimpleNamespace(),  # type: ignore[arg-type]
+        {"mapping": {"units_source": {"value": "bool_precision"}}},
+    )
+    assert unit_code is None
+    assert scale == pytest.approx(0.1)
+    assert offset == pytest.approx(0.0)
     assert precision is None
 
 

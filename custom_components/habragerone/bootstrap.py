@@ -982,7 +982,7 @@ async def _resolve_descriptor_numeric_transform(
         return unit_code, None, None, None
     ha_transform = py_transform_to_ha(shift=float(parsed.shift), factor=float(parsed.factor))
     precision = getattr(parsed, "precision", None)
-    precision_i = precision if isinstance(precision, int) else None
+    precision_i = precision if isinstance(precision, int) and not isinstance(precision, bool) else None
     return unit_code, ha_transform.scale, ha_transform.offset, precision_i
 
 

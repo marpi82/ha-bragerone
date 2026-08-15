@@ -55,6 +55,16 @@ async def test_async_write_raw_command_failure_raises() -> None:
 
 
 @pytest.mark.asyncio
+async def test_async_write_ignores_boolean_min_max_bounds() -> None:
+    runtime, api, _gateway, _store = make_runtime()
+    descriptor = writable_parameter_descriptor()
+    descriptor["min"] = False
+    descriptor["max"] = True
+    await runtime.async_write(descriptor=descriptor, input_display_value=42)
+    assert api.calls[0]["value"] == 42
+
+
+@pytest.mark.asyncio
 async def test_async_write_applies_inverse_numeric_transform() -> None:
     runtime, api, _gateway, _store = make_runtime()
     descriptor = writable_parameter_descriptor(raw_min=0, raw_max=400)

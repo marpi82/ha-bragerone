@@ -255,8 +255,16 @@ class BragerRuntime:
             has_command_rule=has_command_rule,
             enum_mapping=enum_mapping,
             transform=descriptor_numeric_transform(descriptor),
-            raw_min=descriptor.get("min") if isinstance(descriptor.get("min"), int | float) else None,
-            raw_max=descriptor.get("max") if isinstance(descriptor.get("max"), int | float) else None,
+            raw_min=(
+                descriptor.get("min")
+                if isinstance(descriptor.get("min"), int | float) and not isinstance(descriptor.get("min"), bool)
+                else None
+            ),
+            raw_max=(
+                descriptor.get("max")
+                if isinstance(descriptor.get("max"), int | float) and not isinstance(descriptor.get("max"), bool)
+                else None
+            ),
         )
         try:
             prepared = prepare_write(input_display_value, context=context)
