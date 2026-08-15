@@ -314,6 +314,8 @@ def _enum_maps(
     mapping: dict[str, Any] | None,
     *,
     descriptor_unit: Any | None = None,
+    minimum: Any | None = None,
+    maximum: Any | None = None,
 ) -> tuple[dict[str, str | int | float | bool], dict[str, str]]:
     if not isinstance(mapping, dict):
         return {}, {}
@@ -324,10 +326,25 @@ def _enum_maps(
     enum_map: dict[str, str | int | float | bool] = {}
     raw_to_label: dict[str, str] = {}
 
+    min_numeric = float(minimum) if isinstance(minimum, int | float) and not isinstance(minimum, bool) else None
+    max_numeric = float(maximum) if isinstance(maximum, int | float) and not isinstance(maximum, bool) else None
+
+    def _is_in_numeric_range(value: str | int | float | bool) -> bool:
+        if isinstance(value, bool):
+            return True
+        if not isinstance(value, int | float):
+            return True
+        numeric_value = float(value)
+        if min_numeric is not None and numeric_value < min_numeric:
+            return False
+        return not (max_numeric is not None and numeric_value > max_numeric)
+
     if isinstance(units_source, Mapping):
         if isinstance(values, list) and values:
             for raw in values:
                 raw_coerced = _coerce_raw(raw)
+                if not _is_in_numeric_range(raw_coerced):
+                    continue
                 label_raw = units_source.get(raw)
                 if label_raw is None:
                     label_raw = units_source.get(str(raw))
@@ -340,6 +357,8 @@ def _enum_maps(
             for raw_key, label_raw in units_source.items():
                 label = str(label_raw).strip()
                 raw_coerced = _coerce_raw(raw_key)
+                if not _is_in_numeric_range(raw_coerced):
+                    continue
                 if not label:
                     continue
                 enum_map[label] = raw_coerced
@@ -349,6 +368,8 @@ def _enum_maps(
     if isinstance(values, list) and values:
         for raw in values:
             raw_coerced = _coerce_raw(raw)
+            if not _is_in_numeric_range(raw_coerced):
+                continue
             label = str(raw).strip()
             if not label:
                 continue
@@ -360,6 +381,8 @@ def _enum_maps(
         for raw, label_raw in descriptor_unit.items():
             label = str(label_raw).strip()
             raw_coerced = _coerce_raw(raw)
+            if not _is_in_numeric_range(raw_coerced):
+                continue
             if not label:
                 continue
             enum_map[label] = raw_coerced
@@ -367,8 +390,14 @@ def _enum_maps(
     return enum_map, raw_to_label
 
 
-def _extract_options(mapping: dict[str, Any] | None, *, descriptor_unit: Any | None = None) -> list[str]:
-    enum_map, _ = _enum_maps(mapping, descriptor_unit=descriptor_unit)
+def _extract_options(
+    mapping: dict[str, Any] | None,
+    *,
+    descriptor_unit: Any | None = None,
+    minimum: Any | None = None,
+    maximum: Any | None = None,
+) -> list[str]:
+    enum_map, _ = _enum_maps(mapping, descriptor_unit=descriptor_unit, minimum=minimum, maximum=maximum)
     return list(enum_map.keys())
 
 
@@ -661,7 +690,12 @@ def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescr
         if not _is_exposable_descriptor(writable=writable, pool=pool, chan=chan, idx=idx, mapping=mapping):
             continue
 
-        enum_map, raw_to_label = _enum_maps(mapping, descriptor_unit=descriptor.get("unit"))
+        enum_map, raw_to_label = _enum_maps(
+            mapping,
+            descriptor_unit=descriptor.get("unit"),
+            minimum=descriptor.get("min"),
+            maximum=descriptor.get("max"),
+        )
         descriptor["writable"] = writable
         descriptor[CONF_OPTIONS] = list(enum_map.keys())
         descriptor[CONF_ENUM_MAP] = enum_map
@@ -1126,8 +1160,18 @@ async def async_build_bootstrap_payload(
             ):
                 continue
 
-            enum_map, raw_to_label = _enum_maps(mapping, descriptor_unit=unit_value)
-            descriptor[CONF_OPTIONS] = _extract_options(mapping, descriptor_unit=unit_value)
+            enum_map, raw_to_label = _enum_maps(
+                mapping,
+                descriptor_unit=unit_value,
+                minimum=payload.get("min"),
+                maximum=payload.get("max"),
+            )
+            descriptor[CONF_OPTIONS] = _extract_options(
+                mapping,
+                descriptor_unit=unit_value,
+                minimum=payload.get("min"),
+                maximum=payload.get("max"),
+            )
             descriptor[CONF_ENUM_MAP] = enum_map
             descriptor[CONF_RAW_TO_LABEL] = raw_to_label
             descriptor[CONF_PLATFORM] = _infer_platform(
