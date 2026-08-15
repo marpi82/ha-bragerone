@@ -3,11 +3,16 @@
 # Release script for ha-bragerone
 # Usage: ./scripts/release.sh [version] [type]
 #
+# Process (do not skip): beta/rc pre-release → live HACS smoke → stable.
+# Full checklist: DEVELOPMENT.md → "Publishing Releases".
+# Tag suffix drives GitHub/HACS channel via .github/workflows/release.yml
+# (tags matching (a|b|rc)[0-9]+$ are marked prerelease=true).
+#
 # Examples:
-#   ./scripts/release.sh 2025.1.0        # Stable release
-#   ./scripts/release.sh 2025.1.0 alpha  # Alpha release (2025.1.0a1)
-#   ./scripts/release.sh 2025.1.0 beta   # Beta release (2025.1.0b1)
-#   ./scripts/release.sh 2025.1.0 rc     # Release candidate (2025.1.0rc1)
+#   ./scripts/release.sh 2026.8.5 beta   # Pre-release first (v2026.8.5b1)
+#   ./scripts/release.sh 2026.8.5 rc     # Optional RC after beta
+#   ./scripts/release.sh 2026.8.5        # Stable only after live smoke
+#   ./scripts/release.sh 2026.8.5 alpha  # Early alpha if needed
 
 set -e
 
