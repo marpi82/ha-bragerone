@@ -113,12 +113,12 @@ def _entity_filter_mode_values(*, ui_language: str | None = None) -> dict[str, s
     lang = (ui_language or "").strip().lower()
     if lang.startswith("pl"):
         return {
-            FILTER_MODE_UI: "Filtrowanie po menu UI",
-            FILTER_MODE_PERMISSIONS: "Filtrowanie po uprawnieniach",
+            FILTER_MODE_UI: "Filtrowanie po menu UI (codzienny web UI)",
+            FILTER_MODE_PERMISSIONS: "Filtrowanie po uprawnieniach (wszystkie dozwolone panele)",
         }
     return {
-        FILTER_MODE_UI: "UI menu filtering",
-        FILTER_MODE_PERMISSIONS: "Permission filtering",
+        FILTER_MODE_UI: "UI menu filtering (everyday web UI)",
+        FILTER_MODE_PERMISSIONS: "Permission filtering (all permitted panels)",
     }
 
 
