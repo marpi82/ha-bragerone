@@ -29,6 +29,7 @@ class _ModuleConnectivityStub:
     online: bool
     source: str = "derived"
     connected_at: int | None = None
+    gateway: dict[str, object] | None = None
 
 
 @pytest.fixture(autouse=True)

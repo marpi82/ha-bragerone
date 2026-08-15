@@ -110,6 +110,7 @@ class BragerRuntime:
             return
         online_getter = getattr(self.gateway, "module_online", None)
         connected_at_getter = getattr(self.gateway, "module_connected_at", None)
+        gateway_getter = getattr(self.gateway, "module_gateway", None)
         if not callable(online_getter):
             return
         for raw_devid in modules:
@@ -118,7 +119,13 @@ class BragerRuntime:
             if not isinstance(online, bool):
                 continue
             connected_at = connected_at_getter(devid) if callable(connected_at_getter) else None
-            self._apply_module_online(devid, online, connected_at=connected_at if isinstance(connected_at, int) else None)
+            gateway = gateway_getter(devid) if callable(gateway_getter) else None
+            self._apply_module_online(
+                devid,
+                online,
+                connected_at=connected_at if isinstance(connected_at, int) else None,
+                gateway=gateway if isinstance(gateway, dict) else None,
+            )
 
     def _on_gateway_connectivity(self, event: Any) -> None:
         """Handle ``ModuleConnectivity`` (or duck-typed) events from the gateway."""
@@ -127,19 +134,30 @@ class BragerRuntime:
         if not devid or not isinstance(online, bool):
             return
         connected_at = getattr(event, "connected_at", None)
+        gateway = getattr(event, "gateway", None)
         self._apply_module_online(
             devid,
             online,
             connected_at=connected_at if isinstance(connected_at, int) else None,
+            gateway=gateway if isinstance(gateway, dict) else None,
         )
 
-    def _apply_module_online(self, devid: str, online: bool, *, connected_at: int | None) -> None:
+    def _apply_module_online(
+        self,
+        devid: str,
+        online: bool,
+        *,
+        connected_at: int | None,
+        gateway: dict[str, Any] | None = None,
+    ) -> None:
         """Update cache/modules_meta and notify connectivity listeners on change."""
         previous = self._module_online.get(devid)
         self._module_online[devid] = online
+        meta = self.modules_meta.setdefault(devid, {})
         if connected_at is not None:
-            meta = self.modules_meta.setdefault(devid, {})
             meta["connectedAt"] = connected_at
+        if gateway is not None:
+            meta["gateway"] = dict(gateway)
         if previous is online:
             return
         for callback in list(self._connectivity_listeners):

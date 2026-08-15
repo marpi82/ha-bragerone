@@ -18,6 +18,7 @@ FILTER_MODE_PERMISSIONS: Final = "permissions"
 FILTER_MODES: Final[tuple[str, str]] = (FILTER_MODE_UI, FILTER_MODE_PERMISSIONS)
 DEFAULT_ENTITY_FILTER_MODE: Final = FILTER_MODE_UI
 CONF_ENTITY_DESCRIPTORS: Final = "entity_descriptors"
+CONF_CONNECTION_DESCRIPTORS: Final = "connection_descriptors"
 CONF_MODULES_META: Final = "modules_meta"
 CONF_PLATFORM: Final = "platform"
 CONF_OPTIONS: Final = "options"
@@ -26,6 +27,10 @@ CONF_RAW_TO_LABEL: Final = "raw_to_label"
 CONF_BOOTSTRAP_DEBUG: Final = "bootstrap_debug"
 CONF_BOOTSTRAP_VERSION: Final = "bootstrap_version"
 BOOTSTRAP_VERSION: Final = 7
+
+# Stable non-menu source key for module connectivity (SPA ``module.connection.*`` i18n).
+# Kept separate from menu-router paths so HA #165 can place these on a child device.
+CONNECTION_MENU_KEY: Final = "module.connection"
 
 DATA_API: Final = "api"
 DATA_GATEWAY: Final = "gateway"

@@ -16,6 +16,7 @@ from custom_components.habragerone.binary_sensor import (  # noqa: E402
     async_setup_entry,
 )
 from custom_components.habragerone.const import (  # noqa: E402
+    CONF_CONNECTION_DESCRIPTORS,
     CONF_MODULES_META,
     DATA_ENTITY_STATS,
     DOMAIN,
@@ -63,9 +64,33 @@ async def test_async_setup_adds_connectivity_sensor(hass: HomeAssistant) -> None
         modules_meta={"DEV1": {"name": "Boiler", "title": "DasPell", "version": "V2"}},
     )
     descriptors = [binary_sensor_descriptor(symbol="BIN1")]
+    connection_descriptors = [
+        {
+            "kind": "module_connection",
+            "source": "module_i18n",
+            "menu_key": "module.connection",
+            "devid": "DEV1",
+            "label": "Connection with module status",
+            "device_name": "Connection with module",
+            "labels": {
+                "connection.status": "Connection with module status",
+                "connection.index": "Connection with module",
+                "connection.connected": "Connected",
+                "connection.notConnected": "Disconnected",
+                "serverConnection": "Server connection status",
+            },
+            "platform": "binary_sensor",
+        }
+    ]
     entry = register_config_entry(hass, runtime=runtime, descriptors=descriptors)
-    # register_config_entry may not persist modules_meta on entry.data — set explicitly.
-    hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_MODULES_META: {"DEV1": {"name": "Boiler"}}})
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **entry.data,
+            CONF_MODULES_META: {"DEV1": {"name": "Boiler", "title": "DasPell", "version": "V2"}},
+            CONF_CONNECTION_DESCRIPTORS: connection_descriptors,
+        },
+    )
     entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
 
     added: list[object] = []
@@ -76,7 +101,12 @@ async def test_async_setup_adds_connectivity_sensor(hass: HomeAssistant) -> None
     entity = connectivity[0]
     assert entity._attr_device_class == BinarySensorDeviceClass.CONNECTIVITY
     assert entity._attr_entity_category == EntityCategory.DIAGNOSTIC
+    assert entity._attr_name == "Connection with module status"
     assert entity._attr_unique_id.endswith("_dev1_connectivity_binary")
+    info = entity.device_info
+    assert info is not None
+    assert (DOMAIN, "DEV1:module.connection") in info["identifiers"]
+    assert info.get("via_device") == (DOMAIN, "DEV1")
     stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]["binary_sensor"]
     assert stats["created_count"] == 2
 
@@ -90,6 +120,15 @@ async def test_connectivity_sensor_tracks_runtime(hass: HomeAssistant) -> None:
         runtime=runtime,
         devid="DEV1",
         module_meta={"name": "Boiler"},
+        connection_descriptor={
+            "label": "Status połączenia z modułem",
+            "device_name": "Połączenie z modułem",
+            "menu_key": "module.connection",
+            "labels": {
+                "connection.connected": "Połączono",
+                "connection.notConnected": "Rozłączono",
+            },
+        },
     )
     entity.hass = hass
     entity.async_write_ha_state = lambda: None  # type: ignore[method-assign]
@@ -97,9 +136,19 @@ async def test_connectivity_sensor_tracks_runtime(hass: HomeAssistant) -> None:
     entity.async_schedule_update_ha_state = lambda *a, **k: None  # type: ignore[method-assign]
 
     await entity.async_added_to_hass()
-    runtime._apply_module_online("DEV1", True, connected_at=99)
+    runtime._apply_module_online(
+        "DEV1",
+        True,
+        connected_at=99,
+        gateway={"address": "10.0.0.1", "interface": "wifi", "version": "V2"},
+    )
     await entity.async_update()
     assert entity._attr_is_on is True
+    assert entity._attr_name == "Status połączenia z modułem"
+    attrs = entity.extra_state_attributes
+    assert attrs["connected_at"] == 99
+    assert attrs["gateway_interface"] == "wifi"
+    assert attrs["state_label_on"] == "Połączono"
 
     runtime._apply_module_online("DEV1", False, connected_at=0)
     await entity.async_update()

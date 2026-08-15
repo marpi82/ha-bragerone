@@ -12,7 +12,13 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from pybragerone.models.events import ParamUpdate
 
-from .const import CONF_MODULES_META, DATA_RUNTIME, DOMAIN
+from .const import (
+    CONF_CONNECTION_DESCRIPTORS,
+    CONF_MODULES_META,
+    CONNECTION_MENU_KEY,
+    DATA_RUNTIME,
+    DOMAIN,
+)
 from .entity_common import (
     descriptor_current_raw_value,
     descriptor_display_name,
@@ -41,7 +47,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entry_data = hass.data[DOMAIN][entry.entry_id]
     runtime_obj = entry_data.get(DATA_RUNTIME)
     modules_meta = entry.data.get(CONF_MODULES_META)
+    connection_descriptors = entry.data.get(CONF_CONNECTION_DESCRIPTORS)
     if isinstance(runtime_obj, BragerRuntime) and isinstance(modules_meta, dict):
+        by_devid: dict[str, dict[str, Any]] = {}
+        if isinstance(connection_descriptors, list):
+            for raw in connection_descriptors:
+                if not isinstance(raw, dict):
+                    continue
+                devid_key = str(raw.get("devid") or "").strip()
+                if devid_key:
+                    by_devid[devid_key] = raw
         for devid, meta in modules_meta.items():
             if not isinstance(devid, str) or not devid.strip():
                 continue
@@ -53,6 +68,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     runtime=runtime_obj,
                     devid=devid,
                     module_meta=meta,
+                    connection_descriptor=by_devid.get(devid),
                 )
             )
 
@@ -140,13 +156,12 @@ class BragerStatusBinarySensor(BinarySensorEntity):
 
 
 class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
-    """Diagnostic binary sensor for module cloud connectivity."""
+    """Diagnostic binary sensor for SPA module connection status."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "Cloud connectivity"
 
     def __init__(
         self,
@@ -155,13 +170,23 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
         runtime: BragerRuntime,
         devid: str,
         module_meta: dict[str, Any],
+        connection_descriptor: dict[str, Any] | None = None,
     ) -> None:
-        """Initialize connectivity sensor for one module device."""
+        """Initialize connectivity sensor for one module connection device."""
         self._runtime = runtime
         self._devid = devid
         self._module_meta = module_meta
+        self._descriptor = connection_descriptor if isinstance(connection_descriptor, dict) else {}
+        labels = self._descriptor.get("labels") if isinstance(self._descriptor.get("labels"), dict) else {}
+        label = (
+            str(self._descriptor.get("label") or "").strip()
+            or str(labels.get("connection.status") or "").strip()
+            or str(labels.get("serverConnection") or "").strip()
+            or "connection.status"
+        )
+        self._attr_name = label
         self._attr_unique_id = f"{entry.entry_id}_{devid}_connectivity_binary".lower().replace(" ", "_")
-        self._attr_suggested_object_id = f"{devid}_cloud_connectivity".lower().replace(" ", "_")
+        self._attr_suggested_object_id = f"{devid}_connection_status".lower().replace(" ", "_")
         online = runtime.module_online(devid)
         self._attr_is_on = bool(online) if online is not None else False
         self._attr_available = True
@@ -169,14 +194,47 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Attach connectivity entity to the module device."""
+        """Attach to a connection child device via the internet module.
+
+        Stable id uses SPA i18n path ``module.connection`` (not a menu-router route)
+        so HA #165 can keep these entities separable from panel-grouped devices.
+        """
+        labels = self._descriptor.get("labels") if isinstance(self._descriptor.get("labels"), dict) else {}
+        device_name = (
+            str(self._descriptor.get("device_name") or "").strip()
+            or str(labels.get("connection.index") or "").strip()
+            or str(self._module_meta.get("name") or self._devid)
+        )
+        menu_key = str(self._descriptor.get("menu_key") or CONNECTION_MENU_KEY)
         return DeviceInfo(
-            identifiers={(DOMAIN, self._devid)},
+            identifiers={(DOMAIN, f"{self._devid}:{menu_key}")},
             manufacturer="BragerOne",
-            name=str(self._module_meta.get("name") or self._devid),
+            name=device_name,
             model=str(self._module_meta.get("title") or "Brager module"),
             sw_version=str(self._module_meta.get("version") or "") or None,
+            via_device=(DOMAIN, self._devid),
         )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose SPA connection fields (connectedAt + gateway) as attributes."""
+        meta = self._runtime.modules_meta.get(self._devid, self._module_meta)
+        attrs: dict[str, Any] = {}
+        connected_at = meta.get("connectedAt") if isinstance(meta, dict) else None
+        if isinstance(connected_at, int):
+            attrs["connected_at"] = connected_at
+        gateway = meta.get("gateway") if isinstance(meta, dict) else None
+        if isinstance(gateway, dict):
+            for key in ("address", "interface", "version"):
+                value = gateway.get(key)
+                if value is not None and value != "":
+                    attrs[f"gateway_{key}"] = value
+        labels = self._descriptor.get("labels") if isinstance(self._descriptor.get("labels"), dict) else {}
+        if isinstance(labels.get("connection.connected"), str):
+            attrs["state_label_on"] = labels["connection.connected"]
+        if isinstance(labels.get("connection.notConnected"), str):
+            attrs["state_label_off"] = labels["connection.notConnected"]
+        return attrs
 
     async def async_added_to_hass(self) -> None:
         """Attach connectivity listener when entity is added."""

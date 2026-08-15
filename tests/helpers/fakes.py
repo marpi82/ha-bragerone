@@ -70,6 +70,7 @@ class FakeGateway:
         self.modules: list[str] = list(modules) if modules is not None else ["DEV1"]
         self._online: dict[str, bool] = {}
         self._connected_at: dict[str, int] = {}
+        self._gateway: dict[str, dict[str, object]] = {}
         self._connectivity_callbacks: list[Any] = []
         self._start_error = start_error
         self._start_delay = start_delay
@@ -98,6 +99,11 @@ class FakeGateway:
         """Return cached REST ``connectedAt`` epoch seconds when known."""
         return self._connected_at.get(devid)
 
+    def module_gateway(self, devid: str) -> dict[str, object] | None:
+        """Return cached gateway blob when known."""
+        gateway = self._gateway.get(devid)
+        return dict(gateway) if isinstance(gateway, dict) else None
+
     def emit_connectivity(
         self,
         devid: str,
@@ -105,16 +111,20 @@ class FakeGateway:
         *,
         connected_at: int | None = None,
         source: str = "derived",
+        gateway: dict[str, object] | None = None,
     ) -> None:
         """Update online cache and notify registered connectivity callbacks."""
         if connected_at is not None:
             self._connected_at[devid] = connected_at
+        if gateway is not None:
+            self._gateway[devid] = dict(gateway)
         self._online[devid] = online
         event = types.SimpleNamespace(
             devid=devid,
             online=online,
             source=source,
             connected_at=connected_at if connected_at is not None else self._connected_at.get(devid),
+            gateway=self._gateway.get(devid),
         )
         for callback in list(self._connectivity_callbacks):
             callback(event)
