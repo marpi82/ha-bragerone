@@ -15,6 +15,8 @@ from custom_components.habragerone.const import (  # noqa: E402
     CONF_ENTITY_DESCRIPTORS,
     DATA_ENTITY_STATS,
     DATA_RUNTIME,
+    DEVICE_GROUPING_BY_MENU,
+    DEVICE_GROUPING_FLAT,
     DOMAIN,
 )
 from custom_components.habragerone.entity_common import (  # noqa: E402
@@ -23,6 +25,7 @@ from custom_components.habragerone.entity_common import (  # noqa: E402
     descriptor_options,
     descriptor_raw_to_label,
     descriptor_refresh_keys,
+    device_grouping_mode,
     device_info_from_descriptor,
     get_runtime_and_descriptors,
     record_platform_entity_stats,
@@ -124,6 +127,61 @@ def test_device_info_from_descriptor_builds_registry_payload() -> None:
     assert info["name"] == "boiler"
     assert info["model"] == "Boiler module"
     assert info["sw_version"] == "1.2.3"
+    assert "via_device" not in info
+
+
+def test_device_info_from_descriptor_groups_by_menu_when_enabled() -> None:
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update(
+        {
+            "module_name": "boiler",
+            "module_title": "Boiler module",
+            "module_version": "1.2.3",
+            "menu_key": "modules.menu.boiler",
+            "menu_title": "Kocioł",
+            "panel_path": "Kocioł",
+        },
+    )
+    info = device_info_from_descriptor(descriptor, domain=DOMAIN, grouping=DEVICE_GROUPING_BY_MENU)
+    assert info["identifiers"] == {(DOMAIN, "DEV9:modules.menu.boiler")}
+    assert info["name"] == "Kocioł"
+    assert info["via_device"] == (DOMAIN, "DEV9")
+    assert info["model"] == "Boiler module"
+
+
+def test_device_info_from_descriptor_group_mode_keeps_parent_without_menu_key() -> None:
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update({"module_name": "boiler", "module_title": "Boiler module"})
+    info = device_info_from_descriptor(descriptor, domain=DOMAIN, grouping=DEVICE_GROUPING_BY_MENU)
+    assert info["identifiers"] == {(DOMAIN, "DEV9")}
+    assert "via_device" not in info
+
+
+def test_device_info_flat_ignores_menu_key() -> None:
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update(
+        {
+            "module_name": "boiler",
+            "menu_key": "modules.menu.boiler",
+            "menu_title": "Kocioł",
+        },
+    )
+    info = device_info_from_descriptor(descriptor, domain=DOMAIN, grouping=DEVICE_GROUPING_FLAT)
+    assert info["identifiers"] == {(DOMAIN, "DEV9")}
+    assert info["name"] == "boiler"
+
+
+@pytest.mark.asyncio
+async def test_device_grouping_mode_reads_options_then_data(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    assert device_grouping_mode(entry) == DEVICE_GROUPING_FLAT
+
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "device_grouping": DEVICE_GROUPING_BY_MENU})
+    assert device_grouping_mode(entry) == DEVICE_GROUPING_BY_MENU
+
+    hass.config_entries.async_update_entry(entry, options={"device_grouping": DEVICE_GROUPING_FLAT})
+    assert device_grouping_mode(entry) == DEVICE_GROUPING_FLAT
 
 
 @pytest.mark.asyncio

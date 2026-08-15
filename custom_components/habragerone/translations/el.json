@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Επιλογή μονάδων",
-        "description": "Επιλέξτε μονάδες και λειτουργία φιλτραρίσματος οντοτήτων.",
+        "description": "Choose modules, entity filtering mode, and device grouping.",
         "data": {
           "modules": "Μονάδες",
-          "entity_filter_mode": "Λειτουργία φιλτραρίσματος οντοτήτων"
+          "entity_filter_mode": "Λειτουργία φιλτραρίσματος οντοτήτων",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Επιλογή μονάδων",
         "data": {
           "modules": "Μονάδες",
-          "entity_filter_mode": "Λειτουργία φιλτραρίσματος οντοτήτων"
+          "entity_filter_mode": "Λειτουργία φιλτραρίσματος οντοτήτων",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }

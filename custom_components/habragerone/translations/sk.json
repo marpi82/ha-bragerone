@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Výber modulov",
-        "description": "Vyberte moduly a režim filtrovania entít.",
+        "description": "Choose modules, entity filtering mode, and device grouping.",
         "data": {
           "modules": "Moduly",
-          "entity_filter_mode": "Režim filtrovania entít"
+          "entity_filter_mode": "Režim filtrovania entít",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Výber modulov",
         "data": {
           "modules": "Moduly",
-          "entity_filter_mode": "Režim filtrovania entít"
+          "entity_filter_mode": "Režim filtrovania entít",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }

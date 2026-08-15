@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Выбор модулей",
-        "description": "Выберите модули и режим фильтрации сущностей.",
+        "description": "Choose modules, entity filtering mode, and device grouping.",
         "data": {
           "modules": "Модули",
-          "entity_filter_mode": "Режим фильтрации сущностей"
+          "entity_filter_mode": "Режим фильтрации сущностей",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Выбор модулей",
         "data": {
           "modules": "Модули",
-          "entity_filter_mode": "Режим фильтрации сущностей"
+          "entity_filter_mode": "Режим фильтрации сущностей",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }

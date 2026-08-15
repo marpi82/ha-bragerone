@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Moodulite valimine",
-        "description": "Valige moodulid ja olemite filtreerimisrežiim.",
+        "description": "Choose modules, entity filtering mode, and device grouping.",
         "data": {
           "modules": "Moodulid",
-          "entity_filter_mode": "Olemite filtreerimisrežiim"
+          "entity_filter_mode": "Olemite filtreerimisrežiim",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Moodulite valimine",
         "data": {
           "modules": "Moodulid",
-          "entity_filter_mode": "Olemite filtreerimisrežiim"
+          "entity_filter_mode": "Olemite filtreerimisrežiim",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }

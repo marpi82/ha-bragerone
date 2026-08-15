@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Modulok kiválasztása",
-        "description": "Válassza ki a modulokat és az entitásszűrés módját.",
+        "description": "Choose modules, entity filtering mode, and device grouping.",
         "data": {
           "modules": "Modulok",
-          "entity_filter_mode": "Entitásszűrés módja"
+          "entity_filter_mode": "Entitásszűrés módja",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Modulok kiválasztása",
         "data": {
           "modules": "Modulok",
-          "entity_filter_mode": "Entitásszűrés módja"
+          "entity_filter_mode": "Entitásszűrés módja",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }

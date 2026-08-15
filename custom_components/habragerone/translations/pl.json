@@ -21,10 +21,14 @@
       },
       "select_modules": {
         "title": "Wybór modułów",
-        "description": "Wybierz moduły i tryb filtrowania encji.",
+        "description": "Wybierz moduły, tryb filtrowania encji i grupowanie urządzeń.",
         "data": {
           "modules": "Moduły",
-          "entity_filter_mode": "Tryb filtrowania encji"
+          "entity_filter_mode": "Tryb filtrowania encji",
+          "device_grouping": "Grupowanie urządzeń"
+        },
+        "data_description": {
+          "device_grouping": "Płasko = jedno urządzenie HA na moduł. Grupuj po menu = urządzenia potomne po stabilnym kluczu menu (via_device). Zmiana remapuje członkostwo urządzeń (automatyzacje/dashboardy)."
         }
       }
     },
@@ -51,7 +55,11 @@
         "title": "Wybór modułów",
         "data": {
           "modules": "Moduły",
-          "entity_filter_mode": "Tryb filtrowania encji"
+          "entity_filter_mode": "Tryb filtrowania encji",
+          "device_grouping": "Grupowanie urządzeń"
+        },
+        "data_description": {
+          "device_grouping": "Płasko = jedno urządzenie HA na moduł. Grupuj po menu = urządzenia potomne po stabilnym kluczu menu (via_device). Zmiana remapuje członkostwo urządzeń (automatyzacje/dashboardy)."
         }
       }
     }

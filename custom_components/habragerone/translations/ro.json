@@ -9,10 +9,14 @@
       },
       "select_modules": {
         "title": "Selectare module",
-        "description": "Alege modulele și modul de filtrare al entităților.",
+        "description": "Choose modules, entity filtering mode, and device grouping.",
         "data": {
           "modules": "Module",
-          "entity_filter_mode": "Mod de filtrare al entităților"
+          "entity_filter_mode": "Mod de filtrare al entităților",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }
@@ -23,7 +27,11 @@
         "title": "Selectare module",
         "data": {
           "modules": "Module",
-          "entity_filter_mode": "Mod de filtrare al entităților"
+          "entity_filter_mode": "Mod de filtrare al entităților",
+          "device_grouping": "Device grouping"
+        },
+        "data_description": {
+          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }

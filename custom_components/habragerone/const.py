@@ -13,10 +13,15 @@ CONF_BACKEND_PLATFORM: Final = "backend_platform"
 CONF_LANGUAGE: Final = "language"
 CONF_ENTITY_FILTER_MODE: Final = "entity_filter_mode"
 CONF_MODULE_FILTER_MODES: Final = "module_filter_modes"
+CONF_DEVICE_GROUPING: Final = "device_grouping"
 FILTER_MODE_UI: Final = "ui"
 FILTER_MODE_PERMISSIONS: Final = "permissions"
 FILTER_MODES: Final[tuple[str, str]] = (FILTER_MODE_UI, FILTER_MODE_PERMISSIONS)
 DEFAULT_ENTITY_FILTER_MODE: Final = FILTER_MODE_UI
+DEVICE_GROUPING_FLAT: Final = "flat"
+DEVICE_GROUPING_BY_MENU: Final = "group_by_menu"
+DEVICE_GROUPING_MODES: Final[tuple[str, str]] = (DEVICE_GROUPING_FLAT, DEVICE_GROUPING_BY_MENU)
+DEFAULT_DEVICE_GROUPING: Final = DEVICE_GROUPING_FLAT
 CONF_ENTITY_DESCRIPTORS: Final = "entity_descriptors"
 CONF_CONNECTION_DESCRIPTORS: Final = "connection_descriptors"
 CONF_MODULES_META: Final = "modules_meta"
@@ -27,7 +32,7 @@ CONF_RAW_TO_LABEL: Final = "raw_to_label"
 CONF_BOOTSTRAP_DEBUG: Final = "bootstrap_debug"
 CONF_BOOTSTRAP_VERSION: Final = "bootstrap_version"
 CONF_UPSTREAM_ASSETS_FINGERPRINT: Final = "upstream_assets_fingerprint"
-BOOTSTRAP_VERSION: Final = 7
+BOOTSTRAP_VERSION: Final = 8
 
 # Stable non-menu source key for module connectivity (SPA ``module.connection.*`` i18n).
 # Kept separate from menu-router paths so HA #165 can place these on a child device.
