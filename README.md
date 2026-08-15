@@ -2,6 +2,8 @@
 
 Home Assistant custom integration for BragerOne web service.
 
+**Status:** Stable (Production/Stable)
+
 ## Description
 
 This custom component provides integration between Home Assistant and the BragerOne system, allowing you to monitor and control your devices through the Home Assistant interface.
