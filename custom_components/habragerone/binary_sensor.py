@@ -306,6 +306,8 @@ def _to_bool(value: Any) -> bool:
             "zalaczony",
             "załączone",
             "zalaczone",
+            "załączono",
+            "zalaczono",
         }:
             return True
         if norm in {
