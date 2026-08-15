@@ -12,6 +12,7 @@ from custom_components.habragerone.bootstrap import (  # noqa: E402
     _coerce_raw,
     _command_rule_names,
     _enum_maps,
+    _extract_options,
     _extract_symbol_token,
     _has_display_value,
     _has_named_command_rule,
@@ -67,6 +68,114 @@ def test_enum_maps_builds_from_units_source_and_descriptor_unit() -> None:
     )
     assert enum_map == {"Low": 1, "High": 2}
     assert raw_to_label == {"1": "Low", "2": "High"}
+
+
+def test_enum_maps_filters_values_list_with_units_source_by_min_max() -> None:
+    mapping = {
+        "units_source": {
+            "0": "Off",
+            "1": "Pump",
+            "2": "Return protection",
+            "3": "Pump + circulation",
+            "4": "3D valve",
+        },
+        "values": [0, 1, 2, 3, 4],
+    }
+    enum_map, raw_to_label = _enum_maps(mapping, minimum=1, maximum=3)
+
+    assert enum_map == {
+        "Pump": 1,
+        "Return protection": 2,
+        "Pump + circulation": 3,
+    }
+    assert raw_to_label == {
+        "1": "Pump",
+        "2": "Return protection",
+        "3": "Pump + circulation",
+    }
+    assert _extract_options(mapping, minimum=1, maximum=3) == [
+        "Pump",
+        "Return protection",
+        "Pump + circulation",
+    ]
+
+
+def test_enum_maps_filters_units_source_items_without_values_list() -> None:
+    mapping = {"units_source": {"0": "A", "1": "B", "2": "C", "3": "D"}}
+    enum_map, raw_to_label = _enum_maps(mapping, minimum=1, maximum=2)
+
+    assert enum_map == {"B": 1, "C": 2}
+    assert raw_to_label == {"1": "B", "2": "C"}
+
+
+def test_enum_maps_filters_bare_values_list_and_descriptor_unit() -> None:
+    enum_map, raw_to_label = _enum_maps({"values": [0, 1, 2, 3]}, minimum=1, maximum=2)
+    assert enum_map == {"1": 1, "2": 2}
+    assert raw_to_label == {"1": "1", "2": "2"}
+
+    enum_map, raw_to_label = _enum_maps(
+        {},
+        descriptor_unit={"0": "Zero", "1": "One", "2": "Two", "3": "Three"},
+        minimum=1,
+        maximum=2,
+    )
+    assert enum_map == {"One": 1, "Two": 2}
+    assert raw_to_label == {"1": "One", "2": "Two"}
+
+
+def test_enum_maps_keeps_non_numeric_and_bool_raw_when_bounds_present() -> None:
+    enum_map, _ = _enum_maps(
+        {"units_source": {"true": "Yes", "false": "No", "auto": "Auto"}, "values": ["true", "false", "auto"]},
+        minimum=0,
+        maximum=1,
+    )
+    assert enum_map == {"Yes": True, "No": False, "Auto": "auto"}
+
+
+def test_enum_maps_without_bounds_keeps_full_range() -> None:
+    mapping = {"units_source": {"0": "A", "1": "B", "2": "C"}, "values": [0, 1, 2]}
+    enum_map, _ = _enum_maps(mapping)
+    assert enum_map == {"A": 0, "B": 1, "C": 2}
+
+
+def test_normalize_cached_descriptors_filters_select_options_by_min_max() -> None:
+    descriptors = [
+        {
+            "symbol": "VALVE_FUNC",
+            "devid": "MOD1",
+            "pool": "P4",
+            "chan": "v",
+            "idx": 2,
+            "min": 1,
+            "max": 3,
+            "mapping": {
+                "command_rules": [{"command": "setValve", "value": 1}],
+                "values": [0, 1, 2, 3, 4],
+                "units_source": {
+                    "0": "Off",
+                    "1": "Pump",
+                    "2": "Return protection",
+                    "3": "Pump + circulation",
+                    "4": "3D valve",
+                },
+            },
+            "writable": True,
+            "menu_kinds": ["write"],
+            # Stale full option list from an older bootstrap cache.
+            "options": ["Off", "Pump", "Return protection", "Pump + circulation", "3D valve"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["platform"] == "select"
+    assert normalized[0]["options"] == ["Pump", "Return protection", "Pump + circulation"]
+    assert normalized[0]["enum_map"] == {
+        "Pump": 1,
+        "Return protection": 2,
+        "Pump + circulation": 3,
+    }
 
 
 def test_runtime_visibility_helpers() -> None:

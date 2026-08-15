@@ -131,3 +131,16 @@ def test_prepare_write_applies_enum_mapping_before_bounds() -> None:
     )
     prepared = prepare_write("Eco", context=context)
     assert prepared.raw_value == 2
+
+
+def test_prepare_write_rejects_enum_label_whose_raw_exceeds_max() -> None:
+    context = WriteContext(
+        symbol="P4.u1",
+        has_parameter_address=True,
+        has_command_rule=False,
+        enum_mapping={"Pump": 1, "3D valve": 4},
+        raw_min=1,
+        raw_max=3,
+    )
+    with pytest.raises(WriteValidationError, match="exceeds maximum"):
+        prepare_write("3D valve", context=context)
