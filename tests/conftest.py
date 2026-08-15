@@ -104,6 +104,7 @@ def install_pybragerone_stubs() -> None:
 
     pybragerone_models_catalog_stub = types.ModuleType("pybragerone.models.catalog")
     pybragerone_models_catalog_stub.LiveAssetsCatalog = object
+    pybragerone_models_catalog_stub.INDEX_ASSET_RE = __import__("re").compile(r"/assets/(index-[A-Za-z0-9_-]+\.js)")
     sys.modules["pybragerone.models.catalog"] = pybragerone_models_catalog_stub
 
     pybragerone_models_token_stub = types.ModuleType("pybragerone.models.token")

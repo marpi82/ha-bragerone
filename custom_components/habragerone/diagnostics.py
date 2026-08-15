@@ -15,6 +15,8 @@ from homeassistant.core import HomeAssistant
 from .const import (
     CONF_ENTITY_DESCRIPTORS,
     CONF_PLATFORM,
+    CONF_UPSTREAM_ASSETS_FINGERPRINT,
+    DATA_API,
     DATA_DIAGNOSTIC_TREND,
     DATA_ENTITY_STATS,
     DATA_RUNTIME,
@@ -22,6 +24,7 @@ from .const import (
     PLATFORMS,
 )
 from .runtime import BragerRuntime
+from .upstream_assets import async_probe_upstream_assets_fingerprint
 
 REDACT_KEYS = {CONF_PASSWORD}
 
@@ -141,6 +144,39 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
     else:
         health_hints.append("Descriptor classification and created entity counts are aligned.")
 
+    cached_fingerprint_raw = entry.data.get(CONF_UPSTREAM_ASSETS_FINGERPRINT)
+    cached_fingerprint = cached_fingerprint_raw if isinstance(cached_fingerprint_raw, str) and cached_fingerprint_raw else None
+    live_fingerprint: str | None = None
+    fingerprint_probe_error: str | None = None
+    api_client = runtime.get(DATA_API) if isinstance(runtime, dict) else None
+    if api_client is not None and hasattr(api_client, "get_system_version") and hasattr(api_client, "get_bytes"):
+        live_fingerprint = await async_probe_upstream_assets_fingerprint(api_client)
+        if live_fingerprint is None:
+            fingerprint_probe_error = "live probe failed"
+    elif api_client is None:
+        fingerprint_probe_error = "api client unavailable"
+    else:
+        fingerprint_probe_error = "api client missing probe methods"
+
+    assets_mismatched = bool(cached_fingerprint and live_fingerprint and cached_fingerprint != live_fingerprint)
+    assets_fingerprint: dict[str, object] = {
+        "cached": cached_fingerprint,
+        "live": live_fingerprint,
+        "mismatched": assets_mismatched,
+    }
+    if fingerprint_probe_error and live_fingerprint is None:
+        assets_fingerprint["probe_error"] = fingerprint_probe_error
+
+    if cached_fingerprint is None:
+        health_hints.append("Upstream assets fingerprint not recorded yet; it is stored on the next bootstrap refresh.")
+    elif assets_mismatched:
+        health_status = "warning"
+        health_hints.append(
+            "Cached descriptors were built against a different upstream web-app bundle; "
+            "review before forcing a bootstrap refresh (mismatch alone does not re-bootstrap)."
+        )
+        health_hints.append(f"Cached fingerprint: {cached_fingerprint}; live: {live_fingerprint}.")
+
     summary_core: dict[str, object] = {
         "total": len(descriptors),
         "writable": writable_counter,
@@ -160,6 +196,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
         "severity_level": severity_level,
         "health_status": health_status,
         "health_hints": health_hints,
+        "upstream_assets_fingerprint": assets_fingerprint,
     }
 
     summary_fingerprint = hashlib.sha256(json.dumps(summary_core, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]

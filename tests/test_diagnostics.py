@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
 from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant
@@ -49,7 +52,10 @@ async def test_diagnostics_redacts_password_and_reports_aligned_health(hass: Hom
     assert summary["enum_mapped"] == 1
     assert summary["health_status"] == "ok"
     assert summary["severity_level"] == "none"
-    assert summary["health_hints"] == ["Descriptor classification and created entity counts are aligned."]
+    assert "Descriptor classification and created entity counts are aligned." in summary["health_hints"]
+    assert any("fingerprint not recorded" in hint for hint in summary["health_hints"])
+    assert summary["upstream_assets_fingerprint"]["cached"] is None
+    assert summary["upstream_assets_fingerprint"]["mismatched"] is False
     assert "sensor" in summary["sample_symbols_by_platform"]
 
 
@@ -161,6 +167,85 @@ async def test_diagnostics_skips_blank_devid_connectivity(hass: HomeAssistant) -
     payload = await async_get_config_entry_diagnostics(hass, entry)
     assert "" not in payload["connectivity"]
     assert payload["connectivity"]["DEV1"]["online"] is True
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_reports_upstream_assets_fingerprint_mismatch(hass: HomeAssistant) -> None:
+    from custom_components.habragerone.const import CONF_UPSTREAM_ASSETS_FINGERPRINT, DATA_API
+
+    runtime = object()
+    descriptors = [{"platform": "sensor", "symbol": "TEMP"}]
+    stats = {"sensor": {"descriptor_count": 1, "created_count": 1}}
+    entry = register_config_entry(hass, runtime=runtime, descriptors=descriptors, entity_stats=stats)
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_UPSTREAM_ASSETS_FINGERPRINT: "2.08|index-Old.js"},
+    )
+
+    api = SimpleNamespace(
+        one_base="https://one.brager.pl",
+        get_system_version=AsyncMock(return_value=SimpleNamespace(version="2.08")),
+        get_bytes=AsyncMock(return_value=b'<script src="/assets/index-New.js"></script>'),
+    )
+    hass.data[DOMAIN][entry.entry_id][DATA_API] = api
+
+    payload = await async_get_config_entry_diagnostics(hass, entry)
+    assets = payload["descriptor_summary"]["upstream_assets_fingerprint"]
+    assert assets["cached"] == "2.08|index-Old.js"
+    assert assets["live"] == "2.08|index-New.js"
+    assert assets["mismatched"] is True
+    assert payload["descriptor_summary"]["health_status"] == "warning"
+    assert any("different upstream web-app bundle" in hint for hint in payload["descriptor_summary"]["health_hints"])
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_reports_live_fingerprint_probe_failure(hass: HomeAssistant) -> None:
+    from custom_components.habragerone.const import CONF_UPSTREAM_ASSETS_FINGERPRINT, DATA_API
+
+    entry = register_config_entry(
+        hass,
+        runtime=object(),
+        descriptors=[{"platform": "sensor", "symbol": "TEMP"}],
+        entity_stats={"sensor": {"descriptor_count": 1, "created_count": 1}},
+    )
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_UPSTREAM_ASSETS_FINGERPRINT: "2.08|index-Old.js"},
+    )
+    api = SimpleNamespace(
+        one_base="https://one.brager.pl",
+        get_system_version=AsyncMock(side_effect=RuntimeError("offline")),
+        get_bytes=AsyncMock(),
+    )
+    hass.data[DOMAIN][entry.entry_id][DATA_API] = api
+
+    payload = await async_get_config_entry_diagnostics(hass, entry)
+    assets = payload["descriptor_summary"]["upstream_assets_fingerprint"]
+    assert assets["cached"] == "2.08|index-Old.js"
+    assert assets["live"] is None
+    assert assets["mismatched"] is False
+    assert assets["probe_error"] == "live probe failed"
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_reports_api_client_missing_probe_methods(hass: HomeAssistant) -> None:
+    from custom_components.habragerone.const import CONF_UPSTREAM_ASSETS_FINGERPRINT, DATA_API
+
+    entry = register_config_entry(
+        hass,
+        runtime=object(),
+        descriptors=[{"platform": "sensor", "symbol": "TEMP"}],
+        entity_stats={"sensor": {"descriptor_count": 1, "created_count": 1}},
+    )
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_UPSTREAM_ASSETS_FINGERPRINT: "2.08|index-Old.js"},
+    )
+    hass.data[DOMAIN][entry.entry_id][DATA_API] = object()
+
+    payload = await async_get_config_entry_diagnostics(hass, entry)
+    assets = payload["descriptor_summary"]["upstream_assets_fingerprint"]
+    assert assets["probe_error"] == "api client missing probe methods"
 
 
 @pytest.mark.asyncio
