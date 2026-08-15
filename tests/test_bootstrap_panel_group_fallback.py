@@ -372,3 +372,42 @@ def test_menu_kind_retry_failure_is_logged_without_failing_bootstrap(
     ]
     assert {item["symbol"] for item in payload["entity_descriptors"]} == {"PARAM_GATED"}
     assert any("Menu kind retry extraction failed for M1" in record.getMessage() for record in caplog.records)
+
+
+def test_ui_mode_rejects_symbols_without_display_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SPA visibility requires a defined display value — bare writes are dropped."""
+
+    class _NoDisplayResolver(_RecordingResolver):
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=None, value_label=None)
+
+    _NoDisplayResolver.gated_groups = {"Panel": ["PARAM_BLANK"]}
+    _NoDisplayResolver.ungated_groups = {}
+    _NoDisplayResolver.calls = []
+    _NoDisplayResolver.web_ui_flags = []
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _NoDisplayResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+            entity_filter_mode="ui",
+        )
+    )
+
+    assert payload["entity_descriptors"] == []
+    rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
+    assert rejections == [
+        {
+            "symbol": "PARAM_BLANK",
+            "reason": "no_display_value",
+            "value": None,
+            "value_label": None,
+            "menu_kinds": [],
+        }
+    ]
