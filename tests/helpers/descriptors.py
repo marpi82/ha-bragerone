@@ -132,8 +132,12 @@ def binary_sensor_descriptor(
     chan: str = "s",
     idx: int = 0,
     command_rules: list[dict[str, Any]] | None = None,
+    mapping_inputs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a binary_sensor-platform descriptor."""
+    mapping: dict[str, Any] = {"command_rules": command_rules if command_rules is not None else []}
+    if mapping_inputs:
+        mapping["inputs"] = mapping_inputs
     return {
         "symbol": symbol,
         "devid": devid,
@@ -143,7 +147,7 @@ def binary_sensor_descriptor(
         "platform": "binary_sensor",
         "label": "Pump active",
         "module_name": "module_a",
-        "mapping": {"command_rules": command_rules if command_rules is not None else []},
+        "mapping": mapping,
     }
 
 

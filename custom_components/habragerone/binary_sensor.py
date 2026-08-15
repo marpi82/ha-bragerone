@@ -31,7 +31,7 @@ from .entity_common import (
     record_platform_entity_stats,
 )
 from .runtime import BragerRuntime
-from .status_rules import coerce_status_bool, resolve_entity_bool
+from .status_rules import coerce_status_bool, resolve_entity_bool, status_label_to_bool
 
 
 def _descriptor_labels(descriptor: dict[str, Any]) -> dict[str, Any]:
@@ -144,7 +144,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
             self._unsubscribe_connectivity = None
 
     async def async_update(self) -> None:
-        """Refresh state from ParamStore value."""
+        """Refresh state from ParamStore / SPA status resolver."""
         raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
         self._attr_available = entity_is_available(
             self._runtime,
@@ -153,6 +153,16 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         )
         if raw_value is None:
             return
+
+        # STATUS_* diodes (e.g. PumpState) must follow the same ComputedValueEvaluator
+        # path as text sensors — cached command_rules alone miss ``value:`` maps and
+        # dual-bit PumpState inputs (bit 1 ON/OFF + bit 3 manual).
+        if self._symbol.startswith("STATUS_"):
+            resolved = await self._runtime.async_resolve_status_label(self._symbol)
+            resolved_bool = status_label_to_bool(resolved)
+            if resolved_bool is not None:
+                self._attr_is_on = resolved_bool
+                return
 
         self._attr_is_on = resolve_entity_bool(
             descriptor=self._descriptor,

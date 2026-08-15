@@ -71,6 +71,27 @@ def test_resolve_rule_bool_maps_on_off_tokens() -> None:
     descriptor["mapping"]["command_rules"][0]["value"] = "Załączony"
     assert resolve_rule_bool(descriptor=descriptor, flat_values={}, default_actual=1) is True
 
+    from custom_components.habragerone.status_rules import status_label_to_bool
+
+    # PumpState / diode SPA labels — enum tags and Polish manual parentheticals.
+    assert status_label_to_bool("e.ON_MANUAL") is True
+    assert status_label_to_bool("e.OFF_MANUAL") is False
+    assert status_label_to_bool("ON") is True
+    assert status_label_to_bool("OFF") is False
+    assert status_label_to_bool("Włączone (ręcznie)") is True
+    assert status_label_to_bool("Wyłączony (ręcznie)") is False
+    assert status_label_to_bool("DiodeState['ON']") is True
+    assert status_label_to_bool("maybe") is None
+
+    # Empty / paren-only / quote-only leftovers after normalization.
+    assert status_label_to_bool("   ") is None
+    assert status_label_to_bool("()") is None
+    assert status_label_to_bool("'") is None
+
+    # Prefix fallback when the token is not an exact on/off set member.
+    assert status_label_to_bool("ON_STANDBY") is True
+    assert status_label_to_bool("OFF_STANDBY") is False
+
 
 def test_resolve_rule_bool_returns_none_for_non_string_display() -> None:
     descriptor = {"mapping": {"command_rules": [{"conditions": [], "value": 42}]}}
@@ -165,16 +186,36 @@ def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:
     assert resolve_entity_bool(descriptor=with_input, flat_values={"P5.s0": 64}, default_actual=64) is False
     assert resolve_entity_bool(descriptor=with_input, flat_values={"P5.s0": 65}, default_actual=65) is True
 
-    # Zero / multiple bit inputs → fall back to raw coercion.
+    # Inputs without bit/mask → raw coercion.
     no_bits = {"mapping": {"command_rules": [], "inputs": [{"address": "P5.s0"}]}}
     assert resolve_entity_bool(descriptor=no_bits, flat_values={"P5.s0": 1}, default_actual=1) is True
-    many_bits = {
+
+    # Dual-bit PumpState inputs (bit 1 ON/OFF + bit 3 manual): prefer lowest bit.
+    pump_bits = {
         "mapping": {
             "command_rules": [],
-            "inputs": [{"address": "P5.s0", "bit": 0}, {"address": "P5.s0", "bit": 1}],
+            "inputs": [{"address": "P5.s11", "bit": 1}, {"address": "P5.s11", "bit": 3}],
         }
     }
-    assert resolve_entity_bool(descriptor=many_bits, flat_values={"P5.s0": 65}, default_actual=65) is False
+    assert resolve_entity_bool(descriptor=pump_bits, flat_values={"P5.s11": 64.0}, default_actual=64.0) is False
+    assert resolve_entity_bool(descriptor=pump_bits, flat_values={"P5.s11": 66.0}, default_actual=66.0) is True
+    assert resolve_entity_bool(descriptor=pump_bits, flat_values={"P5.s11": 8.0}, default_actual=8.0) is False
+
+    # Different addresses / mask-only multi-inputs → refuse and coerce raw.
+    split_addr = {
+        "mapping": {
+            "command_rules": [],
+            "inputs": [{"address": "P5.s11", "bit": 1}, {"address": "P5.s12", "bit": 1}],
+        }
+    }
+    assert resolve_entity_bool(descriptor=split_addr, flat_values={"P5.s11": 2}, default_actual=64) is False
+    mask_only = {
+        "mapping": {
+            "command_rules": [],
+            "inputs": [{"address": "P5.s11", "mask": 2}, {"address": "P5.s11", "mask": 8}],
+        }
+    }
+    assert resolve_entity_bool(descriptor=mask_only, flat_values={"P5.s11": 2}, default_actual=64) is False
 
     # Bit input present but actual is non-numeric → raw fallback.
     weird = {"mapping": {"command_rules": [], "inputs": [{"address": "P5.s0", "bit": 0}]}}

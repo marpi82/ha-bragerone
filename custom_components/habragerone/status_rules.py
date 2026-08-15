@@ -40,14 +40,50 @@ def resolve_rule_bool(
 ) -> bool | None:
     """Resolve rule output to boolean for binary-state entities."""
     display = resolve_rule_display_value(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
-    if not isinstance(display, str):
+    return status_label_to_bool(display)
+
+
+def status_label_to_bool(value: Any) -> bool | None:
+    """Map a STATUS display label/token to on/off, or None when unknown.
+
+    Accepts SPA enum tags (``e.ON_MANUAL``), English diode tokens (``On Manual``),
+    and translated labels including parenthetical manual notes
+    (``Włączone (ręcznie)`` / ``Wyłączony (ręcznie)``).
+    """
+    if not isinstance(value, str):
         return None
-    norm = display.strip().casefold()
+    norm = _normalize_status_label_token(value)
+    if not norm:
+        return None
     if norm in _BOOL_TRUE_TOKENS:
         return True
     if norm in _BOOL_FALSE_TOKENS:
         return False
+    # Prefix fallback covers ON_MANUAL / OFF_MANUAL after underscore→space.
+    if norm.startswith("on"):
+        return True
+    if norm.startswith("off"):
+        return False
     return None
+
+
+def _normalize_status_label_token(value: str) -> str:
+    """Normalize STATUS labels/tokens for boolean mapping."""
+    norm = value.strip().casefold()
+    if not norm:
+        return ""
+    # Drop manual/context notes: "wyłączony (ręcznie)" → "wyłączony".
+    if "(" in norm:
+        norm = norm.split("(", 1)[0].rstrip()
+    # Strip enum/path prefixes: "e.on_manual", "diodestate['off']" leftovers.
+    if "." in norm:
+        norm = norm.rsplit(".", 1)[-1]
+    if "'" in norm:
+        # DiodeState['OFF'] → off
+        parts = [part for part in norm.replace("]", "").split("'") if part and part not in {"[", " "}]
+        if parts:
+            norm = parts[-1]
+    return norm.replace("_", " ").strip()
 
 
 def resolve_entity_bool(
@@ -58,8 +94,10 @@ def resolve_entity_bool(
 ) -> bool:
     """Resolve on/off for switches and binary sensors.
 
-    Prefer command-rule labels, then a single bit/mask input from the mapping, and
-    finally a conservative raw coercion that refuses multi-bit status words.
+    Prefer command-rule labels, then bit/mask inputs from the mapping (when several
+    bits share one address, use the lowest bit — e.g. PumpState ON/OFF on bit 1
+    before manual bit 3), and finally a conservative raw coercion that refuses
+    multi-bit status words.
     """
     rule_value = resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
     if rule_value is not None:
@@ -74,12 +112,30 @@ def resolve_entity_bool(
                 for entry in inputs
                 if isinstance(entry, Mapping) and (isinstance(entry.get("bit"), int) or isinstance(entry.get("mask"), int))
             ]
-            if len(bit_inputs) == 1:
-                actual = read_target_actual(bit_inputs[0], flat_values=flat_values)
+            preferred = _preferred_bit_input(bit_inputs)
+            if preferred is not None:
+                actual = read_target_actual(preferred, flat_values=flat_values)
                 if isinstance(actual, int | float) and not isinstance(actual, bool):
                     return bool(int(actual))
 
     return coerce_status_bool(default_actual)
+
+
+def _preferred_bit_input(bit_inputs: list[Mapping[str, Any]]) -> Mapping[str, Any] | None:
+    """Pick the best bit/mask input when command rules did not resolve."""
+    if not bit_inputs:
+        return None
+    if len(bit_inputs) == 1:
+        return bit_inputs[0]
+
+    addresses = {str(entry.get("address") or "") for entry in bit_inputs}
+    if len(addresses) != 1:
+        return None
+
+    numbered = [entry for entry in bit_inputs if isinstance(entry.get("bit"), int)]
+    if not numbered:
+        return None
+    return min(numbered, key=lambda entry: int(entry["bit"]))
 
 
 _BOOL_TRUE_TOKENS = frozenset(

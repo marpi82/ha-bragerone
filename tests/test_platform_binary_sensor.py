@@ -107,6 +107,67 @@ async def test_binary_sensor_listener_lifecycle_and_raw_bool_state(hass: HomeAss
 
 
 @pytest.mark.asyncio
+async def test_binary_sensor_status_symbol_uses_resolver_label(hass: HomeAssistant) -> None:
+    from unittest.mock import AsyncMock, patch
+
+    from custom_components.habragerone.runtime import BragerRuntime
+
+    runtime, *_rest = make_runtime(flat_values={"P5.s11": 64.0})
+    descriptor = binary_sensor_descriptor(
+        symbol="STATUS_P5_11",
+        pool="P5",
+        chan="s",
+        idx=11,
+        command_rules=[],  # empty cached rules — resolver is the source of truth
+    )
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerStatusBinarySensor(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "binary_sensor.pump_status"
+
+    with patch.object(BragerRuntime, "async_resolve_status_label", new=AsyncMock(return_value="On")):
+        await entity.async_update()
+    assert entity.is_on is True
+
+    with patch.object(BragerRuntime, "async_resolve_status_label", new=AsyncMock(return_value="Off")):
+        await entity.async_update()
+    assert entity.is_on is False
+
+    with patch.object(
+        BragerRuntime,
+        "async_resolve_status_label",
+        new=AsyncMock(return_value="Włączone (ręcznie)"),
+    ):
+        await entity.async_update()
+    assert entity.is_on is True
+
+    with patch.object(BragerRuntime, "async_resolve_status_label", new=AsyncMock(return_value="e.OFF_MANUAL")):
+        await entity.async_update()
+    assert entity.is_on is False
+
+    # Unrecognized resolver label → fall through to resolve_entity_bool (inputs).
+    descriptor_with_bit = binary_sensor_descriptor(
+        symbol="STATUS_P5_11",
+        pool="P5",
+        chan="s",
+        idx=11,
+        command_rules=[],
+        mapping_inputs=[{"address": "P5.s11", "bit": 1}],
+    )
+    entity_fallback = BragerStatusBinarySensor(entry=entry, runtime=runtime, descriptor=descriptor_with_bit)
+    entity_fallback.hass = hass
+    entity_fallback.entity_id = "binary_sensor.pump_status_fallback"
+    with patch.object(BragerRuntime, "async_resolve_status_label", new=AsyncMock(return_value="unknown-state")):
+        await entity_fallback.async_update()
+    assert entity_fallback.is_on is False  # bit 1 clear in 64.0
+
+    runtime.store._flat["P5.s11"] = 66.0  # bit 1 set
+    with patch.object(BragerRuntime, "async_resolve_status_label", new=AsyncMock(return_value=None)):
+        await entity_fallback.async_update()
+    assert entity_fallback.is_on is True
+
+
+@pytest.mark.asyncio
 async def test_binary_sensor_uses_rule_mapping_when_configured(hass: HomeAssistant) -> None:
     runtime, *_rest = make_runtime(flat_values={"P5.s5": 768})
     descriptor = binary_sensor_descriptor(
