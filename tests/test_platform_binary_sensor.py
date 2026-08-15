@@ -133,6 +133,18 @@ async def test_binary_sensor_status_symbol_uses_resolver_label(hass: HomeAssista
         await entity.async_update()
     assert entity.is_on is False
 
+    with patch.object(
+        BragerRuntime,
+        "async_resolve_status_label",
+        new=AsyncMock(return_value="Włączone (ręcznie)"),
+    ):
+        await entity.async_update()
+    assert entity.is_on is True
+
+    with patch.object(BragerRuntime, "async_resolve_status_label", new=AsyncMock(return_value="e.OFF_MANUAL")):
+        await entity.async_update()
+    assert entity.is_on is False
+
 
 @pytest.mark.asyncio
 async def test_binary_sensor_uses_rule_mapping_when_configured(hass: HomeAssistant) -> None:

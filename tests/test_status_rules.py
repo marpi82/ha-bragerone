@@ -71,6 +71,18 @@ def test_resolve_rule_bool_maps_on_off_tokens() -> None:
     descriptor["mapping"]["command_rules"][0]["value"] = "Załączony"
     assert resolve_rule_bool(descriptor=descriptor, flat_values={}, default_actual=1) is True
 
+    from custom_components.habragerone.status_rules import status_label_to_bool
+
+    # PumpState / diode SPA labels — enum tags and Polish manual parentheticals.
+    assert status_label_to_bool("e.ON_MANUAL") is True
+    assert status_label_to_bool("e.OFF_MANUAL") is False
+    assert status_label_to_bool("ON") is True
+    assert status_label_to_bool("OFF") is False
+    assert status_label_to_bool("Włączone (ręcznie)") is True
+    assert status_label_to_bool("Wyłączony (ręcznie)") is False
+    assert status_label_to_bool("DiodeState['ON']") is True
+    assert status_label_to_bool("maybe") is None
+
 
 def test_resolve_rule_bool_returns_none_for_non_string_display() -> None:
     descriptor = {"mapping": {"command_rules": [{"conditions": [], "value": 42}]}}

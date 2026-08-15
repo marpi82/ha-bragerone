@@ -44,15 +44,46 @@ def resolve_rule_bool(
 
 
 def status_label_to_bool(value: Any) -> bool | None:
-    """Map a STATUS display label/token to on/off, or None when unknown."""
+    """Map a STATUS display label/token to on/off, or None when unknown.
+
+    Accepts SPA enum tags (``e.ON_MANUAL``), English diode tokens (``On Manual``),
+    and translated labels including parenthetical manual notes
+    (``Włączone (ręcznie)`` / ``Wyłączony (ręcznie)``).
+    """
     if not isinstance(value, str):
         return None
-    norm = value.strip().casefold()
+    norm = _normalize_status_label_token(value)
+    if not norm:
+        return None
     if norm in _BOOL_TRUE_TOKENS:
         return True
     if norm in _BOOL_FALSE_TOKENS:
         return False
+    # Prefix fallback covers ON_MANUAL / OFF_MANUAL after underscore→space.
+    if norm.startswith("on"):
+        return True
+    if norm.startswith("off"):
+        return False
     return None
+
+
+def _normalize_status_label_token(value: str) -> str:
+    """Normalize STATUS labels/tokens for boolean mapping."""
+    norm = value.strip().casefold()
+    if not norm:
+        return ""
+    # Drop manual/context notes: "wyłączony (ręcznie)" → "wyłączony".
+    if "(" in norm:
+        norm = norm.split("(", 1)[0].rstrip()
+    # Strip enum/path prefixes: "e.on_manual", "diodestate['off']" leftovers.
+    if "." in norm:
+        norm = norm.rsplit(".", 1)[-1]
+    if "'" in norm:
+        # DiodeState['OFF'] → off
+        parts = [part for part in norm.replace("]", "").split("'") if part and part not in {"[", " "}]
+        if parts:
+            norm = parts[-1]
+    return norm.replace("_", " ").strip()
 
 
 def resolve_entity_bool(
