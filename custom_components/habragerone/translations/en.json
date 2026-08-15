@@ -28,7 +28,7 @@
           "device_grouping": "Device grouping"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Flat = one HA device per module for parameters; connectivity stays on a separate module.connection child (via_device). Group by menu = child devices per stable parent menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     },
@@ -59,7 +59,7 @@
           "device_grouping": "Device grouping"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Flat = one HA device per module for parameters; connectivity stays on a separate module.connection child (via_device). Group by menu = child devices per stable parent menu key (via_device). Changing remaps device membership (automations/dashboards)."
         }
       }
     }
