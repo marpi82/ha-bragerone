@@ -15,7 +15,7 @@ This custom component provides integration between Home Assistant and the Brager
 - Configurable through Home Assistant UI
 - Support for multiple device types
 - Per-module cloud connectivity diagnostic (SPA `connectedAt` / `module.connection.*` labels) on a child device; parameter entities go unavailable when the module is offline; writes are refused while offline
-- Optional device grouping by menu (options: flat default vs group-by-menu child devices with `via_device`)
+- Optional device grouping by menu (options: flat default vs group-by-menu child devices per **parent** menu route with `via_device`)
 
 ## Installation
 
@@ -40,7 +40,7 @@ The integration can be configured through the Home Assistant UI. You will need:
 - BragerOne / TiSConnect credentials and backend platform
 - Installation and module selection
 - Entity filtering mode (UI menu vs permissions)
-- Device grouping (flat = one HA device per internet module; group by menu = child devices per stable menu route, linked via the module — remaps device membership when changed)
+- Device grouping (flat = one HA device per internet module; group by menu = child devices per **parent** menu route, linked via the module — remaps device membership when changed)
 
 ## Contributions are welcome!
 

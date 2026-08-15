@@ -143,14 +143,15 @@ def test_device_info_from_descriptor_groups_by_menu_when_enabled() -> None:
             "module_name": "boiler",
             "module_title": "Boiler module",
             "module_version": "1.2.3",
-            "menu_key": "modules.menu.boiler",
-            "menu_title": "Kocioł",
-            "panel_path": "Kocioł",
+            "menu_key": "modules.menu.thermostats",
+            "menu_title": "Zawór 1",
+            "menu_group_title": "Menu termostatów",
+            "panel_path": "Menu termostatów/Zawór 1",
         },
     )
     info = device_info_from_descriptor(descriptor, domain=DOMAIN, grouping=DEVICE_GROUPING_BY_MENU)
-    assert info["identifiers"] == {(DOMAIN, "DEV9:modules.menu.boiler")}
-    assert info["name"] == "Kocioł"
+    assert info["identifiers"] == {(DOMAIN, "DEV9:modules.menu.thermostats")}
+    assert info["name"] == "Menu termostatów"
     assert info["via_device"] == (DOMAIN, "DEV9")
     assert info["model"] == "Boiler module"
 
@@ -189,7 +190,8 @@ def test_device_info_group_mode_uses_panel_path_leaf_without_menu_title() -> Non
     )
     info = device_info_from_descriptor(descriptor, domain=DOMAIN, grouping=DEVICE_GROUPING_BY_MENU)
     assert info["identifiers"] == {(DOMAIN, "DEV9:modules.menu.valve1")}
-    assert info["name"] == "Zawór 1"
+    # Without menu_group_title, first panel_path segment is the device name.
+    assert info["name"] == "Termostaty"
 
 
 def test_device_info_group_mode_falls_back_to_menu_key_then_menu() -> None:
@@ -216,6 +218,15 @@ def test_device_info_group_mode_slash_only_panel_path_keeps_path() -> None:
     )
     info = device_info_from_descriptor(descriptor, domain=DOMAIN, grouping=DEVICE_GROUPING_BY_MENU)
     assert info["name"] == "/"
+
+
+def test_menu_device_display_name_falls_back_through_path_segments() -> None:
+    assert _menu_device_display_name({"menu_group_title": "Menu termostatów"}) == "Menu termostatów"
+    assert _menu_device_display_name({"menu_title": "Zawór 1"}) == "Zawór 1"
+    assert _menu_device_display_name({"panel_path": "Root/Leaf"}) == "Root"
+    assert _menu_device_display_name({"panel_path": "/Leaf"}) == "Leaf"
+    assert _menu_device_display_name({"menu_key": "modules.menu.boiler"}) == "modules.menu.boiler"
+    assert _menu_device_display_name({}) == "menu"
 
 
 @pytest.mark.asyncio
