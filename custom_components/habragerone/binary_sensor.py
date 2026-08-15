@@ -33,6 +33,12 @@ from .runtime import BragerRuntime
 from .status_rules import resolve_rule_bool
 
 
+def _descriptor_labels(descriptor: dict[str, Any]) -> dict[str, Any]:
+    """Return the SPA label map from a connection descriptor, or an empty dict."""
+    raw = descriptor.get("labels")
+    return raw if isinstance(raw, dict) else {}
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up BragerOne binary sensor entities."""
     runtime_and_descriptors = get_runtime_and_descriptors(hass, entry, platform="binary_sensor")
@@ -183,7 +189,7 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
         self._devid = devid
         self._module_meta = module_meta
         self._descriptor = connection_descriptor
-        labels = self._descriptor.get("labels") if isinstance(self._descriptor.get("labels"), dict) else {}
+        labels = _descriptor_labels(self._descriptor)
         label = (
             str(self._descriptor.get("label") or "").strip()
             or str(labels.get("connection.status") or "").strip()
@@ -207,7 +213,7 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
         Stable id uses SPA i18n path ``module.connection`` (not a menu-router route)
         so HA #165 can keep these entities separable from panel-grouped devices.
         """
-        labels = self._descriptor.get("labels") if isinstance(self._descriptor.get("labels"), dict) else {}
+        labels = _descriptor_labels(self._descriptor)
         module_name = str(self._module_meta.get("name") or self._descriptor.get("module_name") or self._devid)
         index_label = str(labels.get("connection.index") or "").strip()
         device_name = str(self._descriptor.get("device_name") or "").strip() or (
@@ -237,11 +243,13 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
                 value = gateway.get(key)
                 if value is not None and value != "":
                     attrs[f"gateway_{key}"] = value
-        labels = self._descriptor.get("labels") if isinstance(self._descriptor.get("labels"), dict) else {}
-        if isinstance(labels.get("connection.connected"), str):
-            attrs["state_label_on"] = labels["connection.connected"]
-        if isinstance(labels.get("connection.notConnected"), str):
-            attrs["state_label_off"] = labels["connection.notConnected"]
+        labels = _descriptor_labels(self._descriptor)
+        connected_label = labels.get("connection.connected")
+        if isinstance(connected_label, str):
+            attrs["state_label_on"] = connected_label
+        not_connected_label = labels.get("connection.notConnected")
+        if isinstance(not_connected_label, str):
+            attrs["state_label_off"] = not_connected_label
         return attrs
 
     async def async_added_to_hass(self) -> None:
