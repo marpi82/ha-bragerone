@@ -50,7 +50,7 @@ async def test_select_entity_identity_and_device_info(hass: HomeAssistant) -> No
     entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
     entity = BragerSymbolSelect(entry=entry, runtime=runtime, descriptor=descriptor)
 
-    assert entity._attr_name == "Settings/Mode - Operating mode"
+    assert entity._attr_name == "Mode - Operating mode"
     assert entity._attr_unique_id == f"{entry.entry_id}_dev1_mode_select"
     assert entity._attr_options == ["Eco", "Comfort"]
     assert entity.device_info["identifiers"] == {(DOMAIN, "DEV1")}

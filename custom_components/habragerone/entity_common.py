@@ -51,6 +51,25 @@ def _menu_device_display_name(descriptor: dict[str, Any]) -> str:
     return menu_key or "menu"
 
 
+def _display_name_panel_prefix(descriptor: dict[str, Any]) -> str:
+    """Return a meaningful panel prefix for entity display names.
+
+    Prefers bootstrap ``menu_title`` (leaf segment). Falls back to the leaf of
+    ``panel_path``. Treats empty or slash-only paths as absent so names never
+    become a leading dash plus label.
+    """
+    title = str(descriptor.get("menu_title") or "").strip().strip("/")
+    if title and title not in {".", ".."}:
+        return title
+    panel_path = str(descriptor.get("panel_path") or "").strip().strip("/")
+    if not panel_path or panel_path in {".", ".."}:
+        return ""
+    leaf = panel_path.rsplit("/", 1)[-1].strip()
+    if leaf and leaf not in {".", ".."}:
+        return leaf
+    return ""
+
+
 def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
     """Return address keys that should trigger entity refresh for a descriptor."""
     keys: set[str] = set()
@@ -227,11 +246,17 @@ def descriptor_raw_to_label(descriptor: dict[str, Any]) -> dict[str, str]:
 
 
 def descriptor_display_name(descriptor: dict[str, Any]) -> str:
-    """Build entity display label as ``Menu/Submenu - Label`` when available."""
-    label = str(descriptor.get("label") or descriptor.get("symbol") or "")
-    panel_path = str(descriptor.get("panel_path") or "").strip()
-    if panel_path:
-        return f"{panel_path} - {label}"
+    """Build entity display label as ``LeafPanel - Label`` when available.
+
+    Uses the menu leaf (``menu_title`` / last ``panel_path`` segment), not the
+    full parent-to-child chain — the parent segment belongs on the HA device once
+    group-by-menu uses parent menus (#176). Empty or slash-only paths yield the
+    bare label (no leading dash).
+    """
+    label = str(descriptor.get("label") or descriptor.get("symbol") or "").strip()
+    prefix = _display_name_panel_prefix(descriptor)
+    if prefix:
+        return f"{prefix} - {label}"
     return label
 
 

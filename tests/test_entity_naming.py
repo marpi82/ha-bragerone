@@ -5,14 +5,25 @@ install_pybragerone_stubs()
 from custom_components.habragerone.entity_common import descriptor_display_name, descriptor_suggested_object_id  # noqa: E402
 
 
-def test_descriptor_display_name_with_panel_path() -> None:
+def test_descriptor_display_name_uses_leaf_not_full_path() -> None:
+    descriptor = {
+        "panel_path": "Menu termostatów/Zawór 1",
+        "menu_title": "Zawór 1",
+        "label": "Obniżenie nastawy zaworu 1 od termostatu",
+        "symbol": "PARAM_0",
+    }
+
+    assert descriptor_display_name(descriptor) == "Zawór 1 - Obniżenie nastawy zaworu 1 od termostatu"
+
+
+def test_descriptor_display_name_derives_leaf_from_panel_path() -> None:
     descriptor = {
         "panel_path": "Termostaty/Zawór 1",
         "label": "Termostat pokojowy zaworu 1",
         "symbol": "PARAM_0",
     }
 
-    assert descriptor_display_name(descriptor) == "Termostaty/Zawór 1 - Termostat pokojowy zaworu 1"
+    assert descriptor_display_name(descriptor) == "Zawór 1 - Termostat pokojowy zaworu 1"
 
 
 def test_descriptor_display_name_without_panel_path() -> None:
@@ -22,6 +33,35 @@ def test_descriptor_display_name_without_panel_path() -> None:
     }
 
     assert descriptor_display_name(descriptor) == "Temperatura kotła"
+
+
+def test_descriptor_display_name_rejects_slash_only_panel_path() -> None:
+    descriptor = {
+        "panel_path": "/",
+        "label": "Status dmuchawy",
+        "symbol": "STATUS_FAN",
+    }
+
+    assert descriptor_display_name(descriptor) == "Status dmuchawy"
+
+
+def test_descriptor_display_name_rejects_empty_and_dot_paths() -> None:
+    assert descriptor_display_name({"panel_path": "   ", "label": "Praca pompy"}) == "Praca pompy"
+    assert descriptor_display_name({"panel_path": "//", "label": "Praca pompy"}) == "Praca pompy"
+    assert descriptor_display_name({"menu_title": "/", "label": "Praca pompy"}) == "Praca pompy"
+    assert descriptor_display_name({"panel_path": ".", "label": "Praca pompy"}) == "Praca pompy"
+    assert descriptor_display_name({"panel_path": "..", "label": "Praca pompy"}) == "Praca pompy"
+    assert descriptor_display_name({"menu_title": ".", "label": "Praca pompy"}) == "Praca pompy"
+    assert descriptor_display_name({"menu_title": "..", "label": "Praca pompy"}) == "Praca pompy"
+
+
+def test_descriptor_display_name_prefers_menu_title_over_path() -> None:
+    descriptor = {
+        "panel_path": "Menu termostatów/Zawór 1",
+        "menu_title": "Zawór 1",
+        "label": "Status",
+    }
+    assert descriptor_display_name(descriptor) == "Zawór 1 - Status"
 
 
 def test_descriptor_suggested_object_id_uses_devid_and_symbol() -> None:

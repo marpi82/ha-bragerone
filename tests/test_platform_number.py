@@ -65,7 +65,7 @@ async def test_number_entity_identity_min_max_and_device_info(hass: HomeAssistan
     entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
     entity = BragerSymbolNumber(entry=entry, runtime=runtime, descriptor=descriptor)
 
-    assert entity._attr_name == "Heating/Zone 1 - Target temperature"
+    assert entity._attr_name == "Zone 1 - Target temperature"
     assert entity._attr_suggested_object_id == "dev1_setpoint"
     assert entity._attr_unique_id == f"{entry.entry_id}_dev1_setpoint_number"
     assert entity._attr_native_min_value == 5.0
