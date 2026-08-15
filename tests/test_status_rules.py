@@ -83,6 +83,15 @@ def test_resolve_rule_bool_maps_on_off_tokens() -> None:
     assert status_label_to_bool("DiodeState['ON']") is True
     assert status_label_to_bool("maybe") is None
 
+    # Empty / paren-only / quote-only leftovers after normalization.
+    assert status_label_to_bool("   ") is None
+    assert status_label_to_bool("()") is None
+    assert status_label_to_bool("'") is None
+
+    # Prefix fallback when the token is not an exact on/off set member.
+    assert status_label_to_bool("ON_STANDBY") is True
+    assert status_label_to_bool("OFF_STANDBY") is False
+
 
 def test_resolve_rule_bool_returns_none_for_non_string_display() -> None:
     descriptor = {"mapping": {"command_rules": [{"conditions": [], "value": 42}]}}
