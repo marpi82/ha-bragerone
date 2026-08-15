@@ -55,7 +55,7 @@ class BragerActionButton(ButtonEntity):
         self._symbol = str(descriptor.get("symbol") or "")
         self._devid = str(descriptor.get("devid") or "")
 
-        label = descriptor_display_name(descriptor)
+        label = descriptor_display_name(descriptor, grouping=device_grouping_mode(entry))
         self._attr_name = label
         self._attr_suggested_object_id = descriptor_suggested_object_id(descriptor)
         self._attr_unique_id = f"{entry.entry_id}_{self._devid}_{self._symbol}_button".lower().replace(" ", "_")

@@ -109,7 +109,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         self._symbol = str(descriptor.get("symbol") or "")
         self._devid = str(descriptor.get("devid") or "")
 
-        label = descriptor_display_name(descriptor)
+        label = descriptor_display_name(descriptor, grouping=device_grouping_mode(entry))
         self._attr_name = label
         self._attr_suggested_object_id = descriptor_suggested_object_id(descriptor)
         self._attr_unique_id = f"{entry.entry_id}_{self._devid}_{self._symbol}_binary".lower().replace(" ", "_")
@@ -289,8 +289,38 @@ def _to_bool(value: Any) -> bool:
         return bool(int(value))
     if isinstance(value, str):
         norm = value.strip().casefold()
-        if norm in {"1", "true", "on", "enabled", "yes"}:
+        if norm in {
+            "1",
+            "true",
+            "on",
+            "enabled",
+            "yes",
+            "tak",
+            "włączony",
+            "wlaczony",
+            "włączone",
+            "wlaczone",
+            "włączono",
+            "wlaczono",
+            "załączony",
+            "zalaczony",
+            "załączone",
+            "zalaczone",
+        }:
             return True
-        if norm in {"0", "false", "off", "disabled", "no"}:
+        if norm in {
+            "0",
+            "false",
+            "off",
+            "disabled",
+            "no",
+            "nie",
+            "wyłączony",
+            "wylaczony",
+            "wyłączone",
+            "wylaczone",
+            "wyłączono",
+            "wylaczono",
+        }:
             return False
     return False

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -29,7 +30,11 @@ from .runtime import BragerRuntime
 
 def device_grouping_mode(entry: ConfigEntry) -> str:
     """Return the configured device grouping mode for *entry* (flat default)."""
-    raw = entry.options.get(CONF_DEVICE_GROUPING, entry.data.get(CONF_DEVICE_GROUPING, DEFAULT_DEVICE_GROUPING))
+    options = getattr(entry, "options", None)
+    data = getattr(entry, "data", None)
+    options_map = options if isinstance(options, Mapping) else {}
+    data_map = data if isinstance(data, Mapping) else {}
+    raw = options_map.get(CONF_DEVICE_GROUPING, data_map.get(CONF_DEVICE_GROUPING, DEFAULT_DEVICE_GROUPING))
     mode = str(raw or "").strip().lower()
     if mode in DEVICE_GROUPING_MODES:
         return mode
@@ -252,19 +257,32 @@ def descriptor_raw_to_label(descriptor: dict[str, Any]) -> dict[str, str]:
     return {str(key): str(value) for key, value in raw_to_label.items()}
 
 
-def descriptor_display_name(descriptor: dict[str, Any]) -> str:
-    """Build entity display label as ``LeafPanel - Label`` when available.
+def descriptor_display_name(
+    descriptor: dict[str, Any],
+    *,
+    grouping: str = DEFAULT_DEVICE_GROUPING,
+) -> str:
+    """Build entity display label as ``LeafPanel - Label`` when useful.
 
     Uses the menu leaf (``menu_title`` / last ``panel_path`` segment), not the
     full parent-to-child chain — the parent segment belongs on the HA device once
     group-by-menu uses parent menus (#176). Empty or slash-only paths yield the
     bare label (no leading dash).
+
+    In group-by-menu mode, when the leaf prefix equals ``menu_group_title`` (the
+    child device name), return the bare label so HA does not show a redundant
+    ``Device - …`` name that renders as a leading dash under that device.
     """
     label = str(descriptor.get("label") or descriptor.get("symbol") or "").strip()
     prefix = _display_name_panel_prefix(descriptor)
-    if prefix:
-        return f"{prefix} - {label}"
-    return label
+    if not prefix:
+        return label
+    mode = str(grouping or "").strip().lower()
+    if mode == DEVICE_GROUPING_BY_MENU:
+        group = str(descriptor.get("menu_group_title") or "").strip()
+        if group and prefix == group:
+            return label
+    return f"{prefix} - {label}"
 
 
 def descriptor_suggested_object_id(descriptor: dict[str, Any]) -> str:

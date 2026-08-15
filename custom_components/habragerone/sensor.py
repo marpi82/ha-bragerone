@@ -71,7 +71,7 @@ class BragerSymbolSensor(SensorEntity):
 
         symbol = str(descriptor.get("symbol", ""))
         devid = str(descriptor.get("devid", ""))
-        label = descriptor_display_name(descriptor)
+        label = descriptor_display_name(descriptor, grouping=device_grouping_mode(entry))
 
         self._symbol = symbol
         self._devid = devid
