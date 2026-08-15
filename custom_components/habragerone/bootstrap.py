@@ -6,7 +6,7 @@ import logging
 import re
 from collections.abc import Mapping
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict, cast
 
 from .const import (
     CONF_BOOTSTRAP_DEBUG,
@@ -19,6 +19,7 @@ from .const import (
     CONF_OPTIONS,
     CONF_PLATFORM,
     CONF_RAW_TO_LABEL,
+    CONF_UPSTREAM_ASSETS_FINGERPRINT,
     CONNECTION_MENU_KEY,
     DEFAULT_ENTITY_FILTER_MODE,
     FILTER_MODE_PERMISSIONS,
@@ -781,6 +782,7 @@ class BootstrapPayload(TypedDict):
     entity_filter_mode: str
     module_filter_modes: dict[str, str]
     bootstrap_debug: dict[str, Any]
+    upstream_assets_fingerprint: NotRequired[str]
 
 
 async def async_build_bootstrap_payload(
@@ -1207,7 +1209,15 @@ async def async_build_bootstrap_payload(
     elif effective_modules:
         LOGGER.debug("Skipping connection_descriptors: pybragerone connection-label API unavailable")
 
-    return {
+    from .upstream_assets import async_probe_upstream_assets_fingerprint
+
+    upstream_fingerprint = await async_probe_upstream_assets_fingerprint(api)
+    if upstream_fingerprint:
+        bootstrap_debug["upstream_assets_fingerprint"] = upstream_fingerprint
+    else:
+        LOGGER.debug("Upstream assets fingerprint unavailable during bootstrap")
+
+    bootstrap_payload: BootstrapPayload = {
         CONF_ENTITY_DESCRIPTORS: descriptors,
         CONF_CONNECTION_DESCRIPTORS: connection_descriptors,
         CONF_MODULES_META: modules_meta,
@@ -1217,6 +1227,9 @@ async def async_build_bootstrap_payload(
         },
         CONF_BOOTSTRAP_DEBUG: bootstrap_debug,
     }
+    if upstream_fingerprint:
+        bootstrap_payload[CONF_UPSTREAM_ASSETS_FINGERPRINT] = upstream_fingerprint
+    return bootstrap_payload
 
 
 async def _resolve_connection_labels(resolver: Any, *, language: str | None) -> tuple[dict[str, str], bool]:
