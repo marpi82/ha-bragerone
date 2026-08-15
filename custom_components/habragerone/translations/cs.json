@@ -31,7 +31,7 @@
           "device_grouping": "Seskupování zařízení"
         },
         "data_description": {
-          "device_grouping": "Ploché = jedno HA zařízení na modul. Seskupit podle menu = podřízená zařízení podle stabilního klíče menu (via_device). Změna přemapuje příslušnost zařízení (automatizace/nástěnky). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
+          "device_grouping": "Ploché = jedno HA zařízení na modul. Seskupit podle menu = podřízená zařízení podle stabilního klíče menu (via_device). Změna přemapuje příslušnost zařízení (automatizace/nástěnky)."
         }
       }
     }

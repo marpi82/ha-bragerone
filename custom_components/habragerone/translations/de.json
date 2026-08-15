@@ -31,7 +31,7 @@
           "device_grouping": "Gerätegruppierung"
         },
         "data_description": {
-          "device_grouping": "Flach = ein HA-Gerät pro Modul. Nach Menü gruppieren = Untergeräte pro stabilem Menüschlüssel (via_device). Änderung verschiebt die Gerätezuordnung (Automationen/Dashboards). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
+          "device_grouping": "Flach = ein HA-Gerät pro Modul. Nach Menü gruppieren = Untergeräte pro stabilem Menüschlüssel (via_device). Änderung verschiebt die Gerätezuordnung (Automationen/Dashboards)."
         }
       }
     }

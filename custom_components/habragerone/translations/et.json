@@ -31,7 +31,7 @@
           "device_grouping": "Seadmete rühmitamine"
         },
         "data_description": {
-          "device_grouping": "Lame = üks HA seade mooduli kohta. Rühmita menüü järgi = alamseadmed stabiilse menüüvõtme järgi (via_device). Muutus ümberkaardistab seadmete kuuluvuse (automaatikad/armatuurlauad). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
+          "device_grouping": "Lame = üks HA seade mooduli kohta. Rühmita menüü järgi = alamseadmed stabiilse menüüvõtme järgi (via_device). Muutus ümberkaardistab seadmete kuuluvuse (automaatikad/armatuurlauad)."
         }
       }
     }

@@ -31,7 +31,7 @@
           "device_grouping": "Групування пристроїв"
         },
         "data_description": {
-          "device_grouping": "Плоский = один пристрій HA на модуль. Групувати за меню = дочірні пристрої за стабільним ключем меню (via_device). Зміна перепризначає членство пристроїв (автоматизації/панелі). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
+          "device_grouping": "Плоский = один пристрій HA на модуль. Групувати за меню = дочірні пристрої за стабільним ключем меню (via_device). Зміна перепризначає членство пристроїв (автоматизації/панелі)."
         }
       }
     }

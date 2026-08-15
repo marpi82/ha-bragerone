@@ -31,7 +31,7 @@
           "device_grouping": "Ierīču grupēšana"
         },
         "data_description": {
-          "device_grouping": "Plakans = viena HA ierīce uz moduli. Grupēt pēc izvēlnes = apakšierīces pēc stabilas izvēlnes atslēgas (via_device). Izmaiņa pārkartē ierīču piederību (automatizācijas/paneļi). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
+          "device_grouping": "Plakans = viena HA ierīce uz moduli. Grupēt pēc izvēlnes = apakšierīces pēc stabilas izvēlnes atslēgas (via_device). Izmaiņa pārkartē ierīču piederību (automatizācijas/paneļi)."
         }
       }
     }

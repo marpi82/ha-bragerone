@@ -31,7 +31,7 @@
           "device_grouping": "Įrenginių grupavimas"
         },
         "data_description": {
-          "device_grouping": "Plokščias = vienas HA įrenginys moduliui. Grupuoti pagal meniu = antriniai įrenginiai pagal stabilų meniu raktą (via_device). Pakeitimas perskirsto įrenginių priklausomybę (automatizacijos/skydeliai). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
+          "device_grouping": "Plokščias = vienas HA įrenginys moduliui. Grupuoti pagal meniu = antriniai įrenginiai pagal stabilų meniu raktą (via_device). Pakeitimas perskirsto įrenginių priklausomybę (automatizacijos/skydeliai)."
         }
       }
     }
