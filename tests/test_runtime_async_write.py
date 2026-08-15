@@ -82,6 +82,15 @@ def test_read_target_actual_accepts_integer_floats() -> None:
         )
         == 1
     )
+    assert (
+        _read_target_actual(
+            {"address": "P5.s0", "bit": 0},
+            flat_values={"P5.s0": True},
+            devid="DEV1",
+            modules_meta={},
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio

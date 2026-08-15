@@ -985,6 +985,25 @@ async def _resolve_descriptor_numeric_transform(
     precision_i = precision if isinstance(precision, int) else None
     return unit_code, ha_transform.scale, ha_transform.offset, precision_i
 
+
+def _apply_descriptor_transform_fields(
+    descriptor: EntityDescriptor,
+    *,
+    unit_code: Any,
+    transform_scale: float | None,
+    transform_offset: float | None,
+    transform_precision: int | None,
+) -> None:
+    """Persist resolved unit transform metadata onto one entity descriptor."""
+    if unit_code is not None:
+        descriptor["unit_code"] = unit_code
+    if transform_scale is not None and transform_offset is not None:
+        descriptor["transform_scale"] = transform_scale
+        descriptor["transform_offset"] = transform_offset
+    if transform_precision is not None:
+        descriptor["transform_precision"] = transform_precision
+
+
 async def async_build_bootstrap_payload(
     *,
     api: BragerOneApiClient,
@@ -1380,13 +1399,13 @@ async def async_build_bootstrap_payload(
                 resolver,
                 payload if isinstance(payload, Mapping) else {},
             )
-            if unit_code is not None:
-                descriptor["unit_code"] = unit_code
-            if transform_scale is not None and transform_offset is not None:
-                descriptor["transform_scale"] = transform_scale
-                descriptor["transform_offset"] = transform_offset
-            if transform_precision is not None:
-                descriptor["transform_precision"] = transform_precision
+            _apply_descriptor_transform_fields(
+                descriptor,
+                unit_code=unit_code,
+                transform_scale=transform_scale,
+                transform_offset=transform_offset,
+                transform_precision=transform_precision,
+            )
 
             if not _is_exposable_descriptor(
                 writable=writable,

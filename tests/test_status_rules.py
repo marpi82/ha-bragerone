@@ -123,6 +123,9 @@ def test_read_target_actual_handles_address_bit_and_mask() -> None:
     assert read_target_actual({"address": "P1.s0", "mask": 0x0F}, flat_values={"P1.s0": 0xF0}) == 0
     assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": 64.0}) == 0
     assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": 65.0}) == 1
+    # Bools are not bitmasks — leave the raw value untouched.
+    assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": True}) is True
+    assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": 1.5}) == 1.5
 
 
 def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:
