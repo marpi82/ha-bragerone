@@ -15,7 +15,6 @@ install_pybragerone_stubs()
 from custom_components.habragerone.const import DATA_ENTITY_STATS, DATA_RUNTIME, DOMAIN  # noqa: E402
 from custom_components.habragerone.switch import (  # noqa: E402
     BragerSymbolSwitch,
-    _coerce_bool,
     async_setup_entry,
 )
 from tests.helpers.descriptors import (  # noqa: E402
@@ -40,10 +39,13 @@ from tests.helpers.hass import register_config_entry  # noqa: E402
         ("disabled", False),
         ("maybe", False),
         (None, False),
+        (64, False),
     ],
 )
-def test_coerce_bool(raw: Any, expected: bool) -> None:
-    assert _coerce_bool(raw) is expected
+def test_coerce_status_bool_via_resolve_entity(raw: Any, expected: bool) -> None:
+    from custom_components.habragerone.status_rules import coerce_status_bool
+
+    assert coerce_status_bool(raw) is expected
 
 
 @pytest.mark.asyncio
@@ -117,6 +119,37 @@ async def test_switch_listener_lifecycle_and_state_refresh(hass: HomeAssistant) 
 
     await entity.async_will_remove_from_hass()
     assert entity._unsubscribe_listener is None
+
+
+@pytest.mark.asyncio
+async def test_switch_bit_rule_reads_off_for_nonzero_status_word(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime(flat_values={"P5.s0": 64})
+    descriptor = command_rule_descriptor(
+        platform="switch",
+        command_rules=[
+            {
+                "conditions": [{"operation": "equalTo", "expected": 0, "targets": [{"address": "P5.s0", "bit": 0}]}],
+                "command": "BOILER_START",
+                "value": "OFF",
+            },
+            {
+                "conditions": [{"operation": "equalTo", "expected": 1, "targets": [{"address": "P5.s0", "bit": 0}]}],
+                "command": "BOILER_STOP",
+                "value": "ON",
+            },
+        ],
+    )
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerSymbolSwitch(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "switch.test_boiler"
+
+    await entity.async_update()
+    assert entity.is_on is False
+
+    entity._runtime.store._flat["P5.s0"] = 65
+    await entity.async_update()
+    assert entity.is_on is True
 
 
 @pytest.mark.asyncio

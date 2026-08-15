@@ -25,10 +25,11 @@ from .const import (
     FILTER_MODE_PERMISSIONS,
     FILTER_MODE_UI,
 )
+from .numeric_display import py_transform_to_ha
 
 if TYPE_CHECKING:
     from pybragerone import BragerOneApiClient
-
+    from pybragerone.models.param_resolver import ParamResolver
 LOGGER = logging.getLogger(__name__)
 
 
@@ -53,6 +54,10 @@ class EntityDescriptor(TypedDict, total=False):
     chan: str | None
     min: Any
     max: Any
+    unit_code: int | str | None
+    transform_scale: float
+    transform_offset: float
+    transform_precision: int
     mapping: dict[str, Any] | None
     writable: bool
     platform: str
@@ -932,6 +937,73 @@ class BootstrapPayload(TypedDict):
     upstream_assets_fingerprint: NotRequired[str]
 
 
+async def _resolve_descriptor_numeric_transform(
+    resolver: ParamResolver,
+    payload: Mapping[str, Any],
+) -> tuple[Any, float | None, float | None, int | None]:
+    """Resolve unit_code and HA display transform fields from a describe payload.
+
+    Returns:
+        Tuple of ``(unit_code, transform_scale, transform_offset, transform_precision)``.
+    """
+    from pybragerone.models.param_resolver import ParamResolver as _ParamResolver
+
+    unit_code = payload.get("unit_code")
+    transform_expr: Any = None
+    if unit_code is not None:
+        with suppress(Exception):
+            unit_meta = await resolver._resolve_unit_meta(raw_unit_code=unit_code)
+            if isinstance(unit_meta, Mapping):
+                transform_expr = unit_meta.get("value")
+
+    if transform_expr is None:
+        mapping = payload.get("mapping")
+        if isinstance(mapping, Mapping):
+            units_source = mapping.get("units_source")
+            if isinstance(units_source, Mapping) and "value" in units_source:
+                transform_expr = units_source.get("value")
+            elif unit_code is None and isinstance(units_source, (int, float, str)) and str(units_source).strip():
+                unit_code = units_source
+                with suppress(Exception):
+                    unit_meta = await resolver._resolve_unit_meta(raw_unit_code=units_source)
+                    if isinstance(unit_meta, Mapping):
+                        transform_expr = unit_meta.get("value")
+
+    if transform_expr is None:
+        return unit_code, None, None, None
+
+    parse_transform = getattr(_ParamResolver, "_parse_numeric_transform", None)
+    if not callable(parse_transform):
+        # Offline bootstrap stubs may replace ParamResolver without transform helpers.
+        return unit_code, None, None, None
+
+    parsed = parse_transform(transform_expr)
+    if parsed is None or getattr(parsed, "factor", 0.0) == 0.0:
+        return unit_code, None, None, None
+    ha_transform = py_transform_to_ha(shift=float(parsed.shift), factor=float(parsed.factor))
+    precision = getattr(parsed, "precision", None)
+    precision_i = precision if isinstance(precision, int) and not isinstance(precision, bool) else None
+    return unit_code, ha_transform.scale, ha_transform.offset, precision_i
+
+
+def _apply_descriptor_transform_fields(
+    descriptor: EntityDescriptor,
+    *,
+    unit_code: Any,
+    transform_scale: float | None,
+    transform_offset: float | None,
+    transform_precision: int | None,
+) -> None:
+    """Persist resolved unit transform metadata onto one entity descriptor."""
+    if unit_code is not None:
+        descriptor["unit_code"] = unit_code
+    if transform_scale is not None and transform_offset is not None:
+        descriptor["transform_scale"] = transform_scale
+        descriptor["transform_offset"] = transform_offset
+    if transform_precision is not None:
+        descriptor["transform_precision"] = transform_precision
+
+
 async def async_build_bootstrap_payload(
     *,
     api: BragerOneApiClient,
@@ -1322,6 +1394,18 @@ async def async_build_bootstrap_payload(
                 descriptor["menu_title"] = menu_title
             if menu_group_title:
                 descriptor["menu_group_title"] = menu_group_title
+
+            unit_code, transform_scale, transform_offset, transform_precision = await _resolve_descriptor_numeric_transform(
+                resolver,
+                payload if isinstance(payload, Mapping) else {},
+            )
+            _apply_descriptor_transform_fields(
+                descriptor,
+                unit_code=unit_code,
+                transform_scale=transform_scale,
+                transform_offset=transform_offset,
+                transform_precision=transform_precision,
+            )
 
             if not _is_exposable_descriptor(
                 writable=writable,

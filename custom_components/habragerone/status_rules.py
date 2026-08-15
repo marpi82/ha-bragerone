@@ -50,6 +50,38 @@ def resolve_rule_bool(
     return None
 
 
+def resolve_entity_bool(
+    *,
+    descriptor: Mapping[str, Any],
+    flat_values: Mapping[str, Any],
+    default_actual: Any,
+) -> bool:
+    """Resolve on/off for switches and binary sensors.
+
+    Prefer command-rule labels, then a single bit/mask input from the mapping, and
+    finally a conservative raw coercion that refuses multi-bit status words.
+    """
+    rule_value = resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
+    if rule_value is not None:
+        return rule_value
+
+    mapping = descriptor.get("mapping")
+    if isinstance(mapping, Mapping):
+        inputs = mapping.get("inputs")
+        if isinstance(inputs, list):
+            bit_inputs = [
+                entry
+                for entry in inputs
+                if isinstance(entry, Mapping) and (isinstance(entry.get("bit"), int) or isinstance(entry.get("mask"), int))
+            ]
+            if len(bit_inputs) == 1:
+                actual = read_target_actual(bit_inputs[0], flat_values=flat_values)
+                if isinstance(actual, int | float) and not isinstance(actual, bool):
+                    return bool(int(actual))
+
+    return coerce_status_bool(default_actual)
+
+
 _BOOL_TRUE_TOKENS = frozenset(
     {
         "on",
@@ -127,21 +159,51 @@ def _condition_matches(cond: Mapping[str, Any], *, flat_values: Mapping[str, Any
     return True
 
 
+def _as_bitmask_int(value: Any) -> int | None:
+    """Coerce JSON numbers (including floats like ``64.0``) to ints for bit ops."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
 def read_target_actual(target: Mapping[str, Any], *, flat_values: Mapping[str, Any]) -> Any:
     """Read target value from flat payload, optionally applying bit/mask."""
     address = target.get("address")
     if not isinstance(address, str) or not address.strip():
         return None
     value = flat_values.get(address.strip())
-    if not isinstance(value, int):
+    bitmask_value = _as_bitmask_int(value)
+    if bitmask_value is None:
         return value
     bit = target.get("bit")
     if isinstance(bit, int):
-        return (value >> bit) & 1
+        return (bitmask_value >> bit) & 1
     mask = target.get("mask")
     if isinstance(mask, int):
-        return value & mask
-    return value
+        return bitmask_value & mask
+    return bitmask_value
+
+
+def coerce_status_bool(value: Any) -> bool:
+    """Coerce obvious on/off tokens; refuse multi-bit status words without a rule."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        as_int = int(value)
+        if as_int in (0, 1):
+            return bool(as_int)
+        return False
+    if isinstance(value, str):
+        norm = value.strip().casefold()
+        if norm in _BOOL_TRUE_TOKENS:
+            return True
+        if norm in _BOOL_FALSE_TOKENS:
+            return False
+    return False
 
 
 def compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:

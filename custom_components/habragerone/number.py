@@ -23,6 +23,7 @@ from .entity_common import (
     get_runtime_and_descriptors,
     record_platform_entity_stats,
 )
+from .numeric_display import apply_display_transform, descriptor_numeric_transform, descriptor_transform_precision
 from .runtime import BragerRuntime
 
 
@@ -59,6 +60,8 @@ class BragerSymbolNumber(NumberEntity):
         self._descriptor = descriptor
         self._symbol = str(descriptor.get("symbol") or "")
         self._devid = str(descriptor.get("devid") or "")
+        self._transform = descriptor_numeric_transform(descriptor)
+        self._precision = descriptor_transform_precision(descriptor)
 
         label = descriptor_display_name(descriptor, grouping=device_grouping_mode(entry))
         self._attr_name = label
@@ -72,10 +75,20 @@ class BragerSymbolNumber(NumberEntity):
 
         min_value = descriptor.get("min")
         max_value = descriptor.get("max")
-        if isinstance(min_value, int | float):
-            self._attr_native_min_value = float(min_value)
-        if isinstance(max_value, int | float):
-            self._attr_native_max_value = float(max_value)
+        if isinstance(min_value, int | float) and not isinstance(min_value, bool):
+            self._attr_native_min_value = apply_display_transform(
+                min_value,
+                transform=self._transform,
+                precision=self._precision,
+            )
+        if isinstance(max_value, int | float) and not isinstance(max_value, bool):
+            self._attr_native_max_value = apply_display_transform(
+                max_value,
+                transform=self._transform,
+                precision=self._precision,
+            )
+        if self._precision is not None and self._precision > 0:
+            self._attr_native_step = 10 ** (-self._precision)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -102,7 +115,7 @@ class BragerSymbolNumber(NumberEntity):
             self._unsubscribe_connectivity = None
 
     async def async_update(self) -> None:
-        """Refresh numeric value from ParamStore."""
+        """Refresh numeric value from ParamStore using cached unit transform."""
         raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
         self._attr_available = entity_is_available(
             self._runtime,
@@ -112,10 +125,14 @@ class BragerSymbolNumber(NumberEntity):
         if raw_value is None:
             return
         if isinstance(raw_value, int | float) and not isinstance(raw_value, bool):
-            self._attr_native_value = float(raw_value)
+            self._attr_native_value = apply_display_transform(
+                raw_value,
+                transform=self._transform,
+                precision=self._precision,
+            )
 
     async def async_set_native_value(self, value: float) -> None:
-        """Write a new numeric value to backend."""
+        """Write a new display value (inverse-transformed) to backend."""
         await self._runtime.async_write(descriptor=self._descriptor, input_display_value=value)
         self._attr_native_value = value
 

@@ -99,6 +99,42 @@ async def test_number_listener_lifecycle_and_state_refresh(hass: HomeAssistant) 
 
 
 @pytest.mark.asyncio
+async def test_number_applies_cached_unit_transform(hass: HomeAssistant) -> None:
+    runtime, api, _gateway, _store = make_runtime(flat_values={"P10.v2": 333})
+    descriptor = writable_parameter_descriptor(
+        symbol="PARAM16_2",
+        pool="P10",
+        chan="v",
+        idx=2,
+        raw_min=0,
+        raw_max=400,
+    )
+    descriptor.update(
+        {
+            "transform_scale": 0.1,
+            "transform_offset": 0.0,
+            "transform_precision": 1,
+        }
+    )
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerSymbolNumber(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "number.max_burner_power"
+
+    assert entity._attr_native_min_value == 0.0
+    assert entity._attr_native_max_value == 40.0
+    assert entity._attr_native_step == pytest.approx(0.1)
+
+    await entity.async_update()
+    assert entity.native_value == 33.3
+
+    await entity.async_set_native_value(33.3)
+    assert len(api.calls) == 1
+    assert api.calls[0]["value"] == 333
+    assert entity.native_value == 33.3
+
+
+@pytest.mark.asyncio
 async def test_number_set_native_value_dispatches_write(hass: HomeAssistant) -> None:
     runtime, api, _gateway, _store = make_runtime()
     descriptor = writable_parameter_descriptor(raw_min=0, raw_max=100)

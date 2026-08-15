@@ -93,6 +93,10 @@ def select_command_route(*, has_parameter_address: bool, has_command_rule: bool)
 
 
 def _coerce_number(raw_value: float) -> int | float:
+    # Snap float noise from inverse transforms (e.g. 33.3 / 0.1 → 332.999...).
+    nearest = round(raw_value)
+    if abs(raw_value - nearest) < 1e-9:
+        return int(nearest)
     if raw_value.is_integer():
         return int(raw_value)
     return raw_value

@@ -24,6 +24,7 @@ from .entity_common import (
     record_platform_entity_stats,
 )
 from .runtime import BragerRuntime
+from .status_rules import resolve_entity_bool
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -93,7 +94,7 @@ class BragerSymbolSwitch(SwitchEntity):
             self._unsubscribe_connectivity = None
 
     async def async_update(self) -> None:
-        """Refresh switch state from ParamStore value."""
+        """Refresh switch state from ParamStore value and command rules."""
         raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
         self._attr_available = entity_is_available(
             self._runtime,
@@ -102,7 +103,11 @@ class BragerSymbolSwitch(SwitchEntity):
         )
         if raw_value is None:
             return
-        self._attr_is_on = _coerce_bool(raw_value)
+        self._attr_is_on = resolve_entity_bool(
+            descriptor=self._descriptor,
+            flat_values=self._runtime.store.flatten(),
+            default_actual=raw_value,
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn switch on by dispatching a write command."""
@@ -124,17 +129,3 @@ class BragerSymbolSwitch(SwitchEntity):
         if devid != self._devid or not online_changed:
             return
         self.async_schedule_update_ha_state(True)
-
-
-def _coerce_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(int(value))
-    if isinstance(value, str):
-        norm = value.strip().casefold()
-        if norm in {"1", "true", "on", "enabled", "yes"}:
-            return True
-        if norm in {"0", "false", "off", "disabled", "no"}:
-            return False
-    return False

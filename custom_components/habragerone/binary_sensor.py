@@ -31,7 +31,7 @@ from .entity_common import (
     record_platform_entity_stats,
 )
 from .runtime import BragerRuntime
-from .status_rules import resolve_rule_bool
+from .status_rules import coerce_status_bool, resolve_entity_bool
 
 
 def _descriptor_labels(descriptor: dict[str, Any]) -> dict[str, Any]:
@@ -154,12 +154,11 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         if raw_value is None:
             return
 
-        rule_value = resolve_rule_bool(
+        self._attr_is_on = resolve_entity_bool(
             descriptor=self._descriptor,
             flat_values=self._runtime.store.flatten(),
             default_actual=raw_value,
         )
-        self._attr_is_on = rule_value if rule_value is not None else _to_bool(raw_value)
 
     def _on_runtime_update(self, _update: ParamUpdate) -> None:
         update_key = f"{_update.pool}.{_update.chan}{_update.idx}"
@@ -283,46 +282,5 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
 
 
 def _to_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(int(value))
-    if isinstance(value, str):
-        norm = value.strip().casefold()
-        if norm in {
-            "1",
-            "true",
-            "on",
-            "enabled",
-            "yes",
-            "tak",
-            "włączony",
-            "wlaczony",
-            "włączone",
-            "wlaczone",
-            "włączono",
-            "wlaczono",
-            "załączony",
-            "zalaczony",
-            "załączone",
-            "zalaczone",
-            "załączono",
-            "zalaczono",
-        }:
-            return True
-        if norm in {
-            "0",
-            "false",
-            "off",
-            "disabled",
-            "no",
-            "nie",
-            "wyłączony",
-            "wylaczony",
-            "wyłączone",
-            "wylaczone",
-            "wyłączono",
-            "wylaczono",
-        }:
-            return False
-    return False
+    """Backward-compatible alias for status bool coercion."""
+    return coerce_status_bool(value)
