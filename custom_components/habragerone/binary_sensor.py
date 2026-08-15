@@ -147,7 +147,6 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_name = "Cloud connectivity"
-    _attr_translation_key = "module_connectivity"
 
     def __init__(
         self,
