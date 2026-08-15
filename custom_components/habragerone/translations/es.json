@@ -16,7 +16,7 @@
           "device_grouping": "Agrupación de dispositivos"
         },
         "data_description": {
-          "device_grouping": "Plano = un dispositivo HA por módulo. Agrupar por menú = dispositivos hijos por clave de menú estable (via_device). El cambio reasigna la pertenencia a dispositivos (automatizaciones/paneles). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
+          "device_grouping": "Plano = un dispositivo HA por módulo. Agrupar por menú = dispositivos hijos por clave de menú estable (via_device). El cambio reasigna la pertenencia a dispositivos (automatizaciones/paneles)."
         }
       }
     }

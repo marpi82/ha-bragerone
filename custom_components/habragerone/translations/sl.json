@@ -16,7 +16,7 @@
           "device_grouping": "Združevanje naprav"
         },
         "data_description": {
-          "device_grouping": "Ravno = ena naprava HA na modul. Združi po meniju = podrejene naprave po stabilnem ključu menija (via_device). Sprememba prerazporedi pripadnost naprav (avtomatizacije/nadzorne plošče). Connectivity remains on a separate module.connection child device (via_device) in flat mode too."
+          "device_grouping": "Ravno = ena naprava HA na modul. Združi po meniju = podrejene naprave po stabilnem ključu menija (via_device). Sprememba prerazporedi pripadnost naprav (avtomatizacije/nadzorne plošče)."
         }
       }
     }
