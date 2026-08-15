@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import types
+
 import pytest
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.const import EntityCategory
@@ -188,3 +190,138 @@ async def test_connectivity_sensor_tracks_runtime(hass: HomeAssistant) -> None:
     runtime._apply_module_online("DEV1", False, connected_at=0)
     await entity.async_update()
     assert entity._attr_is_on is False
+
+    entity._on_connectivity("OTHER", True)
+    entity._on_connectivity("DEV1", False)
+    await entity.async_will_remove_from_hass()
+    assert entity._unsubscribe_connectivity is None
+
+
+@pytest.mark.asyncio
+async def test_async_setup_skips_non_dict_connection_rows(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}, "": {"name": "bad"}})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **entry.data,
+            CONF_MODULES_META: {"DEV1": "not-a-dict", "": {"name": "bad"}},
+            CONF_CONNECTION_DESCRIPTORS: ["bad", {"devid": ""}, CONNECTION_DESCRIPTOR],
+        },
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    added: list[object] = []
+    await async_setup_entry(hass, entry, added.extend)
+    connectivity = [entity for entity in added if isinstance(entity, BragerModuleConnectivityBinarySensor)]
+    assert len(connectivity) == 1
+
+
+@pytest.mark.asyncio
+async def test_connectivity_sensor_requires_spa_label(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    with pytest.raises(ValueError, match="missing SPA i18n label"):
+        BragerModuleConnectivityBinarySensor(
+            entry=entry,
+            runtime=runtime,
+            devid="DEV1",
+            module_meta={"name": "Boiler"},
+            connection_descriptor={"labels": {}},
+        )
+
+
+@pytest.mark.asyncio
+async def test_runtime_connectivity_listener_compat_and_seed_edges() -> None:
+    from typing import ClassVar
+
+    from custom_components.habragerone.runtime import BragerRuntime
+
+    runtime, _api, _gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    two_arg: list[tuple[str, bool]] = []
+    runtime.add_connectivity_listener(lambda devid, online: two_arg.append((devid, online)))
+    boom_calls = 0
+
+    def _boom(_devid: str, _online: bool, _flipped: bool = True) -> None:
+        nonlocal boom_calls
+        boom_calls += 1
+        raise RuntimeError("listener boom")
+
+    runtime.add_connectivity_listener(_boom)
+    runtime._apply_module_online("DEV1", True, connected_at=1)
+    assert two_arg == [("DEV1", True)]
+    assert boom_calls == 1
+
+    # Bad gateway events are ignored.
+    runtime._on_gateway_connectivity(object())
+    runtime._on_gateway_connectivity(types.SimpleNamespace(devid="", online=True))
+    runtime._on_gateway_connectivity(
+        types.SimpleNamespace(devid="DEV1", online=False, online_changed="yes", connected_at=0, gateway=None)
+    )
+    assert runtime.module_online("DEV1") is False
+
+    # Seed skips when gateway has no modules list / no online getter.
+    class _NoModules:
+        def on_module_connectivity(self, _cb: object) -> None:
+            return None
+
+        def module_online(self, _devid: str) -> bool | None:
+            return True
+
+    runtime.gateway = _NoModules()  # type: ignore[assignment]
+    runtime._seed_module_online_from_gateway()
+
+    class _BadModules:
+        modules: ClassVar[object] = "nope"
+
+        def on_module_connectivity(self, _cb: object) -> None:
+            return None
+
+        def module_online(self, _devid: str) -> bool | None:
+            return True
+
+    runtime.gateway = _BadModules()  # type: ignore[assignment]
+    runtime._seed_module_online_from_gateway()
+
+    class _NoOnlineGetter:
+        modules: ClassVar[list[str]] = ["DEV1"]
+
+        def on_module_connectivity(self, _cb: object) -> None:
+            return None
+
+    runtime.gateway = _NoOnlineGetter()  # type: ignore[assignment]
+    assert runtime.supports_module_connectivity is False
+    runtime._seed_module_online_from_gateway()
+
+    class _SupportsButNoGetter:
+        modules: ClassVar[list[str]] = ["DEV1"]
+        module_online = None
+
+        def on_module_connectivity(self, _cb: object) -> None:
+            return None
+
+    class _NonBoolOnline:
+        modules: ClassVar[list[str]] = ["DEV1"]
+
+        def on_module_connectivity(self, _cb: object) -> None:
+            return None
+
+        def module_online(self, _devid: str) -> object:
+            return "yes"
+
+        def module_connected_at(self, _devid: str) -> None:
+            return None
+
+        def module_gateway(self, _devid: str) -> None:
+            return None
+
+    original_supports = BragerRuntime.supports_module_connectivity
+    try:
+        BragerRuntime.supports_module_connectivity = property(lambda self: True)  # type: ignore[assignment,method-assign]
+        runtime.gateway = _SupportsButNoGetter()  # type: ignore[assignment]
+        runtime._seed_module_online_from_gateway()
+    finally:
+        BragerRuntime.supports_module_connectivity = original_supports  # type: ignore[assignment]
+
+    runtime.gateway = _NonBoolOnline()  # type: ignore[assignment]
+    runtime._seed_module_online_from_gateway()
+    assert runtime.module_online("DEV1") is False

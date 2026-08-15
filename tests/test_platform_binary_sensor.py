@@ -148,3 +148,11 @@ async def test_binary_sensor_runtime_update_schedules_refresh_for_matching_key(h
     entity.async_schedule_update_ha_state.reset_mock()
     entity._on_runtime_update(FakeParamUpdate(pool="P9", chan="v", idx=1))
     entity.async_schedule_update_ha_state.assert_not_called()
+
+    entity.async_schedule_update_ha_state.reset_mock()
+    entity._on_connectivity("OTHER", False)
+    entity.async_schedule_update_ha_state.assert_not_called()
+    entity._on_connectivity("DEV1", False, online_changed=False)
+    entity.async_schedule_update_ha_state.assert_not_called()
+    entity._on_connectivity("DEV1", False)
+    entity.async_schedule_update_ha_state.assert_called_once_with(True)

@@ -212,8 +212,89 @@ def test_empty_panel_groups_warn_without_failing_bootstrap(
     assert "M1" in warnings[0].getMessage()
 
 
+def test_connection_descriptors_built_from_spa_labels(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _LabeledResolver(_RecordingResolver):
+        async def resolve_module_connection_labels(self, *, lang: str | None = None) -> dict[str, str]:
+            _ = lang
+            return {
+                "serverConnection": "Server connection status",
+                "connection.status": "Connection with module status",
+                "connection.index": "Connection with module",
+            }
+
+    _RecordingResolver.gated_groups = {"Panel": ["SYM_GATED"]}
+    _RecordingResolver.ungated_groups = {}
+    _RecordingResolver.calls = []
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _LabeledResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+    descriptors = payload["connection_descriptors"]
+    assert len(descriptors) == 1
+    assert descriptors[0]["menu_key"] == "module.connection"
+    assert descriptors[0]["label"] == "Connection with module status"
+    assert "Connection with module" in descriptors[0]["device_name"]
+
+
+def test_connection_label_resolve_failure_warns_when_api_supported(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    class _BrokenLabels(_RecordingResolver):
+        async def resolve_module_connection_labels(self, *, lang: str | None = None) -> dict[str, str]:
+            _ = lang
+            raise RuntimeError("i18n down")
+
+    _RecordingResolver.gated_groups = {"Panel": ["SYM_GATED"]}
+    _RecordingResolver.ungated_groups = {}
+    _RecordingResolver.calls = []
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _BrokenLabels)
+
+    with caplog.at_level(logging.WARNING, logger=BOOTSTRAP_LOGGER):
+        payload = asyncio.run(
+            async_build_bootstrap_payload(
+                api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+                object_id=1,
+                modules=["M1"],
+                language="en",
+            )
+        )
+    assert payload["connection_descriptors"] == []
+    assert any("Skipping connection_descriptors" in record.getMessage() for record in caplog.records)
+
+
+def test_connection_label_non_dict_skips_descriptors(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _NonDictLabels(_RecordingResolver):
+        async def resolve_module_connection_labels(self, *, lang: str | None = None) -> object:
+            _ = lang
+            return ["not", "a", "dict"]
+
+    _RecordingResolver.gated_groups = {"Panel": ["SYM_GATED"]}
+    _RecordingResolver.ungated_groups = {}
+    _RecordingResolver.calls = []
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _NonDictLabels)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+    assert payload["connection_descriptors"] == []
+
 def test_failing_panel_group_build_propagates_instead_of_caching_emptiness() -> None:
     """A broken panel extraction must fail setup rather than report zero entities."""
+
 
     class _AlwaysFailingResolver:
         async def build_panel_groups(

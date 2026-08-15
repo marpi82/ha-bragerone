@@ -109,3 +109,23 @@ async def test_diagnostics_reports_unknown_platforms(hass: HomeAssistant) -> Non
 
     assert summary["unknown_platforms"] == {"climate": 1}
     assert "climate" not in summary["platform_breakdown"]
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_includes_module_connectivity(hass: HomeAssistant) -> None:
+    from custom_components.habragerone.const import DATA_RUNTIME
+    from tests.helpers.fakes import make_runtime
+
+    runtime, _api, gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler", "connectedAt": 99}})
+    gateway.modules = ["DEV1", "DEV2"]
+    gateway._online["DEV1"] = True
+    gateway._connected_at["DEV1"] = 99
+    runtime._module_online["DEV1"] = True
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[{"platform": "sensor", "symbol": "TEMP"}])
+    hass.data[DOMAIN][entry.entry_id][DATA_RUNTIME] = runtime
+
+    payload = await async_get_config_entry_diagnostics(hass, entry)
+    connectivity = payload["connectivity"]
+    assert connectivity["DEV1"]["online"] is True
+    assert connectivity["DEV1"]["connectedAt"] == 99
+    assert "DEV2" in connectivity

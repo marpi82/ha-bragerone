@@ -125,6 +125,8 @@ class FakeGateway:
             source=source,
             connected_at=connected_at if connected_at is not None else self._connected_at.get(devid),
             gateway=self._gateway.get(devid),
+            online_changed=True,
+            metadata_changed=False,
         )
         for callback in list(self._connectivity_callbacks):
             callback(event)
