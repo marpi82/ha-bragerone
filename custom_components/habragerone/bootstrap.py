@@ -1052,6 +1052,7 @@ async def async_build_bootstrap_payload(
             "device_menu": module.deviceMenu,
             "module_interface": module.moduleInterface,
             "module_address": module.moduleAddress,
+            "connectedAt": module.connectedAt,
         }
 
         for symbol in sorted(per_module_symbols.get(module.devid, set())):

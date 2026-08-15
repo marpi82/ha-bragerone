@@ -19,6 +19,7 @@ from pybragerone.models.param_resolver import ParamResolver
 from .command_write import WriteContext, WriteValidationError, prepare_write
 
 UpdateCallback = Callable[[ParamUpdate], None]
+ConnectivityCallback = Callable[[str, bool], None]
 LOGGER = logging.getLogger(__name__)
 
 
@@ -34,6 +35,8 @@ class BragerRuntime:
 
     _tasks: list[asyncio.Task[Any]] = field(default_factory=list)
     _listeners: set[UpdateCallback] = field(default_factory=set)
+    _connectivity_listeners: set[ConnectivityCallback] = field(default_factory=set)
+    _module_online: dict[str, bool] = field(default_factory=dict)
     _start_monotonic: float | None = None
     _first_update_logged: bool = False
     _status_resolver: ParamResolver | None = None
@@ -45,6 +48,9 @@ class BragerRuntime:
         self._first_update_logged = False
         self._tasks.append(asyncio.create_task(self.store.run_with_bus(self.gateway.bus), name="habragerone-store-sync"))
         self._tasks.append(asyncio.create_task(self._dispatch_updates(), name="habragerone-update-dispatch"))
+        register = getattr(self.gateway, "on_module_connectivity", None)
+        if callable(register):
+            register(self._on_gateway_connectivity)
         try:
             await self.gateway.start()
         except Exception:
@@ -55,6 +61,7 @@ class BragerRuntime:
                     await task
             self._tasks.clear()
             raise
+        self._seed_module_online_from_gateway()
         if self._start_monotonic is not None:
             LOGGER.debug(
                 "Runtime gateway.start completed in %.3fs (modules=%s)",
@@ -82,6 +89,64 @@ class BragerRuntime:
             self._listeners.discard(callback)
 
         return _remove
+
+    def add_connectivity_listener(self, callback: ConnectivityCallback) -> Callable[[], None]:
+        """Register a module online/offline listener and return unsubscribe callable."""
+        self._connectivity_listeners.add(callback)
+
+        def _remove() -> None:
+            self._connectivity_listeners.discard(callback)
+
+        return _remove
+
+    def module_online(self, devid: str) -> bool | None:
+        """Return cached module online state, or ``None`` if not yet known."""
+        return self._module_online.get(devid)
+
+    def _seed_module_online_from_gateway(self) -> None:
+        """Pull initial online bits from the gateway after start."""
+        modules = getattr(self.gateway, "modules", None)
+        if not isinstance(modules, list):
+            return
+        online_getter = getattr(self.gateway, "module_online", None)
+        connected_at_getter = getattr(self.gateway, "module_connected_at", None)
+        if not callable(online_getter):
+            return
+        for raw_devid in modules:
+            devid = str(raw_devid)
+            online = online_getter(devid)
+            if not isinstance(online, bool):
+                continue
+            connected_at = connected_at_getter(devid) if callable(connected_at_getter) else None
+            self._apply_module_online(devid, online, connected_at=connected_at if isinstance(connected_at, int) else None)
+
+    def _on_gateway_connectivity(self, event: Any) -> None:
+        """Handle ``ModuleConnectivity`` (or duck-typed) events from the gateway."""
+        devid = str(getattr(event, "devid", "") or "")
+        online = getattr(event, "online", None)
+        if not devid or not isinstance(online, bool):
+            return
+        connected_at = getattr(event, "connected_at", None)
+        self._apply_module_online(
+            devid,
+            online,
+            connected_at=connected_at if isinstance(connected_at, int) else None,
+        )
+
+    def _apply_module_online(self, devid: str, online: bool, *, connected_at: int | None) -> None:
+        """Update cache/modules_meta and notify connectivity listeners on change."""
+        previous = self._module_online.get(devid)
+        self._module_online[devid] = online
+        if connected_at is not None:
+            meta = self.modules_meta.setdefault(devid, {})
+            meta["connectedAt"] = connected_at
+        if previous is online:
+            return
+        for callback in list(self._connectivity_listeners):
+            try:
+                callback(devid, online)
+            except Exception:
+                LOGGER.exception("Connectivity listener failed for devid=%s", devid)
 
     async def async_write(
         self,
