@@ -13,7 +13,7 @@ from tests.conftest import install_pybragerone_stubs
 install_pybragerone_stubs()
 
 from custom_components.habragerone.bootstrap import (  # noqa: E402
-    _build_panel_groups_with_fallback,
+    _build_permission_gated_panel_groups,
     async_build_bootstrap_payload,
 )
 
@@ -229,7 +229,7 @@ def test_failing_panel_group_build_propagates_instead_of_caching_emptiness() -> 
 
     with pytest.raises(RuntimeError, match="extraction failed"):
         asyncio.run(
-            _build_panel_groups_with_fallback(
+            _build_permission_gated_panel_groups(
                 _AlwaysFailingResolver(),
                 device_menu="M1",
                 permissions=["DISPLAY_PARAMETER_LEVEL_1"],

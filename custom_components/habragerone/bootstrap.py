@@ -691,7 +691,7 @@ def _panel_group_symbols(groups: Mapping[str, list[str]]) -> set[str]:
     return {symbol for panel_symbols in groups.values() for symbol in panel_symbols if symbol}
 
 
-async def _build_panel_groups_with_fallback(
+async def _build_permission_gated_panel_groups(
     resolver: Any,
     *,
     device_menu: Any,
@@ -791,7 +791,7 @@ async def async_build_bootstrap_payload(
         module_mode = normalized_module_modes.get(str(module.devid), filter_mode)
         web_ui_only = module_mode == FILTER_MODE_UI
 
-        groups = await _build_panel_groups_with_fallback(
+        groups = await _build_permission_gated_panel_groups(
             resolver,
             device_menu=module.deviceMenu,
             permissions=module_permissions,
