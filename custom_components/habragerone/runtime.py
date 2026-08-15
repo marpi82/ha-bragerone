@@ -18,6 +18,7 @@ from pybragerone.models.param import ParamStore
 from pybragerone.models.param_resolver import ParamResolver
 
 from .command_write import WriteContext, WriteValidationError, prepare_write
+from .numeric_display import descriptor_numeric_transform
 
 UpdateCallback = Callable[[ParamUpdate], None]
 # devid, online, online_changed — metadata-only updates set online_changed=False.
@@ -253,6 +254,7 @@ class BragerRuntime:
             has_parameter_address=has_parameter_address,
             has_command_rule=has_command_rule,
             enum_mapping=enum_mapping,
+            transform=descriptor_numeric_transform(descriptor),
             raw_min=descriptor.get("min") if isinstance(descriptor.get("min"), int | float) else None,
             raw_max=descriptor.get("max") if isinstance(descriptor.get("max"), int | float) else None,
         )
@@ -512,8 +514,16 @@ def _read_target_actual(
             value = modules_meta.get(devid, {}).get("connectedAt")
 
     bit = target.get("bit")
-    if isinstance(bit, int) and isinstance(value, int):
-        return (value >> bit) & 1
+    if isinstance(bit, int):
+        bitmask_value: int | None = None
+        if isinstance(value, bool):
+            bitmask_value = None
+        elif isinstance(value, int):
+            bitmask_value = value
+        elif isinstance(value, float) and value.is_integer():
+            bitmask_value = int(value)
+        if bitmask_value is not None:
+            return (bitmask_value >> bit) & 1
     return value
 
 

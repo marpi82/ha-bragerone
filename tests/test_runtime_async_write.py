@@ -55,6 +55,36 @@ async def test_async_write_raw_command_failure_raises() -> None:
 
 
 @pytest.mark.asyncio
+async def test_async_write_applies_inverse_numeric_transform() -> None:
+    runtime, api, _gateway, _store = make_runtime()
+    descriptor = writable_parameter_descriptor(raw_min=0, raw_max=400)
+    descriptor.update({"transform_scale": 0.1, "transform_offset": 0.0})
+    await runtime.async_write(descriptor=descriptor, input_display_value=33.3)
+    assert api.calls[0]["value"] == 333
+
+
+def test_read_target_actual_accepts_integer_floats() -> None:
+    assert (
+        _read_target_actual(
+            {"address": "P5.s0", "bit": 0},
+            flat_values={"P5.s0": 64.0},
+            devid="DEV1",
+            modules_meta={},
+        )
+        == 0
+    )
+    assert (
+        _read_target_actual(
+            {"address": "P5.s0", "bit": 0},
+            flat_values={"P5.s0": 65.0},
+            devid="DEV1",
+            modules_meta={},
+        )
+        == 1
+    )
+
+
+@pytest.mark.asyncio
 async def test_async_write_applies_enum_mapping() -> None:
     runtime, api, _gateway, _store = make_runtime()
     descriptor = writable_parameter_descriptor()

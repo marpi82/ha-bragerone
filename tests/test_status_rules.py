@@ -121,6 +121,43 @@ def test_read_target_actual_handles_address_bit_and_mask() -> None:
     assert read_target_actual({"address": "P1.v1"}, flat_values={"P1.v1": "text"}) == "text"
     assert read_target_actual({"address": "P1.s0", "bit": 2}, flat_values={"P1.s0": 0b100}) == 1
     assert read_target_actual({"address": "P1.s0", "mask": 0x0F}, flat_values={"P1.s0": 0xF0}) == 0
+    assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": 64.0}) == 0
+    assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": 65.0}) == 1
+
+
+def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:
+    from custom_components.habragerone.status_rules import resolve_entity_bool
+
+    descriptor = {
+        "mapping": {
+            "command_rules": [
+                {
+                    "value": "OFF",
+                    "conditions": [{"operation": "equalTo", "expected": 0, "targets": [{"address": "P5.s11", "bit": 1}]}],
+                },
+                {
+                    "value": "ON",
+                    "conditions": [{"operation": "equalTo", "expected": 1, "targets": [{"address": "P5.s11", "bit": 1}]}],
+                },
+            ]
+        }
+    }
+    assert resolve_entity_bool(descriptor=descriptor, flat_values={"P5.s11": 64.0}, default_actual=64.0) is False
+    assert resolve_entity_bool(descriptor=descriptor, flat_values={"P5.s11": 66.0}, default_actual=66.0) is True
+
+    # Rules missing targets: refuse multi-bit raw fallback.
+    bare = {"mapping": {"command_rules": [{"value": "ON", "conditions": [{"operation": "equalTo", "expected": 1}]}]}}
+    assert resolve_entity_bool(descriptor=bare, flat_values={}, default_actual=64) is False
+
+    # Single mapping input bit recovers state when rules cannot match.
+    with_input = {
+        "mapping": {
+            "command_rules": [],
+            "inputs": [{"address": "P5.s0", "bit": 0}],
+        }
+    }
+    assert resolve_entity_bool(descriptor=with_input, flat_values={"P5.s0": 64}, default_actual=64) is False
+    assert resolve_entity_bool(descriptor=with_input, flat_values={"P5.s0": 65}, default_actual=65) is True
 
 
 def test_compare_condition_supports_prefixed_and_not_equal_operations() -> None:
