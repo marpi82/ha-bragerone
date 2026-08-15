@@ -5,13 +5,17 @@
 #
 # Process (do not skip): beta/rc pre-release → live HACS smoke → stable.
 # Full checklist: DEVELOPMENT.md → "Publishing Releases".
+# Tags match historical CalVer without a "v" prefix (e.g. 2026.8.5rc1).
 # Tag suffix drives GitHub/HACS channel via .github/workflows/release.yml
 # (tags matching (a|b|rc)[0-9]+$ are marked prerelease=true).
 #
+# Before tagging a pre-release/stable, bump custom_components/habragerone/manifest.json
+# "version" to the same string as the tag (HACS zip embeds that file).
+#
 # Examples:
-#   ./scripts/release.sh 2026.8.5 beta   # Pre-release first (v2026.8.5b1)
-#   ./scripts/release.sh 2026.8.5 rc     # Optional RC after beta
-#   ./scripts/release.sh 2026.8.5        # Stable only after live smoke
+#   ./scripts/release.sh 2026.8.5 beta   # Pre-release first (2026.8.5b1)
+#   ./scripts/release.sh 2026.8.5 rc     # Optional RC after beta (2026.8.5rc1)
+#   ./scripts/release.sh 2026.8.5        # Stable only after live smoke (2026.8.5)
 #   ./scripts/release.sh 2026.8.5 alpha  # Early alpha if needed
 
 set -e
@@ -58,34 +62,39 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-# Construct tag name based on release type
+# Exact tag existence (avoid grep regex false positives on CalVer dots).
+tag_exists() {
+    git rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1
+}
+
+# Construct tag name based on release type (no "v" prefix — matches existing tags)
 case $RELEASE_TYPE in
     stable)
-        TAG="v$VERSION"
+        TAG="$VERSION"
         ;;
     alpha)
         # Find next alpha number
         ALPHA_NUM=1
-        while git tag | grep -q "v${VERSION}a${ALPHA_NUM}"; do
+        while tag_exists "${VERSION}a${ALPHA_NUM}"; do
             ((ALPHA_NUM++))
         done
-        TAG="v${VERSION}a${ALPHA_NUM}"
+        TAG="${VERSION}a${ALPHA_NUM}"
         ;;
     beta)
         # Find next beta number
         BETA_NUM=1
-        while git tag | grep -q "v${VERSION}b${BETA_NUM}"; do
+        while tag_exists "${VERSION}b${BETA_NUM}"; do
             ((BETA_NUM++))
         done
-        TAG="v${VERSION}b${BETA_NUM}"
+        TAG="${VERSION}b${BETA_NUM}"
         ;;
     rc)
         # Find next rc number
         RC_NUM=1
-        while git tag | grep -q "v${VERSION}rc${RC_NUM}"; do
+        while tag_exists "${VERSION}rc${RC_NUM}"; do
             ((RC_NUM++))
         done
-        TAG="v${VERSION}rc${RC_NUM}"
+        TAG="${VERSION}rc${RC_NUM}"
         ;;
     *)
         log_error "Invalid release type: $RELEASE_TYPE"
@@ -95,12 +104,25 @@ case $RELEASE_TYPE in
 esac
 
 # Check if tag already exists
-if git tag | grep -q "^$TAG$"; then
+if tag_exists "$TAG"; then
     log_error "Tag $TAG already exists"
     exit 1
 fi
 
 log_info "Preparing release $TAG ($RELEASE_TYPE)"
+
+# HACS zip embeds manifest.json — version must match the tag.
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+MANIFEST_PATH="$REPO_ROOT/custom_components/habragerone/manifest.json"
+MANIFEST_VERSION="$(python3 -c "import json; print(json.load(open(\"$MANIFEST_PATH\"))[\"version\"])" 2>/dev/null || true)"
+if [ -z "$MANIFEST_VERSION" ]; then
+    log_error "Could not read $MANIFEST_PATH version"
+    exit 1
+fi
+if [ "$MANIFEST_VERSION" != "$TAG" ]; then
+    log_error "manifest.json version ($MANIFEST_VERSION) != tag ($TAG). Bump manifest first."
+    exit 1
+fi
 
 # Show what will be published
 if [ "$RELEASE_TYPE" = "stable" ]; then

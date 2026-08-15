@@ -58,7 +58,7 @@ Do **not** cut a stable HACS tag until the same version has been smoke-tested as
 2. Tag a **pre-release** (prefer `beta`, then `rc` if needed):
 
    ```bash
-   ./scripts/release.sh 2026.x.y beta   # pushes v2026.x.yb1 → GitHub pre-release
+   ./scripts/release.sh 2026.x.y beta   # pushes 2026.x.yb1 → GitHub pre-release
    ```
 
 3. In HACS, enable **Show beta versions** (or equivalent) and install/update the pre-release on a **live** HA instance.
@@ -67,10 +67,12 @@ Do **not** cut a stable HACS tag until the same version has been smoke-tested as
 6. Only then cut **stable**:
 
    ```bash
-   ./scripts/release.sh 2026.x.y stable # pushes v2026.x.y → GitHub release (HACS default)
+   ./scripts/release.sh 2026.x.y stable # pushes 2026.x.y → GitHub release (HACS default)
    ```
 
-Tag suffix matters: `.github/workflows/release.yml` (`Detect tag and pre-release`) sets `prerelease=true` when the tag matches `(a|b|rc)[0-9]+$` (`v2026.x.ya1`, `…b1`, `…rc1`). HACS surfaces those as opt-in pre-releases; unsuffixed `v2026.x.y` is the stable channel.
+Bump `custom_components/habragerone/manifest.json` `"version"` to the **exact** tag string before tagging (the HACS zip embeds that file).
+
+Tag suffix matters: `.github/workflows/release.yml` (`Detect tag and pre-release`) sets `prerelease=true` when the tag matches `(a|b|rc)[0-9]+$` (`2026.x.ya1`, `…b1`, `…rc1`). HACS surfaces those as opt-in pre-releases; unsuffixed `2026.x.y` is the stable channel. Tags do **not** use a `v` prefix (match existing releases such as `2026.8.4`).
 
 #### Commands
 
@@ -85,5 +87,5 @@ Tag suffix matters: `.github/workflows/release.yml` (`Detect tag and pre-release
 ```
 
 GitHub Actions then builds the package and publishes:
-- **GitHub Releases** for stable tags (`v2026.x.y`)
-- **GitHub pre-releases** for suffixed tags (`v2026.x.ya1`, `v2026.x.yb1`, `v2026.x.yrc1`)
+- **GitHub Releases** for stable tags (`2026.x.y`)
+- **GitHub pre-releases** for suffixed tags (`2026.x.ya1`, `2026.x.yb1`, `2026.x.yrc1`)
