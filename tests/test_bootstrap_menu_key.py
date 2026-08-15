@@ -242,3 +242,39 @@ def test_resolve_menu_key_prefers_own_route_meta() -> None:
         )
         == "modules.menu.other"
     )
+
+
+def test_menu_keys_by_panel_path_skips_blank_and_non_string_paths() -> None:
+    panel_paths = {
+        "STATUS_OK": "Podajnik",
+        "BAD_BLANK": "   ",
+        "BAD_TYPE": 12,  # type: ignore[dict-item]
+    }
+    symbol_routes = {
+        "STATUS_OK": [{"name": "modules.menu.feeder", "path": "feeder"}],
+        "BAD_BLANK": [{"name": "modules.menu.feeder", "path": "feeder"}],
+        "BAD_TYPE": [{"name": "modules.menu.feeder", "path": "feeder"}],
+    }
+    panel_menu_keys = _menu_keys_by_panel_path(panel_paths, symbol_routes)  # type: ignore[arg-type]
+    assert panel_menu_keys == {"Podajnik": "modules.menu.feeder"}
+
+
+def test_resolve_menu_key_returns_none_without_path_or_sibling() -> None:
+    assert (
+        _resolve_menu_key_for_symbol(
+            symbol="PARAM_ORPHAN",
+            panel_path="   ",
+            symbol_routes={},
+            panel_menu_keys={"Podajnik": "modules.menu.feeder"},
+        )
+        is None
+    )
+    assert (
+        _resolve_menu_key_for_symbol(
+            symbol="PARAM_ORPHAN",
+            panel_path="Inny panel",
+            symbol_routes={},
+            panel_menu_keys={"Podajnik": "modules.menu.feeder"},
+        )
+        is None
+    )
