@@ -45,6 +45,7 @@ class EntityDescriptor(TypedDict, total=False):
     panel_path: str
     menu_key: str
     menu_title: str
+    menu_group_title: str
     label: str
     unit: str | dict[str, str] | None
     pool: str | None
@@ -470,10 +471,16 @@ def _collect_symbol_kinds_from_menu(menu: Any) -> dict[str, set[str]]:
 
 
 def _collect_symbol_route_meta_from_menu(menu: Any) -> dict[str, list[dict[str, Any]]]:
+    """Walk the menu tree and record route meta (with ancestors) per symbol.
+
+    Ancestor chains enable parent-level device grouping (#176): child routes
+    inherit the nearest stable parent ``name`` / ``path`` as ``menu_key``.
+    """
     symbol_routes: dict[str, list[dict[str, Any]]] = {}
-    stack = list(_get_field(menu, "routes") or [])[::-1]
+    roots = list(_get_field(menu, "routes") or [])
+    stack: list[tuple[Any, tuple[dict[str, Any], ...]]] = [(route, ()) for route in reversed(roots)]
     while stack:
-        route = stack.pop()
+        route, ancestors = stack.pop()
         symbols = _collect_symbols_from_route(route)
         route_meta = _get_field(route, "meta")
         route_name = _get_field(route, "name")
@@ -489,13 +496,19 @@ def _collect_symbol_route_meta_from_menu(menu: Any) -> dict[str, list[dict[str, 
             "is_visible_on_side_menu": route_visible,
             "display_dropdown": route_dropdown,
             "component": str(route_component) if route_component is not None else None,
+            "ancestors": list(ancestors),
         }
         for symbol in symbols:
             symbol_routes.setdefault(symbol, []).append(payload)
         children = _get_field(route, "children")
         if isinstance(children, list):
+            ancestor_payload = {
+                "name": route_name,
+                "path": route_path,
+            }
+            next_ancestors = (*ancestors, ancestor_payload)
             for child in reversed(children):
-                stack.append(child)
+                stack.append((child, next_ancestors))
     return symbol_routes
 
 
@@ -513,23 +526,45 @@ def _is_stable_menu_route_name(name: str) -> bool:
     )
 
 
-def _stable_menu_key_from_route_meta(routes: list[dict[str, Any]]) -> str | None:
-    """Pick one stable menu key from collected route meta (first wins).
+def _path_menu_token(value: Any) -> str | None:
+    """Normalize a route path into a stable menu token, or ``None`` if unusable."""
+    if not isinstance(value, str):
+        return None
+    token = value.strip().strip("/")
+    if token and token not in {".", ".."}:
+        return token
+    return None
 
-    Prefers router ``name`` markers such as ``modules.menu.boiler``, then
-    ``path`` segments such as ``dhw`` / ``valve1``. Localized display titles are
+
+def _stable_menu_key_from_route_meta(routes: list[dict[str, Any]]) -> str | None:
+    """Pick one stable menu key from collected route meta (parent wins).
+
+    Prefers the first stable ancestor router ``name`` (parent menu), then
+    ancestor ``path``, then the leaf route itself. Localized display titles are
     never used as identifiers.
     """
     for route in routes:
+        ancestors = route.get("ancestors")
+        if isinstance(ancestors, list):
+            for ancestor in ancestors:
+                if not isinstance(ancestor, dict):
+                    continue
+                name = ancestor.get("name")
+                if isinstance(name, str) and _is_stable_menu_route_name(name):
+                    return name.strip()
+            for ancestor in ancestors:
+                if not isinstance(ancestor, dict):
+                    continue
+                token = _path_menu_token(ancestor.get("path"))
+                if token is not None:
+                    return token
         name = route.get("name")
         if isinstance(name, str) and _is_stable_menu_route_name(name):
             return name.strip()
     for route in routes:
-        path = route.get("path")
-        if isinstance(path, str):
-            token = path.strip().strip("/")
-            if token and token not in {".", ".."}:
-                return token
+        token = _path_menu_token(route.get("path"))
+        if token is not None:
+            return token
     for route in routes:
         name = route.get("name")
         if isinstance(name, str) and name.strip():
@@ -538,11 +573,19 @@ def _stable_menu_key_from_route_meta(routes: list[dict[str, Any]]) -> str | None
 
 
 def _menu_title_from_panel_path(panel_path: str) -> str:
-    """Return the leaf segment of a localized panel path for device display names."""
+    """Return the leaf segment of a localized panel path for entity name prefixes."""
     normalized = _normalize_panel_path(panel_path)
     if not normalized:
         return ""
     return normalized.rsplit("/", 1)[-1].strip()
+
+
+def _menu_group_title_from_panel_path(panel_path: str) -> str:
+    """Return the root segment of a localized panel path for device display names."""
+    normalized = _normalize_panel_path(panel_path)
+    if not normalized:
+        return ""
+    return normalized.split("/", 1)[0].strip()
 
 
 def _collect_symbols_from_menu(menu: Any) -> set[str]:
@@ -1153,6 +1196,7 @@ async def async_build_bootstrap_payload(
             panel_path = per_module_panel_paths.get(module.devid, {}).get(symbol, "")
             menu_key = _stable_menu_key_from_route_meta(per_module_symbol_routes.get(module.devid, {}).get(symbol, []))
             menu_title = _menu_title_from_panel_path(panel_path)
+            menu_group_title = _menu_group_title_from_panel_path(panel_path)
             unit_value = payload.get("unit")
             if unit_value is None and isinstance(mapping, dict):
                 unit_candidates: list[Any] = []
@@ -1206,6 +1250,8 @@ async def async_build_bootstrap_payload(
                 descriptor["menu_key"] = menu_key
             if menu_title:
                 descriptor["menu_title"] = menu_title
+            if menu_group_title:
+                descriptor["menu_group_title"] = menu_group_title
 
             if not _is_exposable_descriptor(
                 writable=writable,

@@ -1,4 +1,4 @@
-"""Unit tests for stable menu_key selection used by device grouping (#165)."""
+"""Unit tests for stable menu_key selection used by device grouping (#165/#176)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from tests.conftest import install_pybragerone_stubs
 install_pybragerone_stubs()
 
 from custom_components.habragerone.bootstrap import (  # noqa: E402
+    _menu_group_title_from_panel_path,
     _menu_title_from_panel_path,
     _stable_menu_key_from_route_meta,
 )
@@ -18,6 +19,28 @@ def test_stable_menu_key_prefers_modules_menu_name() -> None:
         {"name": "modules.menu.dhw", "path": "dhw", "display_name": "CWU"},
     ]
     assert _stable_menu_key_from_route_meta(routes) == "modules.menu.boiler"
+
+
+def test_stable_menu_key_prefers_parent_ancestor_over_leaf() -> None:
+    routes = [
+        {
+            "name": "modules.menu.valve1",
+            "path": "valve1",
+            "ancestors": [{"name": "modules.menu.thermostats", "path": "thermostats"}],
+        },
+    ]
+    assert _stable_menu_key_from_route_meta(routes) == "modules.menu.thermostats"
+
+
+def test_stable_menu_key_uses_ancestor_path_when_name_unstable() -> None:
+    routes = [
+        {
+            "name": "localized valve",
+            "path": "valve1",
+            "ancestors": [{"name": "Menu termostatów", "path": "thermostats"}],
+        },
+    ]
+    assert _stable_menu_key_from_route_meta(routes) == "thermostats"
 
 
 def test_stable_menu_key_falls_back_to_path() -> None:
@@ -52,3 +75,9 @@ def test_menu_title_from_panel_path_uses_leaf() -> None:
     assert _menu_title_from_panel_path("Termostaty/Zawór 1") == "Zawór 1"
     assert _menu_title_from_panel_path("Kocioł") == "Kocioł"
     assert _menu_title_from_panel_path("  ") == ""
+
+
+def test_menu_group_title_from_panel_path_uses_root() -> None:
+    assert _menu_group_title_from_panel_path("Menu termostatów/Zawór 1") == "Menu termostatów"
+    assert _menu_group_title_from_panel_path("Kocioł") == "Kocioł"
+    assert _menu_group_title_from_panel_path("  ") == ""

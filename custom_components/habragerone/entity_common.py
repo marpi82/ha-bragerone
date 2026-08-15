@@ -37,12 +37,19 @@ def device_grouping_mode(entry: ConfigEntry) -> str:
 
 
 def _menu_device_display_name(descriptor: dict[str, Any]) -> str:
-    """Localized child-device name from menu title / panel path leaf."""
+    """Localized child-device name from parent menu group title / leaf fallback."""
+    group_title = str(descriptor.get("menu_group_title") or "").strip()
+    if group_title:
+        return group_title
     title = str(descriptor.get("menu_title") or "").strip()
     if title:
         return title
     panel_path = str(descriptor.get("panel_path") or "").strip()
     if panel_path:
+        # Prefer parent (first) segment for device naming when group title is absent.
+        root = panel_path.split("/", 1)[0].strip()
+        if root:
+            return root
         leaf = panel_path.rsplit("/", 1)[-1].strip()
         if leaf:
             return leaf
