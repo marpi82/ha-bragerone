@@ -4,8 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
+    UnitOfEnergy,
+    UnitOfFrequency,
+    UnitOfPower,
+    UnitOfPressure,
+    UnitOfTemperature,
+    UnitOfVolumeFlowRate,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -68,6 +79,7 @@ class BragerSymbolSensor(SensorEntity):
         self._attr_suggested_object_id = descriptor_suggested_object_id(descriptor)
         self._attr_unique_id = f"{entry.entry_id}_{devid}_{symbol}".lower().replace(" ", "_")
         self._attr_native_unit_of_measurement = self._normalize_unit(descriptor.get("unit"))
+        self._attr_device_class, self._attr_state_class = self._infer_sensor_classes(self._attr_native_unit_of_measurement)
         self._attr_available = True
         self._raw_to_label = descriptor_raw_to_label(descriptor)
         mapping = descriptor.get("mapping")
@@ -119,6 +131,7 @@ class BragerSymbolSensor(SensorEntity):
             normalized_dynamic_unit = self._normalize_unit(resolved_unit)
             if normalized_dynamic_unit:
                 self._attr_native_unit_of_measurement = normalized_dynamic_unit
+                self._attr_device_class, self._attr_state_class = self._infer_sensor_classes(normalized_dynamic_unit)
             if resolved_value is not None:
                 self._attr_native_value = _normalize_text_state(resolved_value)
                 return
@@ -163,13 +176,44 @@ class BragerSymbolSensor(SensorEntity):
                 lowered = unit.casefold()
                 if lowered.startswith(("wn.", "units.", "app.")):
                     return None
-            return unit
+            return _UNIT_ALIASES.get(unit.casefold(), unit)
         if isinstance(value, dict):
             for key in ("en", "pl"):
                 val = value.get(key)
                 if isinstance(val, str) and val.strip():
-                    return val
+                    return _UNIT_ALIASES.get(val.strip().casefold(), val.strip())
         return None
+
+    @staticmethod
+    def _infer_sensor_classes(unit: str | None) -> tuple[SensorDeviceClass | None, SensorStateClass | None]:
+        if unit in {UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT, UnitOfTemperature.KELVIN}:
+            return SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT
+        if unit in {UnitOfEnergy.WATT_HOUR, UnitOfEnergy.KILO_WATT_HOUR, UnitOfEnergy.MEGA_WATT_HOUR}:
+            # Cumulative energy counters — TOTAL_INCREASING keeps energy dashboard / LTS correct.
+            return SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING
+        if unit in {
+            UnitOfPower.WATT,
+            UnitOfPower.KILO_WATT,
+            UnitOfPower.BTU_PER_HOUR,
+        }:
+            return SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT
+        if unit in {UnitOfPressure.PA, UnitOfPressure.HPA, UnitOfPressure.BAR}:
+            return SensorDeviceClass.PRESSURE, SensorStateClass.MEASUREMENT
+        if unit in {UnitOfElectricCurrent.AMPERE, UnitOfElectricCurrent.MILLIAMPERE}:
+            return SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT
+        if unit in {
+            UnitOfElectricPotential.VOLT,
+            UnitOfElectricPotential.MILLIVOLT,
+            UnitOfElectricPotential.KILOVOLT,
+        }:
+            return SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT
+        if unit in {UnitOfFrequency.HERTZ, UnitOfFrequency.KILOHERTZ, UnitOfFrequency.MEGAHERTZ, UnitOfFrequency.GIGAHERTZ}:
+            return SensorDeviceClass.FREQUENCY, SensorStateClass.MEASUREMENT
+        if unit == UnitOfVolumeFlowRate.LITERS_PER_MINUTE:
+            return SensorDeviceClass.VOLUME_FLOW_RATE, SensorStateClass.MEASUREMENT
+        if unit == PERCENTAGE:
+            return None, SensorStateClass.MEASUREMENT
+        return None, None
 
 
 def _normalize_text_state(value: Any) -> Any:
@@ -187,3 +231,33 @@ def _normalize_text_state(value: Any) -> Any:
     if letters and all(ch.isupper() for ch in letters):
         return text
     return f"{head.lower()}{text[1:]}"
+
+
+_UNIT_ALIASES: dict[str, str] = {
+    "°c": UnitOfTemperature.CELSIUS,
+    "c": UnitOfTemperature.CELSIUS,
+    "℃": UnitOfTemperature.CELSIUS,
+    "°f": UnitOfTemperature.FAHRENHEIT,
+    "f": UnitOfTemperature.FAHRENHEIT,
+    "℉": UnitOfTemperature.FAHRENHEIT,
+    "k": UnitOfTemperature.KELVIN,
+    "w": UnitOfPower.WATT,
+    "kw": UnitOfPower.KILO_WATT,
+    "wh": UnitOfEnergy.WATT_HOUR,
+    "kwh": UnitOfEnergy.KILO_WATT_HOUR,
+    "mwh": UnitOfEnergy.MEGA_WATT_HOUR,
+    "hpa": UnitOfPressure.HPA,
+    "bar": UnitOfPressure.BAR,
+    "pa": UnitOfPressure.PA,
+    "hz": UnitOfFrequency.HERTZ,
+    "khz": UnitOfFrequency.KILOHERTZ,
+    "mhz": UnitOfFrequency.MEGAHERTZ,
+    "ghz": UnitOfFrequency.GIGAHERTZ,
+    "a": UnitOfElectricCurrent.AMPERE,
+    "ma": UnitOfElectricCurrent.MILLIAMPERE,
+    "v": UnitOfElectricPotential.VOLT,
+    "mv": UnitOfElectricPotential.MILLIVOLT,
+    "kv": UnitOfElectricPotential.KILOVOLT,
+    "l/min": UnitOfVolumeFlowRate.LITERS_PER_MINUTE,
+    "%": PERCENTAGE,
+}
