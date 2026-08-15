@@ -474,7 +474,8 @@ def _collect_symbol_route_meta_from_menu(menu: Any) -> dict[str, list[dict[str, 
     """Walk the menu tree and record route meta (with ancestors) per symbol.
 
     Ancestor chains enable parent-level device grouping (#176): child routes
-    inherit the nearest stable parent ``name`` / ``path`` as ``menu_key``.
+    inherit the first stable ancestor ``name`` / ``path`` (root-first) as
+    ``menu_key``.
     """
     symbol_routes: dict[str, list[dict[str, Any]]] = {}
     roots = list(_get_field(menu, "routes") or [])
