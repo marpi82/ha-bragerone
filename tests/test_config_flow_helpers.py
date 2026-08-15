@@ -19,6 +19,7 @@ from custom_components.habragerone.config_flow import (  # noqa: E402
     _language_label_from_row,
     _looks_like_language_code_label,
     _module_choices,
+    _normalize_device_grouping,
     _ui_field_labels,
 )
 from custom_components.habragerone.const import (  # noqa: E402
@@ -79,6 +80,13 @@ def test_extract_selected_module_filter_modes_maps_all_modules() -> None:
 def test_device_grouping_values_supports_polish_and_english() -> None:
     assert "Grupuj po menu" in _device_grouping_values(ui_language="pl")[DEVICE_GROUPING_BY_MENU]
     assert "Group by menu" in _device_grouping_values(ui_language="en")[DEVICE_GROUPING_BY_MENU]
+
+
+def test_normalize_device_grouping_rejects_unknown() -> None:
+    assert _normalize_device_grouping("flat") == DEVICE_GROUPING_FLAT
+    assert _normalize_device_grouping("group_by_menu") == DEVICE_GROUPING_BY_MENU
+    assert _normalize_device_grouping("nope") == DEFAULT_DEVICE_GROUPING
+    assert _normalize_device_grouping(None, default=DEVICE_GROUPING_BY_MENU) == DEVICE_GROUPING_BY_MENU
 
 
 def test_build_modules_step_schema_contains_modules_and_filter_mode() -> None:

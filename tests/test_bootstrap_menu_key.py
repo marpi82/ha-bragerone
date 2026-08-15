@@ -32,6 +32,18 @@ def test_stable_menu_key_accepts_mainmenu_tokens() -> None:
     assert _stable_menu_key_from_route_meta(routes) == "MAINMENU_BOILER"
 
 
+def test_stable_menu_key_accepts_companies_prefix_and_menu_token() -> None:
+    assert (
+        _stable_menu_key_from_route_meta([{"name": "companies.modules.menu.dhw", "path": "dhw"}])
+        == "companies.modules.menu.dhw"
+    )
+    assert _stable_menu_key_from_route_meta([{"name": "MENU_BOILER", "path": ""}]) == "MENU_BOILER"
+
+
+def test_stable_menu_key_falls_back_to_any_nonempty_name() -> None:
+    assert _stable_menu_key_from_route_meta([{"name": "custom.route", "path": ""}]) == "custom.route"
+
+
 def test_stable_menu_key_returns_none_when_empty() -> None:
     assert _stable_menu_key_from_route_meta([]) is None
     assert _stable_menu_key_from_route_meta([{"name": "", "path": ""}]) is None

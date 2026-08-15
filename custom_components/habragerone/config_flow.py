@@ -583,8 +583,6 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_input.get(CONF_DEVICE_GROUPING, default_grouping),
             default=default_grouping,
         )
-        if selected_grouping not in grouping_values:
-            selected_grouping = DEFAULT_DEVICE_GROUPING
         if not selected_modules or any(module not in available_codes for module in selected_modules):
             return self.async_show_form(
                 step_id="select_modules",
@@ -859,8 +857,6 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
             user_input.get(CONF_DEVICE_GROUPING, default_grouping),
             default=default_grouping,
         )
-        if selected_grouping not in grouping_values:
-            selected_grouping = DEFAULT_DEVICE_GROUPING
         if not selected_modules or any(module not in module_values for module in selected_modules):
             return self.async_show_form(
                 step_id="modules",
