@@ -691,52 +691,6 @@ def _panel_group_symbols(groups: Mapping[str, list[str]]) -> set[str]:
     return {symbol for panel_symbols in groups.values() for symbol in panel_symbols if symbol}
 
 
-async def _resolver_build_panel_groups(
-    resolver: Any,
-    *,
-    device_menu: Any,
-    permissions: list[str] | None,
-    web_ui_only: bool,
-) -> dict[str, list[str]]:
-    """Call ``build_panel_groups``, tolerating older py-bragerone without ``web_ui_only``."""
-    kwargs: dict[str, Any] = {
-        "device_menu": device_menu,
-        "permissions": permissions,
-        "all_panels": True,
-        "web_ui_only": web_ui_only,
-    }
-    try:
-        return cast(dict[str, list[str]], await resolver.build_panel_groups(**kwargs))
-    except TypeError:
-        if not web_ui_only:
-            raise
-        kwargs.pop("web_ui_only")
-        LOGGER.warning(
-            "py-bragerone build_panel_groups lacks web_ui_only; UI filter cannot exclude service menus until upgraded"
-        )
-        return cast(dict[str, list[str]], await resolver.build_panel_groups(**kwargs))
-
-
-def _resolver_panel_route_diagnostics(
-    resolver: Any,
-    menu: Any,
-    *,
-    web_ui_only: bool,
-    routes_i18n: Any,
-) -> list[dict[str, Any]]:
-    """Call panel-route diagnostics with optional ``web_ui_only`` for older libraries."""
-    kwargs: dict[str, Any] = {
-        "all_panels": True,
-        "web_ui_only": web_ui_only,
-        "routes_i18n": routes_i18n,
-    }
-    try:
-        return cast(list[dict[str, Any]], resolver.panel_route_diagnostics_from_menu(menu, **kwargs))
-    except TypeError:
-        kwargs.pop("web_ui_only")
-        return cast(list[dict[str, Any]], resolver.panel_route_diagnostics_from_menu(menu, **kwargs))
-
-
 async def _build_panel_groups_with_fallback(
     resolver: Any,
     *,
@@ -767,10 +721,10 @@ async def _build_panel_groups_with_fallback(
     """
     groups: dict[str, list[str]] = {}
     try:
-        groups = await _resolver_build_panel_groups(
-            resolver,
+        groups = await resolver.build_panel_groups(
             device_menu=device_menu,
             permissions=permissions,
+            all_panels=True,
             web_ui_only=web_ui_only,
         )
     except Exception:
@@ -780,10 +734,10 @@ async def _build_panel_groups_with_fallback(
             return groups
         LOGGER.debug("Panel-group build returned no symbols for %s, retrying without permissions", devid)
 
-    groups = await _resolver_build_panel_groups(
-        resolver,
+    groups = await resolver.build_panel_groups(
         device_menu=device_menu,
         permissions=None,
+        all_panels=True,
         web_ui_only=web_ui_only,
     )
 
@@ -881,9 +835,9 @@ async def async_build_bootstrap_payload(
                 menu = await assets.get_module_menu(device_menu=module.deviceMenu, permissions=module_permissions)
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu)
                 per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu)
-                per_module_route_diagnostics[module.devid] = _resolver_panel_route_diagnostics(
-                    resolver,
+                per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
                     menu,
+                    all_panels=True,
                     web_ui_only=web_ui_only,
                     routes_i18n=await resolver._i18n.get_namespace("routes"),
                 )
@@ -894,9 +848,9 @@ async def async_build_bootstrap_payload(
                 menu_all = await assets.get_module_menu(device_menu=module.deviceMenu, permissions=None)
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu_all)
                 per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu_all)
-                per_module_route_diagnostics[module.devid] = _resolver_panel_route_diagnostics(
-                    resolver,
+                per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
                     menu_all,
+                    all_panels=True,
                     web_ui_only=web_ui_only,
                     routes_i18n=await resolver._i18n.get_namespace("routes"),
                 )
