@@ -48,7 +48,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     runtime_obj = entry_data.get(DATA_RUNTIME)
     modules_meta = entry.data.get(CONF_MODULES_META)
     connection_descriptors = entry.data.get(CONF_CONNECTION_DESCRIPTORS)
-    if isinstance(runtime_obj, BragerRuntime) and isinstance(modules_meta, dict):
+    connection_count = 0
+    if isinstance(runtime_obj, BragerRuntime) and isinstance(modules_meta, dict) and runtime_obj.supports_module_connectivity:
         by_devid: dict[str, dict[str, Any]] = {}
         if isinstance(connection_descriptors, list):
             for raw in connection_descriptors:
@@ -60,6 +61,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for devid, meta in modules_meta.items():
             if not isinstance(devid, str) or not devid.strip():
                 continue
+            descriptor = by_devid.get(devid)
+            if not isinstance(descriptor, dict):
+                # Fail closed: never create a sensor with hardcoded/untranslated labels.
+                continue
             if not isinstance(meta, dict):
                 meta = {}
             entities.append(
@@ -68,15 +73,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     runtime=runtime_obj,
                     devid=devid,
                     module_meta=meta,
-                    connection_descriptor=by_devid.get(devid),
+                    connection_descriptor=descriptor,
                 )
             )
+            connection_count += 1
 
     record_platform_entity_stats(
         hass,
         entry,
         platform="binary_sensor",
-        descriptor_count=len(descriptors),
+        descriptor_count=len(descriptors) + connection_count,
         created_count=len(entities),
     )
     async_add_entities(entities)
@@ -149,8 +155,8 @@ class BragerStatusBinarySensor(BinarySensorEntity):
             return
         self.async_schedule_update_ha_state(True)
 
-    def _on_connectivity(self, devid: str, _online: bool) -> None:
-        if devid != self._devid:
+    def _on_connectivity(self, devid: str, _online: bool, online_changed: bool = True) -> None:
+        if devid != self._devid or not online_changed:
             return
         self.async_schedule_update_ha_state(True)
 
@@ -170,26 +176,28 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
         runtime: BragerRuntime,
         devid: str,
         module_meta: dict[str, Any],
-        connection_descriptor: dict[str, Any] | None = None,
+        connection_descriptor: dict[str, Any],
     ) -> None:
         """Initialize connectivity sensor for one module connection device."""
         self._runtime = runtime
         self._devid = devid
         self._module_meta = module_meta
-        self._descriptor = connection_descriptor if isinstance(connection_descriptor, dict) else {}
+        self._descriptor = connection_descriptor
         labels = self._descriptor.get("labels") if isinstance(self._descriptor.get("labels"), dict) else {}
         label = (
             str(self._descriptor.get("label") or "").strip()
             or str(labels.get("connection.status") or "").strip()
             or str(labels.get("serverConnection") or "").strip()
-            or "connection.status"
         )
+        if not label:
+            raise ValueError("connection descriptor missing SPA i18n label")
         self._attr_name = label
         self._attr_unique_id = f"{entry.entry_id}_{devid}_connectivity_binary".lower().replace(" ", "_")
         self._attr_suggested_object_id = f"{devid}_connection_status".lower().replace(" ", "_")
         online = runtime.module_online(devid)
-        self._attr_is_on = bool(online) if online is not None else False
-        self._attr_available = True
+        # Unknown stays unknown — never coerce None to offline.
+        self._attr_is_on = online
+        self._attr_available = online is not None
         self._unsubscribe_connectivity: Any = None
 
     @property
@@ -200,17 +208,18 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
         so HA #165 can keep these entities separable from panel-grouped devices.
         """
         labels = self._descriptor.get("labels") if isinstance(self._descriptor.get("labels"), dict) else {}
+        module_name = str(self._module_meta.get("name") or self._descriptor.get("module_name") or self._devid)
+        index_label = str(labels.get("connection.index") or "").strip()
         device_name = (
             str(self._descriptor.get("device_name") or "").strip()
-            or str(labels.get("connection.index") or "").strip()
-            or str(self._module_meta.get("name") or self._devid)
+            or (f"{module_name} — {index_label}" if index_label else module_name)
         )
         menu_key = str(self._descriptor.get("menu_key") or CONNECTION_MENU_KEY)
         return DeviceInfo(
             identifiers={(DOMAIN, f"{self._devid}:{menu_key}")},
             manufacturer="BragerOne",
             name=device_name,
-            model=str(self._module_meta.get("title") or "Brager module"),
+            model=str(self._module_meta.get("title") or self._descriptor.get("module_title") or module_name),
             sw_version=str(self._module_meta.get("version") or "") or None,
             via_device=(DOMAIN, self._devid),
         )
@@ -250,12 +259,13 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
     async def async_update(self) -> None:
         """Refresh on/off from runtime module online cache."""
         online = self._runtime.module_online(self._devid)
-        self._attr_available = True
-        self._attr_is_on = bool(online) if online is not None else False
+        self._attr_is_on = online
+        self._attr_available = online is not None
 
-    def _on_connectivity(self, devid: str, _online: bool) -> None:
+    def _on_connectivity(self, devid: str, _online: bool, online_changed: bool = True) -> None:
         if devid != self._devid:
             return
+        # Refresh on online flips and on metadata-only connectedAt/gateway updates.
         self.async_schedule_update_ha_state(True)
 
 

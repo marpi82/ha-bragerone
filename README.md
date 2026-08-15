@@ -14,6 +14,7 @@ This custom component provides integration between Home Assistant and the Brager
 - Device control via Home Assistant
 - Configurable through Home Assistant UI
 - Support for multiple device types
+- Per-module cloud connectivity diagnostic (SPA `connectedAt` / `module.connection.*` labels) on a child device; parameter entities go unavailable when the module is offline; writes are refused while offline
 
 ## Installation
 

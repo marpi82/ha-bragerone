@@ -1055,7 +1055,6 @@ async def async_build_bootstrap_payload(
             "device_menu": module.deviceMenu,
             "module_interface": module.moduleInterface,
             "module_address": module.moduleAddress,
-            "connectedAt": module.connectedAt,
         }
 
         for symbol in sorted(per_module_symbols.get(module.devid, set())):
@@ -1148,13 +1147,20 @@ async def async_build_bootstrap_payload(
             descriptors.append(descriptor)
 
     connection_labels = await _resolve_connection_labels(resolver, language=language)
-    connection_descriptors = [
-        _build_connection_descriptor(
-            module=module,
-            labels=connection_labels,
+    connection_descriptors: list[dict[str, Any]] = []
+    if connection_labels.get("connection.status") or connection_labels.get("serverConnection"):
+        for module in effective_modules:
+            connection_descriptors.append(
+                _build_connection_descriptor(
+                    module=module,
+                    labels=connection_labels,
+                )
+            )
+    elif effective_modules:
+        LOGGER.warning(
+            "Skipping connection_descriptors: SPA module connection i18n labels unavailable "
+            "(would persist untranslated keys)"
         )
-        for module in effective_modules
-    ]
 
     return {
         CONF_ENTITY_DESCRIPTORS: descriptors,
@@ -1187,19 +1193,20 @@ async def _resolve_connection_labels(resolver: Any, *, language: str | None) -> 
 def _build_connection_descriptor(*, module: Any, labels: Mapping[str, str]) -> dict[str, Any]:
     """Build a non-menu connection descriptor for one module (HA #165-ready)."""
     devid = str(getattr(module, "devid", "") or "")
-    status_label = labels.get("connection.status") or labels.get("serverConnection") or "connection.status"
-    device_name = labels.get("connection.index") or status_label
+    module_name = str(getattr(module, "name", "") or devid)
+    status_label = str(labels.get("connection.status") or labels.get("serverConnection") or "").strip()
+    index_label = str(labels.get("connection.index") or status_label).strip()
+    device_name = f"{module_name} — {index_label}" if index_label else module_name
     return {
         "kind": "module_connection",
         "source": "module_i18n",
         "menu_key": CONNECTION_MENU_KEY,
         "devid": devid,
-        "module_name": str(getattr(module, "name", "") or devid),
+        "module_name": module_name,
         "module_title": str(getattr(module, "moduleTitle", "") or ""),
         "module_version": str(getattr(module, "moduleVersion", "") or ""),
         "label": status_label,
         "device_name": device_name,
         "labels": dict(labels),
-        "platform": "binary_sensor",
         CONF_PLATFORM: "binary_sensor",
     }

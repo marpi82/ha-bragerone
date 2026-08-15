@@ -115,8 +115,8 @@ class BragerSymbolSwitch(SwitchEntity):
             return
         self.async_schedule_update_ha_state(True)
 
-    def _on_connectivity(self, devid: str, _online: bool) -> None:
-        if devid != self._devid:
+    def _on_connectivity(self, devid: str, _online: bool, online_changed: bool = True) -> None:
+        if devid != self._devid or not online_changed:
             return
         self.async_schedule_update_ha_state(True)
 

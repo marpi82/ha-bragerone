@@ -19,7 +19,8 @@ from pybragerone.models.param_resolver import ParamResolver
 from .command_write import WriteContext, WriteValidationError, prepare_write
 
 UpdateCallback = Callable[[ParamUpdate], None]
-ConnectivityCallback = Callable[[str, bool], None]
+# devid, online, online_changed — metadata-only updates set online_changed=False.
+ConnectivityCallback = Callable[[str, bool, bool], None]
 LOGGER = logging.getLogger(__name__)
 
 
@@ -49,7 +50,7 @@ class BragerRuntime:
         self._tasks.append(asyncio.create_task(self.store.run_with_bus(self.gateway.bus), name="habragerone-store-sync"))
         self._tasks.append(asyncio.create_task(self._dispatch_updates(), name="habragerone-update-dispatch"))
         register = getattr(self.gateway, "on_module_connectivity", None)
-        if callable(register):
+        if self.supports_module_connectivity and callable(register):
             register(self._on_gateway_connectivity)
         try:
             await self.gateway.start()
@@ -103,8 +104,17 @@ class BragerRuntime:
         """Return cached module online state, or ``None`` if not yet known."""
         return self._module_online.get(devid)
 
+    @property
+    def supports_module_connectivity(self) -> bool:
+        """Return whether the gateway exposes the module connectivity API."""
+        return callable(getattr(self.gateway, "on_module_connectivity", None)) and callable(
+            getattr(self.gateway, "module_online", None)
+        )
+
     def _seed_module_online_from_gateway(self) -> None:
         """Pull initial online bits from the gateway after start."""
+        if not self.supports_module_connectivity:
+            return
         modules = getattr(self.gateway, "modules", None)
         if not isinstance(modules, list):
             return
@@ -125,6 +135,7 @@ class BragerRuntime:
                 online,
                 connected_at=connected_at if isinstance(connected_at, int) else None,
                 gateway=gateway if isinstance(gateway, dict) else None,
+                online_changed=True,
             )
 
     def _on_gateway_connectivity(self, event: Any) -> None:
@@ -135,11 +146,15 @@ class BragerRuntime:
             return
         connected_at = getattr(event, "connected_at", None)
         gateway = getattr(event, "gateway", None)
+        online_changed = getattr(event, "online_changed", True)
+        if not isinstance(online_changed, bool):
+            online_changed = True
         self._apply_module_online(
             devid,
             online,
             connected_at=connected_at if isinstance(connected_at, int) else None,
             gateway=gateway if isinstance(gateway, dict) else None,
+            online_changed=online_changed,
         )
 
     def _apply_module_online(
@@ -149,8 +164,9 @@ class BragerRuntime:
         *,
         connected_at: int | None,
         gateway: dict[str, Any] | None = None,
+        online_changed: bool | None = None,
     ) -> None:
-        """Update cache/modules_meta and notify connectivity listeners on change."""
+        """Update cache/modules_meta and notify connectivity listeners."""
         previous = self._module_online.get(devid)
         self._module_online[devid] = online
         meta = self.modules_meta.setdefault(devid, {})
@@ -158,11 +174,13 @@ class BragerRuntime:
             meta["connectedAt"] = connected_at
         if gateway is not None:
             meta["gateway"] = dict(gateway)
-        if previous is online:
-            return
+        flipped = previous is not online if online_changed is None else online_changed
         for callback in list(self._connectivity_listeners):
             try:
-                callback(devid, online)
+                callback(devid, online, flipped)
+            except TypeError:
+                # Older test doubles / listeners that still take (devid, online).
+                callback(devid, online)  # type: ignore[call-arg]
             except Exception:
                 LOGGER.exception("Connectivity listener failed for devid=%s", devid)
 
@@ -184,6 +202,9 @@ class BragerRuntime:
 
         if not devid:
             raise HomeAssistantError(f"Missing device id for symbol '{symbol}'")
+
+        if self.module_online(devid) is False:
+            raise HomeAssistantError(f"Module '{devid}' is offline; refusing write for '{symbol}'")
 
         has_parameter_address = isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int)
         if isinstance(command_rules, list):

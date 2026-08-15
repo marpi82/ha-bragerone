@@ -30,6 +30,8 @@ class _ModuleConnectivityStub:
     source: str = "derived"
     connected_at: int | None = None
     gateway: dict[str, object] | None = None
+    online_changed: bool = True
+    metadata_changed: bool = False
 
 
 @pytest.fixture(autouse=True)

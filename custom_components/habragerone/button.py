@@ -80,8 +80,8 @@ class BragerActionButton(ButtonEntity):
         """Refresh availability from module cloud connectivity."""
         self._attr_available = module_is_reachable(self._runtime, self._devid)
 
-    def _on_connectivity(self, devid: str, _online: bool) -> None:
-        if devid != self._devid:
+    def _on_connectivity(self, devid: str, _online: bool, online_changed: bool = True) -> None:
+        if devid != self._devid or not online_changed:
             return
         self.async_schedule_update_ha_state(True)
 

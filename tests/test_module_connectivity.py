@@ -6,6 +6,7 @@ import pytest
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 from tests.conftest import install_pybragerone_stubs
 
@@ -26,6 +27,24 @@ from tests.helpers.descriptors import binary_sensor_descriptor  # noqa: E402
 from tests.helpers.fakes import make_runtime  # noqa: E402
 from tests.helpers.hass import register_config_entry  # noqa: E402
 
+CONNECTION_DESCRIPTOR = {
+    "kind": "module_connection",
+    "source": "module_i18n",
+    "menu_key": "module.connection",
+    "devid": "DEV1",
+    "module_name": "Boiler",
+    "label": "Connection with module status",
+    "device_name": "Boiler — Connection with module",
+    "labels": {
+        "connection.status": "Connection with module status",
+        "connection.index": "Connection with module",
+        "connection.connected": "Connected",
+        "connection.notConnected": "Disconnected",
+        "serverConnection": "Server connection status",
+    },
+    "platform": "binary_sensor",
+}
+
 
 def test_module_is_reachable_unknown_defaults_true() -> None:
     runtime, *_rest = make_runtime()
@@ -41,20 +60,32 @@ async def test_runtime_seeds_and_fans_out_connectivity() -> None:
     runtime, _api, gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
     gateway._online["DEV1"] = True
     gateway._connected_at["DEV1"] = 1_700_000_000
-    seen: list[tuple[str, bool]] = []
-    runtime.add_connectivity_listener(lambda devid, online: seen.append((devid, online)))
+    seen: list[tuple[str, bool, bool]] = []
+    runtime.add_connectivity_listener(lambda devid, online, flipped: seen.append((devid, online, flipped)))
 
     await runtime.start()
+    assert runtime.supports_module_connectivity is True
     assert runtime.module_online("DEV1") is True
     assert runtime.modules_meta["DEV1"]["connectedAt"] == 1_700_000_000
-    assert ("DEV1", True) in seen
+    assert ("DEV1", True, True) in seen
 
     seen.clear()
     gateway.emit_connectivity("DEV1", False, connected_at=0)
     assert runtime.module_online("DEV1") is False
     assert runtime.modules_meta["DEV1"]["connectedAt"] == 0
-    assert seen == [("DEV1", False)]
+    assert seen == [("DEV1", False, True)]
     await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_async_write_refuses_when_offline() -> None:
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime._module_online["DEV1"] = False
+    with pytest.raises(HomeAssistantError, match="offline"):
+        await runtime.async_write(
+            descriptor={"symbol": "PARAM_X", "devid": "DEV1", "pool": "P1", "chan": "v", "idx": 1},
+            input_display_value=1,
+        )
 
 
 @pytest.mark.asyncio
@@ -64,31 +95,13 @@ async def test_async_setup_adds_connectivity_sensor(hass: HomeAssistant) -> None
         modules_meta={"DEV1": {"name": "Boiler", "title": "DasPell", "version": "V2"}},
     )
     descriptors = [binary_sensor_descriptor(symbol="BIN1")]
-    connection_descriptors = [
-        {
-            "kind": "module_connection",
-            "source": "module_i18n",
-            "menu_key": "module.connection",
-            "devid": "DEV1",
-            "label": "Connection with module status",
-            "device_name": "Connection with module",
-            "labels": {
-                "connection.status": "Connection with module status",
-                "connection.index": "Connection with module",
-                "connection.connected": "Connected",
-                "connection.notConnected": "Disconnected",
-                "serverConnection": "Server connection status",
-            },
-            "platform": "binary_sensor",
-        }
-    ]
     entry = register_config_entry(hass, runtime=runtime, descriptors=descriptors)
     hass.config_entries.async_update_entry(
         entry,
         data={
             **entry.data,
             CONF_MODULES_META: {"DEV1": {"name": "Boiler", "title": "DasPell", "version": "V2"}},
-            CONF_CONNECTION_DESCRIPTORS: connection_descriptors,
+            CONF_CONNECTION_DESCRIPTORS: [CONNECTION_DESCRIPTOR],
         },
     )
     entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
@@ -107,8 +120,24 @@ async def test_async_setup_adds_connectivity_sensor(hass: HomeAssistant) -> None
     assert info is not None
     assert (DOMAIN, "DEV1:module.connection") in info["identifiers"]
     assert info.get("via_device") == (DOMAIN, "DEV1")
+    assert info.get("name") == "Boiler — Connection with module"
     stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]["binary_sensor"]
     assert stats["created_count"] == 2
+    assert stats["descriptor_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_async_setup_skips_connectivity_without_descriptor(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_MODULES_META: {"DEV1": {"name": "Boiler"}}, CONF_CONNECTION_DESCRIPTORS: []},
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    added: list[object] = []
+    await async_setup_entry(hass, entry, added.extend)
+    assert not any(isinstance(entity, BragerModuleConnectivityBinarySensor) for entity in added)
 
 
 @pytest.mark.asyncio
@@ -122,9 +151,10 @@ async def test_connectivity_sensor_tracks_runtime(hass: HomeAssistant) -> None:
         module_meta={"name": "Boiler"},
         connection_descriptor={
             "label": "Status połączenia z modułem",
-            "device_name": "Połączenie z modułem",
+            "device_name": "Boiler — Połączenie z modułem",
             "menu_key": "module.connection",
             "labels": {
+                "connection.index": "Połączenie z modułem",
                 "connection.connected": "Połączono",
                 "connection.notConnected": "Rozłączono",
             },
@@ -136,6 +166,10 @@ async def test_connectivity_sensor_tracks_runtime(hass: HomeAssistant) -> None:
     entity.async_schedule_update_ha_state = lambda *a, **k: None  # type: ignore[method-assign]
 
     await entity.async_added_to_hass()
+    await entity.async_update()
+    assert entity._attr_is_on is None
+    assert entity._attr_available is False
+
     runtime._apply_module_online(
         "DEV1",
         True,
@@ -144,6 +178,7 @@ async def test_connectivity_sensor_tracks_runtime(hass: HomeAssistant) -> None:
     )
     await entity.async_update()
     assert entity._attr_is_on is True
+    assert entity._attr_available is True
     assert entity._attr_name == "Status połączenia z modułem"
     attrs = entity.extra_state_attributes
     assert attrs["connected_at"] == 99
