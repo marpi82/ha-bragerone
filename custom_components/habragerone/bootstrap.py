@@ -1146,7 +1146,7 @@ async def async_build_bootstrap_payload(
             )
             descriptors.append(descriptor)
 
-    connection_labels = await _resolve_connection_labels(resolver, language=language)
+    connection_labels, connection_labels_supported = await _resolve_connection_labels(resolver, language=language)
     connection_descriptors: list[dict[str, Any]] = []
     if connection_labels.get("connection.status") or connection_labels.get("serverConnection"):
         for module in effective_modules:
@@ -1156,11 +1156,12 @@ async def async_build_bootstrap_payload(
                     labels=connection_labels,
                 )
             )
-    elif effective_modules:
+    elif effective_modules and connection_labels_supported:
         LOGGER.warning(
-            "Skipping connection_descriptors: SPA module connection i18n labels unavailable "
-            "(would persist untranslated keys)"
+            "Skipping connection_descriptors: SPA module connection i18n labels unavailable (would persist untranslated keys)"
         )
+    elif effective_modules:
+        LOGGER.debug("Skipping connection_descriptors: pybragerone connection-label API unavailable")
 
     return {
         CONF_ENTITY_DESCRIPTORS: descriptors,
@@ -1174,20 +1175,28 @@ async def async_build_bootstrap_payload(
     }
 
 
-async def _resolve_connection_labels(resolver: Any, *, language: str | None) -> dict[str, str]:
-    """Load SPA ``module`` / ``module.connection.*`` labels via pybragerone i18n."""
+async def _resolve_connection_labels(resolver: Any, *, language: str | None) -> tuple[dict[str, str], bool]:
+    """Load SPA ``module`` / ``module.connection.*`` labels via pybragerone i18n.
+
+    Returns ``(labels, supported)`` where ``supported`` is False when the installed
+    pybragerone build lacks ``resolve_module_connection_labels`` (expected under unit
+    stubs / older pins — log at DEBUG, not WARNING).
+    """
     resolve = getattr(resolver, "resolve_module_connection_labels", None)
     if not callable(resolve):
-        LOGGER.warning("pybragerone lacks resolve_module_connection_labels; connection labels will fall back")
-        return {}
+        LOGGER.debug("pybragerone lacks resolve_module_connection_labels; connection labels unavailable")
+        return {}, False
     try:
         labels = await resolve(lang=language)
     except Exception:
         LOGGER.exception("Failed to resolve module connection i18n labels")
-        return {}
+        return {}, True
     if not isinstance(labels, dict):
-        return {}
-    return {str(key): str(value) for key, value in labels.items() if isinstance(key, str) and isinstance(value, str)}
+        return {}, True
+    return (
+        {str(key): str(value) for key, value in labels.items() if isinstance(key, str) and isinstance(value, str)},
+        True,
+    )
 
 
 def _build_connection_descriptor(*, module: Any, labels: Mapping[str, str]) -> dict[str, Any]:

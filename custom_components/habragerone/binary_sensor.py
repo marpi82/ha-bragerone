@@ -210,9 +210,8 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
         labels = self._descriptor.get("labels") if isinstance(self._descriptor.get("labels"), dict) else {}
         module_name = str(self._module_meta.get("name") or self._descriptor.get("module_name") or self._devid)
         index_label = str(labels.get("connection.index") or "").strip()
-        device_name = (
-            str(self._descriptor.get("device_name") or "").strip()
-            or (f"{module_name} — {index_label}" if index_label else module_name)
+        device_name = str(self._descriptor.get("device_name") or "").strip() or (
+            f"{module_name} — {index_label}" if index_label else module_name
         )
         menu_key = str(self._descriptor.get("menu_key") or CONNECTION_MENU_KEY)
         return DeviceInfo(
