@@ -236,3 +236,139 @@ def test_failing_panel_group_build_propagates_instead_of_caching_emptiness() -> 
                 devid="M1",
             )
         )
+
+
+class _EmptyThenRetryAssets:
+    """Return an empty menu first, then a usable menu (or raise) on retry."""
+
+    def __init__(self, *, retry_menu: object | Exception) -> None:
+        """Store the second ``get_module_menu`` outcome."""
+        self._retry_menu = retry_menu
+        self.calls: list[list[str] | None] = []
+
+    async def get_module_menu(
+        self,
+        *,
+        device_menu: str,
+        permissions: list[str] | None,
+    ) -> object:
+        """First call yields no kinds; second call uses the configured retry result."""
+        _ = device_menu
+        self.calls.append(permissions)
+        if len(self.calls) == 1:
+            return {"routes": []}
+        if isinstance(self._retry_menu, Exception):
+            raise self._retry_menu
+        return self._retry_menu
+
+
+class _I18nStub:
+    async def get_namespace(self, name: str) -> dict[str, object]:
+        _ = name
+        return {}
+
+
+def _resolver_with_assets(assets: _EmptyThenRetryAssets) -> type[_RecordingResolver]:
+    """Build a ParamResolver stub that carries menu assets for kind retry coverage."""
+
+    class _Resolver(_RecordingResolver):
+        def __init__(self) -> None:
+            self._assets = assets
+            self._i18n = _I18nStub()
+
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _Resolver:
+            _ = api, store, lang
+            return cls()
+
+        def panel_route_diagnostics_from_menu(
+            self,
+            menu: object,
+            *,
+            all_panels: bool,
+            web_ui_only: bool,
+            routes_i18n: dict[str, object],
+        ) -> list[dict[str, object]]:
+            _ = menu, all_panels, web_ui_only, routes_i18n
+            return []
+
+    return _Resolver
+
+
+def test_menu_kind_retry_reloads_empty_kinds_with_same_permissions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the first menu parse yields no kinds, retry with the same permission set."""
+    assets = _EmptyThenRetryAssets(
+        retry_menu={
+            "routes": [
+                {
+                    "name": "Boiler",
+                    "parameters": {
+                        "read": [{"parameter": {"token": "PARAM_GATED"}}],
+                        "write": [],
+                        "status": [],
+                        "special": [],
+                    },
+                    "children": [],
+                }
+            ]
+        }
+    )
+    resolver_cls = _resolver_with_assets(assets)
+    _RecordingResolver.gated_groups = {"Panel": ["PARAM_GATED"]}
+    _RecordingResolver.ungated_groups = {}
+    _RecordingResolver.calls = []
+    _RecordingResolver.web_ui_flags = []
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", resolver_cls)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+            entity_filter_mode="ui",
+        )
+    )
+
+    assert assets.calls == [
+        ["DISPLAY_PARAMETER_LEVEL_1"],
+        ["DISPLAY_PARAMETER_LEVEL_1"],
+    ]
+    assert {item["symbol"] for item in payload["entity_descriptors"]} == {"PARAM_GATED"}
+    debug = payload["bootstrap_debug"]["modules"]["M1"]
+    assert debug["menu_symbol_kinds_count"] == 1
+
+
+def test_menu_kind_retry_failure_is_logged_without_failing_bootstrap(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Retry exceptions stay soft — bootstrap continues without menu kinds."""
+    assets = _EmptyThenRetryAssets(retry_menu=RuntimeError("retry menu failed"))
+    resolver_cls = _resolver_with_assets(assets)
+    _RecordingResolver.gated_groups = {"Panel": ["PARAM_GATED"]}
+    _RecordingResolver.ungated_groups = {}
+    _RecordingResolver.calls = []
+    _RecordingResolver.web_ui_flags = []
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", resolver_cls)
+
+    with caplog.at_level(logging.DEBUG, logger=BOOTSTRAP_LOGGER):
+        payload = asyncio.run(
+            async_build_bootstrap_payload(
+                api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+                object_id=1,
+                modules=["M1"],
+                language="en",
+                entity_filter_mode="ui",
+            )
+        )
+
+    assert assets.calls == [
+        ["DISPLAY_PARAMETER_LEVEL_1"],
+        ["DISPLAY_PARAMETER_LEVEL_1"],
+    ]
+    assert {item["symbol"] for item in payload["entity_descriptors"]} == {"PARAM_GATED"}
+    assert any("Menu kind retry extraction failed for M1" in record.getMessage() for record in caplog.records)
