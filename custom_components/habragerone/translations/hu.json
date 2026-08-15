@@ -9,14 +9,14 @@
       },
       "select_modules": {
         "title": "Modulok kiválasztása",
-        "description": "Choose modules, entity filtering mode, and device grouping.",
+        "description": "Válassza ki a modulokat, az entitásszűrési módot és az eszközcsoportosítást.",
         "data": {
           "modules": "Modulok",
           "entity_filter_mode": "Entitásszűrés módja",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Eszközcsoportosítás"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Lapos = egy HA eszköz modulonként. Csoportosítás menü szerint = gyermekeszközök stabil menükulcs szerint (via_device). A változás újratérképezi az eszközhovatartozást (automatizálások/irányítópultok)."
         }
       }
     }
@@ -28,10 +28,10 @@
         "data": {
           "modules": "Modulok",
           "entity_filter_mode": "Entitásszűrés módja",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Eszközcsoportosítás"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Lapos = egy HA eszköz modulonként. Csoportosítás menü szerint = gyermekeszközök stabil menükulcs szerint (via_device). A változás újratérképezi az eszközhovatartozást (automatizálások/irányítópultok)."
         }
       }
     }

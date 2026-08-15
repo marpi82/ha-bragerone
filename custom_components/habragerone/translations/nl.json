@@ -9,14 +9,14 @@
       },
       "select_modules": {
         "title": "Modules selecteren",
-        "description": "Choose modules, entity filtering mode, and device grouping.",
+        "description": "Kies modules, entiteitsfiltermodus en apparaatgroepering.",
         "data": {
           "modules": "Modules",
           "entity_filter_mode": "Filtermodus voor entiteiten",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Apparaatgroepering"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Plat = één HA-apparaat per module. Groeperen op menu = onderliggende apparaten per stabiele menusleutel (via_device). Wijzigen hermapt apparaatlidmaatschap (automatiseringen/dashboards)."
         }
       }
     }
@@ -28,10 +28,10 @@
         "data": {
           "modules": "Modules",
           "entity_filter_mode": "Filtermodus voor entiteiten",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Apparaatgroepering"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Plat = één HA-apparaat per module. Groeperen op menu = onderliggende apparaten per stabiele menusleutel (via_device). Wijzigen hermapt apparaatlidmaatschap (automatiseringen/dashboards)."
         }
       }
     }

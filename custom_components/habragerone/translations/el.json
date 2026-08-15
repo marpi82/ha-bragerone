@@ -9,14 +9,14 @@
       },
       "select_modules": {
         "title": "Επιλογή μονάδων",
-        "description": "Choose modules, entity filtering mode, and device grouping.",
+        "description": "Επιλέξτε μονάδες, λειτουργία φιλτραρίσματος οντοτήτων και ομαδοποίηση συσκευών.",
         "data": {
           "modules": "Μονάδες",
           "entity_filter_mode": "Λειτουργία φιλτραρίσματος οντοτήτων",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Ομαδοποίηση συσκευών"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Επίπεδο = μία συσκευή HA ανά μονάδα. Ομαδοποίηση κατά μενού = θυγατρικές συσκευές ανά σταθερό κλειδί μενού (via_device). Η αλλαγή επαναχαρτογραφεί τη συμμετοχή συσκευών (αυτοματισμοί/πίνακες)."
         }
       }
     }
@@ -28,10 +28,10 @@
         "data": {
           "modules": "Μονάδες",
           "entity_filter_mode": "Λειτουργία φιλτραρίσματος οντοτήτων",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Ομαδοποίηση συσκευών"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Επίπεδο = μία συσκευή HA ανά μονάδα. Ομαδοποίηση κατά μενού = θυγατρικές συσκευές ανά σταθερό κλειδί μενού (via_device). Η αλλαγή επαναχαρτογραφεί τη συμμετοχή συσκευών (αυτοματισμοί/πίνακες)."
         }
       }
     }

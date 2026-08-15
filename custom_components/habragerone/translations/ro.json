@@ -9,14 +9,14 @@
       },
       "select_modules": {
         "title": "Selectare module",
-        "description": "Choose modules, entity filtering mode, and device grouping.",
+        "description": "Alegeți modulele, modul de filtrare a entităților și gruparea dispozitivelor.",
         "data": {
           "modules": "Module",
           "entity_filter_mode": "Mod de filtrare al entităților",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Gruparea dispozitivelor"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Plat = un dispozitiv HA per modul. Grupare după meniu = dispozitive copil pe cheie stabilă de meniu (via_device). Schimbarea remapă apartenența dispozitivelor (automatizări/panouri)."
         }
       }
     }
@@ -28,10 +28,10 @@
         "data": {
           "modules": "Module",
           "entity_filter_mode": "Mod de filtrare al entităților",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Gruparea dispozitivelor"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Plat = un dispozitiv HA per modul. Grupare după meniu = dispozitive copil pe cheie stabilă de meniu (via_device). Schimbarea remapă apartenența dispozitivelor (automatizări/panouri)."
         }
       }
     }

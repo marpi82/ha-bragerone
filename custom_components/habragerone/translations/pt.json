@@ -9,14 +9,14 @@
       },
       "select_modules": {
         "title": "Selecionar módulos",
-        "description": "Choose modules, entity filtering mode, and device grouping.",
+        "description": "Escolha módulos, modo de filtragem de entidades e agrupamento de dispositivos.",
         "data": {
           "modules": "Módulos",
           "entity_filter_mode": "Modo de filtragem de entidades",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Agrupamento de dispositivos"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Plano = um dispositivo HA por módulo. Agrupar por menu = dispositivos filhos por chave de menu estável (via_device). A alteração remapeia a associação de dispositivos (automações/painéis)."
         }
       }
     }
@@ -28,10 +28,10 @@
         "data": {
           "modules": "Módulos",
           "entity_filter_mode": "Modo de filtragem de entidades",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Agrupamento de dispositivos"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Plano = um dispositivo HA por módulo. Agrupar por menu = dispositivos filhos por chave de menu estável (via_device). A alteração remapeia a associação de dispositivos (automações/painéis)."
         }
       }
     }

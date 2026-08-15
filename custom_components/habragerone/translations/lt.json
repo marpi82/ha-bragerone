@@ -9,14 +9,14 @@
       },
       "select_modules": {
         "title": "Pasirinkti modulius",
-        "description": "Choose modules, entity filtering mode, and device grouping.",
+        "description": "Pasirinkite modulius, objektų filtravimo režimą ir įrenginių grupavimą.",
         "data": {
           "modules": "Moduliai",
           "entity_filter_mode": "Esybių filtravimo režimas",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Įrenginių grupavimas"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Plokščias = vienas HA įrenginys moduliui. Grupuoti pagal meniu = antriniai įrenginiai pagal stabilų meniu raktą (via_device). Pakeitimas perskirsto įrenginių priklausomybę (automatizacijos/skydeliai)."
         }
       }
     }
@@ -28,10 +28,10 @@
         "data": {
           "modules": "Moduliai",
           "entity_filter_mode": "Esybių filtravimo režimas",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Įrenginių grupavimas"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Plokščias = vienas HA įrenginys moduliui. Grupuoti pagal meniu = antriniai įrenginiai pagal stabilų meniu raktą (via_device). Pakeitimas perskirsto įrenginių priklausomybę (automatizacijos/skydeliai)."
         }
       }
     }

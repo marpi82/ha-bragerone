@@ -9,14 +9,14 @@
       },
       "select_modules": {
         "title": "モジュールを選択",
-        "description": "Choose modules, entity filtering mode, and device grouping.",
+        "description": "モジュール、エンティティのフィルタモード、デバイスのグループ化を選択してください。",
         "data": {
           "modules": "モジュール",
           "entity_filter_mode": "エンティティのフィルターモード",
-          "device_grouping": "Device grouping"
+          "device_grouping": "デバイスのグループ化"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "フラット = モジュールごとに1つのHAデバイス。メニューでグループ化 = 安定したメニューキーごとの子デバイス（via_device）。変更するとデバイス所属が再マッピングされます（オートメーション/ダッシュボード）。"
         }
       }
     }
@@ -28,10 +28,10 @@
         "data": {
           "modules": "モジュール",
           "entity_filter_mode": "エンティティのフィルターモード",
-          "device_grouping": "Device grouping"
+          "device_grouping": "デバイスのグループ化"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "フラット = モジュールごとに1つのHAデバイス。メニューでグループ化 = 安定したメニューキーごとの子デバイス（via_device）。変更するとデバイス所属が再マッピングされます（オートメーション/ダッシュボード）。"
         }
       }
     }

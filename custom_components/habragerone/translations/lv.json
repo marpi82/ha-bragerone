@@ -9,14 +9,14 @@
       },
       "select_modules": {
         "title": "Moduļu izvēle",
-        "description": "Choose modules, entity filtering mode, and device grouping.",
+        "description": "Izvēlieties moduļus, entītiju filtrēšanas režīmu un ierīču grupēšanu.",
         "data": {
           "modules": "Moduļi",
           "entity_filter_mode": "Entītiju filtrēšanas režīms",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Ierīču grupēšana"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Plakans = viena HA ierīce uz moduli. Grupēt pēc izvēlnes = apakšierīces pēc stabilas izvēlnes atslēgas (via_device). Izmaiņa pārkartē ierīču piederību (automatizācijas/paneļi)."
         }
       }
     }
@@ -28,10 +28,10 @@
         "data": {
           "modules": "Moduļi",
           "entity_filter_mode": "Entītiju filtrēšanas režīms",
-          "device_grouping": "Device grouping"
+          "device_grouping": "Ierīču grupēšana"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module. Group by menu = child devices per stable menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Plakans = viena HA ierīce uz moduli. Grupēt pēc izvēlnes = apakšierīces pēc stabilas izvēlnes atslēgas (via_device). Izmaiņa pārkartē ierīču piederību (automatizācijas/paneļi)."
         }
       }
     }
