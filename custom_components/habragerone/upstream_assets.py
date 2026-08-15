@@ -84,8 +84,8 @@ async def async_probe_upstream_assets_fingerprint(client: _FingerprintClient) ->
     """Best-effort live fingerprint; returns None when the probe fails."""
     try:
         version_payload = await client.get_system_version()
-        api_version = _version_string(version_payload)
-        index_asset = await async_discover_index_asset(client)
+        api_version = _version_string(version_payload).strip()
+        index_asset = (await async_discover_index_asset(client)).strip()
     except Exception:
         LOGGER.debug("Upstream assets fingerprint probe failed", exc_info=True)
         return None

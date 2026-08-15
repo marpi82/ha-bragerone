@@ -199,6 +199,56 @@ async def test_diagnostics_reports_upstream_assets_fingerprint_mismatch(hass: Ho
 
 
 @pytest.mark.asyncio
+async def test_diagnostics_reports_live_fingerprint_probe_failure(hass: HomeAssistant) -> None:
+    from custom_components.habragerone.const import CONF_UPSTREAM_ASSETS_FINGERPRINT, DATA_API
+
+    entry = register_config_entry(
+        hass,
+        runtime=object(),
+        descriptors=[{"platform": "sensor", "symbol": "TEMP"}],
+        entity_stats={"sensor": {"descriptor_count": 1, "created_count": 1}},
+    )
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_UPSTREAM_ASSETS_FINGERPRINT: "2.08|index-Old.js"},
+    )
+    api = SimpleNamespace(
+        one_base="https://one.brager.pl",
+        get_system_version=AsyncMock(side_effect=RuntimeError("offline")),
+        get_bytes=AsyncMock(),
+    )
+    hass.data[DOMAIN][entry.entry_id][DATA_API] = api
+
+    payload = await async_get_config_entry_diagnostics(hass, entry)
+    assets = payload["descriptor_summary"]["upstream_assets_fingerprint"]
+    assert assets["cached"] == "2.08|index-Old.js"
+    assert assets["live"] is None
+    assert assets["mismatched"] is False
+    assert assets["probe_error"] == "live probe failed"
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_reports_api_client_missing_probe_methods(hass: HomeAssistant) -> None:
+    from custom_components.habragerone.const import CONF_UPSTREAM_ASSETS_FINGERPRINT, DATA_API
+
+    entry = register_config_entry(
+        hass,
+        runtime=object(),
+        descriptors=[{"platform": "sensor", "symbol": "TEMP"}],
+        entity_stats={"sensor": {"descriptor_count": 1, "created_count": 1}},
+    )
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_UPSTREAM_ASSETS_FINGERPRINT: "2.08|index-Old.js"},
+    )
+    hass.data[DOMAIN][entry.entry_id][DATA_API] = object()
+
+    payload = await async_get_config_entry_diagnostics(hass, entry)
+    assets = payload["descriptor_summary"]["upstream_assets_fingerprint"]
+    assert assets["probe_error"] == "api client missing probe methods"
+
+
+@pytest.mark.asyncio
 async def test_diagnostics_skips_connectivity_when_entry_data_not_dict(hass: HomeAssistant) -> None:
     entry = register_config_entry(hass, runtime=object(), descriptors=[])
     hass.data[DOMAIN][entry.entry_id] = "not-a-dict"  # type: ignore[assignment]
