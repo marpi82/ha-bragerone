@@ -718,11 +718,14 @@ async def _build_panel_groups_with_fallback(
     Returns:
         Mapping of panel name to symbols (possibly empty).
     """
-    groups = await resolver.build_panel_groups(
-        device_menu=device_menu,
-        permissions=permissions,
-        all_panels=True,
-        web_ui_only=web_ui_only,
+    groups = cast(
+        dict[str, list[str]],
+        await resolver.build_panel_groups(
+            device_menu=device_menu,
+            permissions=permissions,
+            all_panels=True,
+            web_ui_only=web_ui_only,
+        ),
     )
     if not _panel_group_symbols(groups):
         LOGGER.warning(
