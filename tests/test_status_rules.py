@@ -64,6 +64,13 @@ def test_resolve_rule_bool_maps_on_off_tokens() -> None:
     descriptor["mapping"]["command_rules"][0]["value"] = "maybe"
     assert resolve_rule_bool(descriptor=descriptor, flat_values={}, default_actual=1) is None
 
+    descriptor["mapping"]["command_rules"][0]["value"] = "Włączono"
+    assert resolve_rule_bool(descriptor=descriptor, flat_values={}, default_actual=1) is True
+    descriptor["mapping"]["command_rules"][0]["value"] = "Wyłączony"
+    assert resolve_rule_bool(descriptor=descriptor, flat_values={}, default_actual=1) is False
+    descriptor["mapping"]["command_rules"][0]["value"] = "Załączony"
+    assert resolve_rule_bool(descriptor=descriptor, flat_values={}, default_actual=1) is True
+
 
 def test_resolve_rule_bool_returns_none_for_non_string_display() -> None:
     descriptor = {"mapping": {"command_rules": [{"conditions": [], "value": 42}]}}
