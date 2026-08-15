@@ -313,6 +313,25 @@ async def test_runtime_connectivity_listener_compat_and_seed_edges() -> None:
     assert boom_calls == 1
     assert type_error_calls == 1
 
+    # When signature inspection fails, fall back to the modern 3-arg call.
+    uninspectable_calls: list[tuple[str, bool, bool]] = []
+
+    class _Uninspectable:
+        def __call__(self, devid: str, online: bool, flipped: bool = True) -> None:
+            uninspectable_calls.append((devid, online, flipped))
+
+    runtime._connectivity_listeners.clear()
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        runtime_module = __import__("custom_components.habragerone.runtime", fromlist=["inspect"])
+        monkeypatch.setattr(
+            runtime_module.inspect,
+            "signature",
+            lambda _cb: (_ for _ in ()).throw(ValueError("no sig")),
+        )
+        runtime.add_connectivity_listener(_Uninspectable())  # type: ignore[arg-type]
+        runtime._apply_module_online("DEV1", False, connected_at=0)
+    assert uninspectable_calls == [("DEV1", False, True)]
+
     # Bad gateway events are ignored.
     runtime._on_gateway_connectivity(object())
     runtime._on_gateway_connectivity(types.SimpleNamespace(devid="", online=True))
