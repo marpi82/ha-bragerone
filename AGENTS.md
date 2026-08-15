@@ -4,7 +4,7 @@ HACS custom integration (`custom_components/habragerone`) connecting BragerOne h
 
 ## Project shape
 
-- **Platforms**: `sensor`, `binary_sensor`, `switch`, `number`, `select`, `button` (no `climate`).
+- **Platforms**: `sensor`, `binary_sensor`, `switch`, `number` (`NumberMode.BOX`), `select`, `button` (no `climate`).
 - **Python**: `>=3.14.2,<3.15`; **HA**: `homeassistant>=2026.3.0`; iot_class `cloud_push`.
 - **Dependencies**: **uv** (`uv.lock` committed). Runtime deps pinned exactly in `manifest.json`.
 - **Build/versioning**: hatchling + hatch-vcs, CalVer from git tags.

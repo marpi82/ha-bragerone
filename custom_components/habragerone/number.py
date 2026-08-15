@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -48,6 +48,8 @@ class BragerSymbolNumber(NumberEntity):
 
     _attr_has_entity_name = True
     _attr_should_poll = False
+    # Wide heating setpoints make sliders imprecise; prefer an editable box like the BragerOne UI.
+    _attr_mode = NumberMode.BOX
 
     def __init__(self, *, entry: ConfigEntry, runtime: BragerRuntime, descriptor: dict[str, Any]) -> None:
         """Initialize number entity from one cached descriptor."""

@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from homeassistant.components.number import NumberMode
 from homeassistant.core import HomeAssistant
 
 from tests.conftest import install_pybragerone_stubs
@@ -69,6 +70,7 @@ async def test_number_entity_identity_min_max_and_device_info(hass: HomeAssistan
     assert entity._attr_unique_id == f"{entry.entry_id}_dev1_setpoint_number"
     assert entity._attr_native_min_value == 5.0
     assert entity._attr_native_max_value == 30.0
+    assert entity._attr_mode == NumberMode.BOX
     assert entity.device_info["identifiers"] == {(DOMAIN, "DEV1")}
 
 
