@@ -185,10 +185,15 @@ def descriptor_display_name(descriptor: dict[str, Any]) -> str:
 
 
 def descriptor_suggested_object_id(descriptor: dict[str, Any]) -> str:
-    """Build stable object id to avoid duplicate suffixes for repeated labels."""
-    module_name = str(descriptor.get("module_name") or descriptor.get("devid") or "device")
+    """Build a stable suggested object id from ``devid`` + ``symbol``.
+
+    Uses the internet-module id (not the localizable module display name) so
+    new entity_ids survive language/bundle/bootstrap refreshes. Existing
+    registry entity_ids are not rewritten by Home Assistant on upgrade.
+    """
+    devid = str(descriptor.get("devid") or "device")
     symbol = str(descriptor.get("symbol") or "entity")
-    return slugify(f"{module_name}_{symbol}")
+    return slugify(f"{devid}_{symbol}")
 
 
 def record_platform_entity_stats(

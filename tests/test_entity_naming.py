@@ -24,10 +24,17 @@ def test_descriptor_display_name_without_panel_path() -> None:
     assert descriptor_display_name(descriptor) == "Temperatura kotła"
 
 
-def test_descriptor_suggested_object_id_uses_module_and_symbol() -> None:
+def test_descriptor_suggested_object_id_uses_devid_and_symbol() -> None:
     descriptor = {
+        "devid": "MODABC123",
         "module_name": "ht_daspell_gl_37kw",
-        "symbol": "PARAM_0",
+        "symbol": "PARAM_P4_43",
     }
 
-    assert descriptor_suggested_object_id(descriptor) == "ht_daspell_gl_37kw_param_0"
+    # module_name must not influence the object id — only devid + symbol.
+    assert descriptor_suggested_object_id(descriptor) == "modabc123_param_p4_43"
+
+
+def test_descriptor_suggested_object_id_falls_back_when_devid_missing() -> None:
+    descriptor = {"symbol": "PARAM_0"}
+    assert descriptor_suggested_object_id(descriptor) == "device_param_0"
