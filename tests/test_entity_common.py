@@ -220,6 +220,15 @@ def test_device_info_group_mode_slash_only_panel_path_keeps_path() -> None:
     assert info["name"] == "/"
 
 
+def test_menu_device_display_name_falls_back_through_path_segments() -> None:
+    assert _menu_device_display_name({"menu_group_title": "Menu termostatów"}) == "Menu termostatów"
+    assert _menu_device_display_name({"menu_title": "Zawór 1"}) == "Zawór 1"
+    assert _menu_device_display_name({"panel_path": "Root/Leaf"}) == "Root"
+    assert _menu_device_display_name({"panel_path": "/Leaf"}) == "Leaf"
+    assert _menu_device_display_name({"menu_key": "modules.menu.boiler"}) == "modules.menu.boiler"
+    assert _menu_device_display_name({}) == "menu"
+
+
 @pytest.mark.asyncio
 async def test_device_grouping_mode_reads_options_then_data(hass: HomeAssistant) -> None:
     runtime, *_rest = make_runtime()
