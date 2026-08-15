@@ -16,6 +16,7 @@ from .entity_common import (
     descriptor_suggested_object_id,
     device_info_from_descriptor,
     get_runtime_and_descriptors,
+    module_is_reachable,
     record_platform_entity_stats,
 )
 from .runtime import BragerRuntime
@@ -43,6 +44,7 @@ class BragerActionButton(ButtonEntity):
     """Button entity for command-only BragerOne symbols."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(self, *, entry: ConfigEntry, runtime: BragerRuntime, descriptor: dict[str, Any]) -> None:
         """Initialize action button from one cached descriptor."""
@@ -55,11 +57,33 @@ class BragerActionButton(ButtonEntity):
         self._attr_name = label
         self._attr_suggested_object_id = descriptor_suggested_object_id(descriptor)
         self._attr_unique_id = f"{entry.entry_id}_{self._devid}_{self._symbol}_button".lower().replace(" ", "_")
+        self._attr_available = module_is_reachable(runtime, self._devid)
+        self._unsubscribe_connectivity: Any = None
 
     @property
     def device_info(self) -> DeviceInfo:
         """Return device metadata for HA device registry."""
         return device_info_from_descriptor(self._descriptor, domain=DOMAIN)
+
+    async def async_added_to_hass(self) -> None:
+        """Attach connectivity listener when entity is added."""
+        self._unsubscribe_connectivity = self._runtime.add_connectivity_listener(self._on_connectivity)
+        self.async_schedule_update_ha_state(True)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Detach connectivity listener before entity removal."""
+        if callable(self._unsubscribe_connectivity):
+            self._unsubscribe_connectivity()
+            self._unsubscribe_connectivity = None
+
+    async def async_update(self) -> None:
+        """Refresh availability from module cloud connectivity."""
+        self._attr_available = module_is_reachable(self._runtime, self._devid)
+
+    def _on_connectivity(self, devid: str, _online: bool) -> None:
+        if devid != self._devid:
+            return
+        self.async_schedule_update_ha_state(True)
 
     async def async_press(self) -> None:
         """Dispatch action command to backend."""

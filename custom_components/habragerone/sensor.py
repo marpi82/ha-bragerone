@@ -19,6 +19,7 @@ from .entity_common import (
     descriptor_refresh_keys,
     descriptor_suggested_object_id,
     device_info_from_descriptor,
+    entity_is_available,
     get_runtime_and_descriptors,
     record_platform_entity_stats,
 )
@@ -81,17 +82,22 @@ class BragerSymbolSensor(SensorEntity):
         self._refresh_keys = descriptor_refresh_keys(descriptor)
 
         self._unsubscribe_listener: Any = None
+        self._unsubscribe_connectivity: Any = None
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to push updates when entity is added to HA."""
         self._unsubscribe_listener = self._runtime.add_listener(self._on_runtime_update)
+        self._unsubscribe_connectivity = self._runtime.add_connectivity_listener(self._on_connectivity)
         self.async_schedule_update_ha_state(True)
 
     async def async_will_remove_from_hass(self) -> None:
-        """Detach runtime listener when entity is removed from HA."""
+        """Detach runtime listeners when entity is removed from HA."""
         if callable(self._unsubscribe_listener):
             self._unsubscribe_listener()
             self._unsubscribe_listener = None
+        if callable(self._unsubscribe_connectivity):
+            self._unsubscribe_connectivity()
+            self._unsubscribe_connectivity = None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -101,11 +107,13 @@ class BragerSymbolSensor(SensorEntity):
     async def async_update(self) -> None:
         """Fetch latest value from ParamStore (no heavy resolver call)."""
         raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
+        self._attr_available = entity_is_available(
+            self._runtime,
+            devid=self._devid,
+            has_value=raw_value is not None,
+        )
         if raw_value is None:
-            self._attr_available = False
             return
-
-        self._attr_available = True
         if self._requires_resolver_value:
             resolved_value, resolved_unit = await self._runtime.async_resolve_symbol_with_unit(self._symbol)
             normalized_dynamic_unit = self._normalize_unit(resolved_unit)
@@ -135,6 +143,11 @@ class BragerSymbolSensor(SensorEntity):
     def _on_runtime_update(self, _update: ParamUpdate) -> None:
         update_key = f"{_update.pool}.{_update.chan}{_update.idx}"
         if self._refresh_keys and update_key not in self._refresh_keys:
+            return
+        self.async_schedule_update_ha_state(True)
+
+    def _on_connectivity(self, devid: str, _online: bool) -> None:
+        if devid != self._devid:
             return
         self.async_schedule_update_ha_state(True)
 

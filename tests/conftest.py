@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import types
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -18,6 +19,16 @@ class _TokenStub(BaseModel):
     token_type: str = "bearer"
     expires_at: datetime | None = None
     objects: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _ModuleConnectivityStub:
+    """Minimal ModuleConnectivity stand-in for offline unit tests."""
+
+    devid: str
+    online: bool
+    source: str = "derived"
+    connected_at: int | None = None
 
 
 @pytest.fixture(autouse=True)
@@ -85,6 +96,7 @@ def install_pybragerone_stubs() -> None:
 
     pybragerone_models_events_stub = types.ModuleType("pybragerone.models.events")
     pybragerone_models_events_stub.ParamUpdate = object
+    pybragerone_models_events_stub.ModuleConnectivity = _ModuleConnectivityStub
     sys.modules["pybragerone.models.events"] = pybragerone_models_events_stub
 
     pybragerone_models_catalog_stub = types.ModuleType("pybragerone.models.catalog")

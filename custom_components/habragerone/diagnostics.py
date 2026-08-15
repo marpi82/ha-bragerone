@@ -17,9 +17,11 @@ from .const import (
     CONF_PLATFORM,
     DATA_DIAGNOSTIC_TREND,
     DATA_ENTITY_STATS,
+    DATA_RUNTIME,
     DOMAIN,
     PLATFORMS,
 )
+from .runtime import BragerRuntime
 
 REDACT_KEYS = {CONF_PASSWORD}
 
@@ -29,6 +31,22 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
     runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
     descriptors_raw = runtime.get(CONF_ENTITY_DESCRIPTORS) if isinstance(runtime, dict) else None
     descriptors = descriptors_raw if isinstance(descriptors_raw, list) else []
+
+    connectivity: dict[str, dict[str, object]] = {}
+    if isinstance(runtime, dict):
+        brager_runtime = runtime.get(DATA_RUNTIME)
+        if isinstance(brager_runtime, BragerRuntime):
+            devids: set[str] = set(brager_runtime.modules_meta)
+            gateway_modules = getattr(brager_runtime.gateway, "modules", None)
+            if isinstance(gateway_modules, list):
+                devids.update(str(devid) for devid in gateway_modules)
+            for devid in sorted(devids):
+                meta = brager_runtime.modules_meta.get(devid, {})
+                connected_at = meta.get("connectedAt") if isinstance(meta, dict) else None
+                connectivity[devid] = {
+                    "online": brager_runtime.module_online(devid),
+                    "connectedAt": connected_at if isinstance(connected_at, int) else None,
+                }
 
     platform_counter: Counter[str] = Counter()
     writable_counter = 0
@@ -247,6 +265,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
             "entry": dict(entry.data),
             "runtime_keys": sorted(runtime.keys()) if isinstance(runtime, dict) else [],
             "descriptor_summary": summary_core,
+            "connectivity": connectivity,
         },
         REDACT_KEYS,
     )
