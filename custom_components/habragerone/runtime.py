@@ -23,6 +23,8 @@ from .numeric_display import descriptor_numeric_transform
 UpdateCallback = Callable[[ParamUpdate], None]
 # devid, online, online_changed — metadata-only updates set online_changed=False.
 ConnectivityCallback = Callable[[str, bool, bool], None]
+# library↔cloud Socket.IO session: up, changed.
+CloudSessionCallback = Callable[[bool, bool], None]
 LOGGER = logging.getLogger(__name__)
 
 
@@ -39,7 +41,9 @@ class BragerRuntime:
     _tasks: list[asyncio.Task[Any]] = field(default_factory=list)
     _listeners: set[UpdateCallback] = field(default_factory=set)
     _connectivity_listeners: set[ConnectivityCallback] = field(default_factory=set)
+    _cloud_session_listeners: set[CloudSessionCallback] = field(default_factory=set)
     _module_online: dict[str, bool] = field(default_factory=dict)
+    _cloud_session_up: bool | None = None
     _start_monotonic: float | None = None
     _first_update_logged: bool = False
     _status_resolver: ParamResolver | None = None
@@ -54,6 +58,9 @@ class BragerRuntime:
         register = getattr(self.gateway, "on_module_connectivity", None)
         if self.supports_module_connectivity and callable(register):
             register(self._on_gateway_connectivity)
+        register_session = getattr(self.gateway, "on_cloud_session", None)
+        if self.supports_cloud_session and callable(register_session):
+            register_session(self._on_gateway_cloud_session)
         try:
             await self.gateway.start()
         except Exception:
@@ -65,6 +72,7 @@ class BragerRuntime:
             self._tasks.clear()
             raise
         self._seed_module_online_from_gateway()
+        self._seed_cloud_session_from_gateway()
         if self._start_monotonic is not None:
             LOGGER.debug(
                 "Runtime gateway.start completed in %.3fs (modules=%s)",
@@ -102,15 +110,35 @@ class BragerRuntime:
 
         return _remove
 
+    def add_cloud_session_listener(self, callback: CloudSessionCallback) -> Callable[[], None]:
+        """Register a library↔cloud session listener and return unsubscribe callable."""
+        self._cloud_session_listeners.add(callback)
+
+        def _remove() -> None:
+            self._cloud_session_listeners.discard(callback)
+
+        return _remove
+
     def module_online(self, devid: str) -> bool | None:
         """Return cached module online state, or ``None`` if not yet known."""
         return self._module_online.get(devid)
+
+    def cloud_session_up(self) -> bool | None:
+        """Return cached library↔cloud Socket.IO session state, or ``None`` if unknown."""
+        return self._cloud_session_up
 
     @property
     def supports_module_connectivity(self) -> bool:
         """Return whether the gateway exposes the module connectivity API."""
         return callable(getattr(self.gateway, "on_module_connectivity", None)) and callable(
             getattr(self.gateway, "module_online", None)
+        )
+
+    @property
+    def supports_cloud_session(self) -> bool:
+        """Return whether the gateway exposes library↔cloud session callbacks."""
+        return callable(getattr(self.gateway, "on_cloud_session", None)) and callable(
+            getattr(self.gateway, "ws_session_up", None)
         )
 
     def _seed_module_online_from_gateway(self) -> None:
@@ -140,6 +168,14 @@ class BragerRuntime:
                 online_changed=True,
             )
 
+    def _seed_cloud_session_from_gateway(self) -> None:
+        """Pull initial library↔cloud session bit from the gateway after start."""
+        if not self.supports_cloud_session:
+            return
+        up = self.gateway.ws_session_up()
+        if isinstance(up, bool):
+            self._apply_cloud_session(up)
+
     def _on_gateway_connectivity(self, event: Any) -> None:
         """Handle ``ModuleConnectivity`` (or duck-typed) events from the gateway."""
         devid = str(getattr(event, "devid", "") or "")
@@ -158,6 +194,13 @@ class BragerRuntime:
             gateway=gateway if isinstance(gateway, dict) else None,
             online_changed=online_changed,
         )
+
+    def _on_gateway_cloud_session(self, event: Any) -> None:
+        """Handle ``CloudSessionConnectivity`` (or duck-typed) events from the gateway."""
+        up = getattr(event, "up", None)
+        if not isinstance(up, bool):
+            return
+        self._apply_cloud_session(up)
 
     def _apply_module_online(
         self,
@@ -182,6 +225,23 @@ class BragerRuntime:
                 self._invoke_connectivity_listener(callback, devid, online, flipped)
             except Exception:
                 LOGGER.exception("Connectivity listener failed for devid=%s", devid)
+
+    def _apply_cloud_session(self, up: bool) -> None:
+        """Update library↔cloud session cache and notify listeners on flips or first seed.
+
+        The second listener argument is ``True`` on a real flip or the first known
+        value (seed); idempotent repeats do not notify.
+        """
+        previous = self._cloud_session_up
+        self._cloud_session_up = up
+        flipped = previous is not up
+        if not flipped and previous is not None:
+            return
+        for callback in list(self._cloud_session_listeners):
+            try:
+                callback(up, flipped or previous is None)
+            except Exception:
+                LOGGER.exception("Cloud session listener failed")
 
     @staticmethod
     def _invoke_connectivity_listener(

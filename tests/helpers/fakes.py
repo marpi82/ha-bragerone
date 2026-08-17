@@ -72,6 +72,8 @@ class FakeGateway:
         self._connected_at: dict[str, int] = {}
         self._gateway: dict[str, dict[str, object]] = {}
         self._connectivity_callbacks: list[Any] = []
+        self._cloud_session_callbacks: list[Any] = []
+        self._ws_session_up = False
         self._start_error = start_error
         self._start_delay = start_delay
         self.started = False
@@ -83,13 +85,19 @@ class FakeGateway:
         if self._start_error is not None:
             raise self._start_error
         self.started = True
+        self.emit_cloud_session(True, source="connect")
 
     async def stop(self) -> None:
         self.stopped = True
+        self.emit_cloud_session(False, source="stop")
 
     def on_module_connectivity(self, callback: Any) -> None:
         """Register a ModuleConnectivity callback (mirrors BragerOneGateway)."""
         self._connectivity_callbacks.append(callback)
+
+    def on_cloud_session(self, callback: Any) -> None:
+        """Register a CloudSessionConnectivity callback (mirrors BragerOneGateway)."""
+        self._cloud_session_callbacks.append(callback)
 
     def module_online(self, devid: str) -> bool | None:
         """Return cached online flag, or ``None`` when unknown."""
@@ -103,6 +111,10 @@ class FakeGateway:
         """Return cached gateway blob when known."""
         gateway = self._gateway.get(devid)
         return dict(gateway) if isinstance(gateway, dict) else None
+
+    def ws_session_up(self) -> bool:
+        """Return whether the fake Socket.IO session is up."""
+        return self._ws_session_up
 
     def emit_connectivity(
         self,
@@ -129,6 +141,14 @@ class FakeGateway:
             metadata_changed=False,
         )
         for callback in list(self._connectivity_callbacks):
+            callback(event)
+
+    def emit_cloud_session(self, up: bool, *, source: str = "disconnect", changed: bool = True) -> None:
+        """Update session cache and notify registered cloud-session callbacks."""
+        previous = self._ws_session_up
+        self._ws_session_up = up
+        event = types.SimpleNamespace(up=up, source=source, changed=changed or previous is not up)
+        for callback in list(self._cloud_session_callbacks):
             callback(event)
 
 

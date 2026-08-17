@@ -124,8 +124,8 @@ async def test_async_setup_adds_connectivity_sensor(hass: HomeAssistant) -> None
     assert info.get("via_device") == (DOMAIN, "DEV1")
     assert info.get("name") == "Boiler — Connection with module"
     stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]["binary_sensor"]
-    assert stats["created_count"] == 2
-    assert stats["descriptor_count"] == 2
+    assert stats["created_count"] == 3
+    assert stats["descriptor_count"] == 3
 
 
 @pytest.mark.asyncio

@@ -36,6 +36,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
     descriptors = descriptors_raw if isinstance(descriptors_raw, list) else []
 
     connectivity: dict[str, dict[str, object]] = {}
+    cloud_session: dict[str, object] | None = None
     if isinstance(runtime, dict):
         brager_runtime = runtime.get(DATA_RUNTIME)
         if isinstance(brager_runtime, BragerRuntime):
@@ -52,6 +53,10 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
                     "online": brager_runtime.module_online(devid),
                     "connectedAt": connected_at if isinstance(connected_at, int) else None,
                 }
+            cloud_session = {
+                "up": brager_runtime.cloud_session_up(),
+                "supported": brager_runtime.supports_cloud_session,
+            }
 
     platform_counter: Counter[str] = Counter()
     writable_counter = 0
@@ -305,6 +310,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
             "runtime_keys": sorted(runtime.keys()) if isinstance(runtime, dict) else [],
             "descriptor_summary": summary_core,
             "connectivity": connectivity,
+            "cloud_session": cloud_session,
         },
         REDACT_KEYS,
     )

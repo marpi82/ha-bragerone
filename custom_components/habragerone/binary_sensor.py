@@ -1,4 +1,4 @@
-"""Binary sensor platform for BragerOne status symbols and module connectivity."""
+"""Binary sensor platform for BragerOne status, module connectivity, and cloud session."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from homeassistant.components.binary_sensor import BinarySensorDeviceClass, Bina
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from pybragerone.models.events import ParamUpdate
 
@@ -85,11 +85,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             )
             connection_count += 1
 
+    cloud_session_count = 0
+    if isinstance(runtime_obj, BragerRuntime) and runtime_obj.supports_cloud_session:
+        entities.append(BragerCloudSessionBinarySensor(entry=entry, runtime=runtime_obj))
+        cloud_session_count = 1
+
     record_platform_entity_stats(
         hass,
         entry,
         platform="binary_sensor",
-        descriptor_count=len(descriptors) + connection_count,
+        descriptor_count=len(descriptors) + connection_count + cloud_session_count,
         created_count=len(entities),
     )
     async_add_entities(entities)
@@ -288,6 +293,62 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
         if devid != self._devid:
             return
         # Refresh on online flips and on metadata-only connectedAt/gateway updates.
+        self.async_schedule_update_ha_state(True)
+
+
+class BragerCloudSessionBinarySensor(BinarySensorEntity):
+    """Diagnostic binary sensor for library↔cloud Socket.IO session health.
+
+    Distinct from :class:`BragerModuleConnectivityBinarySensor` (module↔cloud
+    ``connectedAt``). When this is off the library self-heals; module offline is
+    observe-only and must not be inferred from this bit.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "cloud_session"
+
+    def __init__(self, *, entry: ConfigEntry, runtime: BragerRuntime) -> None:
+        """Initialize the cloud API session diagnostic for one config entry."""
+        self._runtime = runtime
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_cloud_session_binary"
+        self._attr_suggested_object_id = "cloud_api_session"
+        up = runtime.cloud_session_up()
+        self._attr_is_on = up
+        self._attr_available = up is not None
+        self._unsubscribe_session: Any = None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Attach to a config-entry service device (not a per-module child)."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"entry:{self._entry.entry_id}")},
+            manufacturer="BragerOne",
+            name="BragerOne",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Attach cloud-session listener when entity is added."""
+        self._unsubscribe_session = self._runtime.add_cloud_session_listener(self._on_cloud_session)
+        self.async_schedule_update_ha_state(True)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Detach cloud-session listener before entity removal."""
+        if callable(self._unsubscribe_session):
+            self._unsubscribe_session()
+            self._unsubscribe_session = None
+
+    async def async_update(self) -> None:
+        """Refresh on/off from runtime cloud-session cache."""
+        up = self._runtime.cloud_session_up()
+        self._attr_is_on = up
+        self._attr_available = up is not None
+
+    def _on_cloud_session(self, _up: bool, _changed: bool = True) -> None:
         self.async_schedule_update_ha_state(True)
 
 
