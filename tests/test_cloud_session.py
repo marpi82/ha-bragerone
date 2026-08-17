@@ -94,6 +94,17 @@ async def test_cloud_session_sensor_tracks_runtime(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cloud_session_sensor_remove_without_listener(hass: HomeAssistant) -> None:
+    """async_will_remove is a no-op when the listener was never attached."""
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerCloudSessionBinarySensor(entry=entry, runtime=runtime)
+    entity.hass = hass
+    await entity.async_will_remove_from_hass()
+    assert entity._unsubscribe_session is None
+
+
+@pytest.mark.asyncio
 async def test_runtime_cloud_session_edge_paths() -> None:
     runtime, _api, gateway, _store = make_runtime()
     await runtime.start()
