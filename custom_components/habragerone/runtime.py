@@ -174,7 +174,7 @@ class BragerRuntime:
             return
         up = self.gateway.ws_session_up()
         if isinstance(up, bool):
-            self._apply_cloud_session(up, changed=True)
+            self._apply_cloud_session(up)
 
     def _on_gateway_connectivity(self, event: Any) -> None:
         """Handle ``ModuleConnectivity`` (or duck-typed) events from the gateway."""
@@ -200,10 +200,7 @@ class BragerRuntime:
         up = getattr(event, "up", None)
         if not isinstance(up, bool):
             return
-        changed = getattr(event, "changed", True)
-        if not isinstance(changed, bool):
-            changed = True
-        self._apply_cloud_session(up, changed=changed)
+        self._apply_cloud_session(up)
 
     def _apply_module_online(
         self,
@@ -229,9 +226,12 @@ class BragerRuntime:
             except Exception:
                 LOGGER.exception("Connectivity listener failed for devid=%s", devid)
 
-    def _apply_cloud_session(self, up: bool, *, changed: bool) -> None:
-        """Update library↔cloud session cache and notify listeners on flips or first seed."""
-        _ = changed
+    def _apply_cloud_session(self, up: bool) -> None:
+        """Update library↔cloud session cache and notify listeners on flips or first seed.
+
+        The second listener argument is ``True`` on a real flip or the first known
+        value (seed); idempotent repeats do not notify.
+        """
         previous = self._cloud_session_up
         self._cloud_session_up = up
         flipped = previous is not up

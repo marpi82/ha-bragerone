@@ -82,7 +82,7 @@ async def test_cloud_session_sensor_tracks_runtime(hass: HomeAssistant) -> None:
     assert entity.is_on is True
     assert entity.available is True
 
-    runtime._apply_cloud_session(False, changed=True)
+    runtime._apply_cloud_session(False)
     await entity.async_update()
     assert entity.is_on is False
 
@@ -117,22 +117,24 @@ async def test_runtime_cloud_session_edge_paths() -> None:
 
     # Invalid / non-bool cloud-session events are ignored.
     runtime._on_gateway_cloud_session(object())
-    runtime._on_gateway_cloud_session(types.SimpleNamespace(up="nope", changed=True))
-    runtime._on_gateway_cloud_session(types.SimpleNamespace(up=True, changed="yes"))
-    assert runtime.cloud_session_up() is True  # last valid seed from start still True after start()
+    runtime._on_gateway_cloud_session(types.SimpleNamespace(up="nope"))
+    assert runtime.cloud_session_up() is None
+
+    runtime._on_gateway_cloud_session(types.SimpleNamespace(up=True))
+    assert runtime.cloud_session_up() is True
 
     # Listener exceptions are swallowed.
     def _boom(_up: bool, _changed: bool) -> None:
         raise RuntimeError("listener failed")
 
     runtime.add_cloud_session_listener(_boom)
-    runtime._apply_cloud_session(False, changed=True)
+    runtime._apply_cloud_session(False)
     assert runtime.cloud_session_up() is False
 
     # Idempotent apply does not re-notify when already known.
     seen: list[tuple[bool, bool]] = []
     runtime.add_cloud_session_listener(lambda up, changed: seen.append((up, changed)))
-    runtime._apply_cloud_session(False, changed=True)
+    runtime._apply_cloud_session(False)
     assert seen == []
     await runtime.stop()
 
