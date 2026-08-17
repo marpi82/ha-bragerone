@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import types
+
 import pytest
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.const import EntityCategory
@@ -66,13 +68,16 @@ async def test_async_setup_adds_cloud_session_sensor(hass: HomeAssistant) -> Non
 
 @pytest.mark.asyncio
 async def test_cloud_session_sensor_tracks_runtime(hass: HomeAssistant) -> None:
-    runtime, _api, gateway, _store = make_runtime()
+    runtime, _api, _gateway, _store = make_runtime()
     entry = register_config_entry(hass, runtime=runtime, descriptors=[])
     entity = BragerCloudSessionBinarySensor(entry=entry, runtime=runtime)
     entity.hass = hass
     entity.entity_id = "binary_sensor.test_cloud_session"
+    entity.async_schedule_update_ha_state = lambda *_a, **_k: None  # type: ignore[method-assign]
 
     await runtime.start()
+    await entity.async_added_to_hass()
+    assert callable(entity._unsubscribe_session)
     await entity.async_update()
     assert entity.is_on is True
     assert entity.available is True
@@ -81,14 +86,43 @@ async def test_cloud_session_sensor_tracks_runtime(hass: HomeAssistant) -> None:
     await entity.async_update()
     assert entity.is_on is False
 
-    # Listener wiring without scheduling HA state (no platform_data in unit tests).
-    seen: list[tuple[bool, bool]] = []
-    entity._unsubscribe_session = runtime.add_cloud_session_listener(lambda up, changed: seen.append((up, changed)))
-    gateway.emit_cloud_session(True, source="connect")
-    assert seen == [(True, True)]
+    entity._on_cloud_session(True, True)
 
     await entity.async_will_remove_from_hass()
     assert entity._unsubscribe_session is None
+    await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_runtime_cloud_session_edge_paths() -> None:
+    runtime, _api, gateway, _store = make_runtime()
+    await runtime.start()
+
+    # Non-bool session bit is ignored when seeding.
+    gateway.ws_session_up = lambda: "up"  # type: ignore[method-assign, return-value]
+    runtime._cloud_session_up = None
+    runtime._seed_cloud_session_from_gateway()
+    assert runtime.cloud_session_up() is None
+
+    # Invalid / non-bool cloud-session events are ignored.
+    runtime._on_gateway_cloud_session(object())
+    runtime._on_gateway_cloud_session(types.SimpleNamespace(up="nope", changed=True))
+    runtime._on_gateway_cloud_session(types.SimpleNamespace(up=True, changed="yes"))
+    assert runtime.cloud_session_up() is True  # last valid seed from start still True after start()
+
+    # Listener exceptions are swallowed.
+    def _boom(_up: bool, _changed: bool) -> None:
+        raise RuntimeError("listener failed")
+
+    runtime.add_cloud_session_listener(_boom)
+    runtime._apply_cloud_session(False, changed=True)
+    assert runtime.cloud_session_up() is False
+
+    # Idempotent apply does not re-notify when already known.
+    seen: list[tuple[bool, bool]] = []
+    runtime.add_cloud_session_listener(lambda up, changed: seen.append((up, changed)))
+    runtime._apply_cloud_session(False, changed=True)
+    assert seen == []
     await runtime.stop()
 
 

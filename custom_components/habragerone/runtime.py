@@ -172,10 +172,7 @@ class BragerRuntime:
         """Pull initial library↔cloud session bit from the gateway after start."""
         if not self.supports_cloud_session:
             return
-        getter = getattr(self.gateway, "ws_session_up", None)
-        if not callable(getter):
-            return
-        up = getter()
+        up = self.gateway.ws_session_up()
         if isinstance(up, bool):
             self._apply_cloud_session(up, changed=True)
 
