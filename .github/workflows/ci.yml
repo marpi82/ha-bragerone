@@ -213,17 +213,29 @@ jobs:
           # Include musllinux 1.2 and 1.1 tags to cover wheels built against both musl baselines.
           # Prefer musllinux (HAOS/Alpine); fall back to manylinux where musl
           # wheels are not yet published for CPython 3.14 (e.g. tree-sitter aarch64).
-          python -m pip download \
-            --dest "${RUNNER_TEMP}/wheels-${{ matrix.arch }}" \
-            --requirement "${RUNNER_TEMP}/manifest-requirements.txt" \
-            --only-binary=:all: \
-            --platform musllinux_1_2_${{ matrix.arch }} \
-            --platform musllinux_1_1_${{ matrix.arch }} \
-            --platform manylinux2014_${{ matrix.arch }} \
-            --platform manylinux_2_17_${{ matrix.arch }} \
-            --platform manylinux_2_28_${{ matrix.arch }} \
-            --implementation cp \
-            --python-version 3.14.2
+          # --pre: allow exact pins like py-bragerone==YYYY.M.NrcN (and tolerate brief
+          # PyPI index lag after a fresh pre-release publish).
+          for attempt in 1 2 3 4 5; do
+            if python -m pip download \
+              --dest "${RUNNER_TEMP}/wheels-${{ matrix.arch }}" \
+              --requirement "${RUNNER_TEMP}/manifest-requirements.txt" \
+              --pre \
+              --only-binary=:all: \
+              --platform musllinux_1_2_${{ matrix.arch }} \
+              --platform musllinux_1_1_${{ matrix.arch }} \
+              --platform manylinux2014_${{ matrix.arch }} \
+              --platform manylinux_2_17_${{ matrix.arch }} \
+              --platform manylinux_2_28_${{ matrix.arch }} \
+              --implementation cp \
+              --python-version 3.14.2; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              exit 1
+            fi
+            echo "pip download failed (attempt ${attempt}/5); retrying in $((attempt * 15))s..."
+            sleep $((attempt * 15))
+          done
 
   tests:
     name: tests (3.14)
