@@ -35,5 +35,12 @@
         }
       }
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "cloud_session": {
+        "name": "Cloud API seansas"
+      }
+    }
   }
 }

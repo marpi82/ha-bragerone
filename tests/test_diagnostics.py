@@ -135,6 +135,7 @@ async def test_diagnostics_includes_module_connectivity(hass: HomeAssistant) -> 
     assert connectivity["DEV1"]["online"] is True
     assert connectivity["DEV1"]["connectedAt"] == 99
     assert "DEV2" in connectivity
+    assert payload["cloud_session"] == {"up": None, "supported": True}
 
 
 @pytest.mark.asyncio
