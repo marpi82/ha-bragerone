@@ -74,6 +74,7 @@ class FakeGateway:
         self._connectivity_callbacks: list[Any] = []
         self._cloud_session_callbacks: list[Any] = []
         self._ws_session_up = False
+        self._last_param_update_age_s: float | None = None
         self._start_error = start_error
         self._start_delay = start_delay
         self.started = False
@@ -115,6 +116,13 @@ class FakeGateway:
     def ws_session_up(self) -> bool:
         """Return whether the fake Socket.IO session is up."""
         return self._ws_session_up
+
+    def last_param_update_age_s(self) -> float | None:
+        """Return seconds since the last fake ParamUpdate, or ``None``."""
+        age = self._last_param_update_age_s
+        if isinstance(age, bool) or not isinstance(age, int | float):
+            return None
+        return float(age)
 
     def emit_connectivity(
         self,

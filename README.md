@@ -15,7 +15,7 @@ This custom component provides integration between Home Assistant and the Brager
 - Configurable through Home Assistant UI
 - Support for multiple device types
 - Per-module cloud connectivity diagnostic (SPA `connectedAt` / `module.connection.*` labels) on a **separate** child device (`{devid}:module.connection`, linked with `via_device`); this is intentional in **flat** and group-by-menu alike — parameter entities go unavailable when the module is offline; writes are refused while offline. Module offline is observe-only (wait for the plant to reconnect).
-- Separate **Cloud API session** diagnostic (library↔cloud Socket.IO) on a config-entry service device — detectable and self-healing; never folded into module `connectedAt`
+- Separate **Cloud API session** diagnostic (library↔cloud Socket.IO) on a config-entry service device — detectable and self-healing; never folded into module `connectedAt`. Config-entry diagnostics include `last_param_update_age_s` (seconds since the last parameter snapshot/delta) to distinguish a live session from a frozen push stream.
 - Optional device grouping by menu (options: flat default vs group-by-menu child devices per **parent** menu route with `via_device`)
 
 ## Installation
