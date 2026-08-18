@@ -116,6 +116,10 @@ class FakeGateway:
         """Return whether the fake Socket.IO session is up."""
         return self._ws_session_up
 
+    def last_param_update_age_s(self) -> float | None:
+        """Return seconds since the last fake ParamUpdate, or ``None``."""
+        return getattr(self, "_last_param_update_age_s", None)
+
     def emit_connectivity(
         self,
         devid: str,
