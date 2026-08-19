@@ -81,7 +81,7 @@ async def test_async_setup_entry_registers_parents_and_warms_resolver(hass: Home
     ):
         assert await async_setup_entry(hass, entry) is True
 
-    fake_runtime.async_warm_status_resolver.assert_awaited_once()
+    fake_runtime.async_warm_status_resolver.assert_awaited_once_with(["STATUS_P5_11"])
     assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV1")}) is not None
 
 

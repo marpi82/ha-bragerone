@@ -7,7 +7,7 @@ import contextlib
 import inspect
 import logging
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -48,6 +48,7 @@ class BragerRuntime:
     _first_update_logged: bool = False
     _status_resolver: ParamResolver | None = None
     _resolver_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _status_label_cache: dict[str, Any] = field(default_factory=dict)
 
     async def start(self) -> None:
         """Start gateway, state store ingestion and update dispatcher."""
@@ -386,20 +387,47 @@ class BragerRuntime:
         if not ok:
             raise HomeAssistantError(f"Command write failed for '{symbol}' via raw command route")
 
-    async def async_warm_status_resolver(self) -> None:
-        """Build ``ParamResolver`` once before platform setup (#204)."""
-        await self._async_get_resolver()
+    async def async_warm_status_resolver(self, symbols: Iterable[str] | None = None) -> None:
+        """Build ``ParamResolver``, prefetch mappings, and pre-resolve STATUS labels (#204)."""
+        symbol_list = list(dict.fromkeys(str(symbol).strip() for symbol in (symbols or []) if str(symbol).strip()))
+        if not symbol_list:
+            return
+        resolver = await self._async_get_resolver()
+        if resolver is None:
+            return
+        await resolver.prefetch_param_mappings(symbol_list)
+        status_symbols = [symbol for symbol in symbol_list if symbol.startswith("STATUS_")]
+        if not status_symbols:
+            return
+        semaphore = asyncio.Semaphore(16)
+
+        async def _resolve_one(symbol: str) -> None:
+            async with semaphore:
+                label = await self._resolve_status_label_uncached(symbol, resolver=resolver)
+            if label is not None:
+                self._status_label_cache[symbol] = label
+
+        async with asyncio.TaskGroup() as group:
+            for symbol in status_symbols:
+                group.create_task(_resolve_one(symbol))
+
+    def peek_status_label(self, symbol: str) -> Any | None:
+        """Return a pre-warmed STATUS label without triggering resolver I/O."""
+        if not symbol.startswith("STATUS_"):
+            return None
+        return self._status_label_cache.get(symbol)
 
     async def async_resolve_status_label(self, symbol: str) -> Any | None:
         """Resolve STATUS_* value exactly as parser/UI logic does."""
         if not symbol.startswith("STATUS_"):
             return None
-        resolved = await self._async_resolve_symbol(symbol)
-        if resolved is None:
-            return None
-        if isinstance(resolved.value_label, str) and resolved.value_label.strip():
-            return resolved.value_label.strip()
-        return resolved.value
+        cached = self._status_label_cache.get(symbol)
+        if cached is not None:
+            return cached
+        label = await self._resolve_status_label_uncached(symbol)
+        if label is not None:
+            self._status_label_cache[symbol] = label
+        return label
 
     async def async_resolve_symbol_value(self, symbol: str) -> Any | None:
         """Resolve symbol value using parser rules and dynamic unit transforms."""
@@ -420,31 +448,51 @@ class BragerRuntime:
         )
         return value, resolved.unit
 
-    async def _async_resolve_symbol(self, symbol: str) -> Any | None:
-        resolver = await self._async_get_resolver()
-        if resolver is None:
-            return None
-        try:
-            return await resolver.resolve_value(symbol)
-        except Exception:
-            return None
-
     async def _async_get_resolver(self) -> ParamResolver | None:
         if self._status_resolver is not None:
             return self._status_resolver
         async with self._resolver_lock:
-            try:
-                self._status_resolver = ParamResolver.from_api(
-                    api=self.api,
-                    store=self.store,
-                    lang=self.language,
-                )
-            except Exception:
-                return None
+            if self._status_resolver is None:
+                try:
+                    self._status_resolver = ParamResolver.from_api(
+                        api=self.api,
+                        store=self.store,
+                        lang=self.language,
+                    )
+                except Exception:
+                    return None
             return self._status_resolver
+
+    async def _resolve_status_label_uncached(
+        self,
+        symbol: str,
+        *,
+        resolver: ParamResolver | None = None,
+    ) -> Any | None:
+        resolved = await self._async_resolve_symbol(symbol, resolver=resolver)
+        if resolved is None:
+            return None
+        if isinstance(resolved.value_label, str) and resolved.value_label.strip():
+            return resolved.value_label.strip()
+        return resolved.value
+
+    async def _async_resolve_symbol(
+        self,
+        symbol: str,
+        *,
+        resolver: ParamResolver | None = None,
+    ) -> Any | None:
+        active_resolver = resolver or await self._async_get_resolver()
+        if active_resolver is None:
+            return None
+        try:
+            return await active_resolver.resolve_value(symbol)
+        except Exception:
+            return None
 
     async def _dispatch_updates(self) -> None:
         async for update in self.gateway.bus.subscribe():
+            self._status_label_cache.clear()
             if not self._first_update_logged and self._start_monotonic is not None:
                 source = update.meta.get("_source") if isinstance(update.meta, dict) else None
                 LOGGER.debug(

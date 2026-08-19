@@ -23,6 +23,7 @@ from custom_components.habragerone.const import (  # noqa: E402
 from custom_components.habragerone.entity_common import (  # noqa: E402
     _menu_device_display_name,
     async_register_module_parent_devices,
+    collect_resolver_warm_symbols,
     descriptor_current_raw_value,
     descriptor_enum_map,
     descriptor_options,
@@ -507,3 +508,13 @@ async def test_record_platform_entity_stats_persists_counts(hass: HomeAssistant)
 
     stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]
     assert stats == {"switch": {"descriptor_count": 3, "created_count": 2}}
+
+
+def test_collect_resolver_warm_symbols_deduplicates_status_and_enum() -> None:
+    items = [
+        {"symbol": "STATUS_P5_0"},
+        {"symbol": "STATUS_P5_0"},
+        {"symbol": "PARAM_14", "mapping": {"channels": {"unit": ["a", "b"]}}},
+        {"symbol": "TEMP1"},
+    ]
+    assert collect_resolver_warm_symbols(items) == ["STATUS_P5_0", "PARAM_14"]

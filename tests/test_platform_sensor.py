@@ -125,6 +125,25 @@ async def test_sensor_update_uses_status_resolver_for_status_symbols(hass: HomeA
 
 
 @pytest.mark.asyncio
+async def test_sensor_added_to_hass_uses_prewarmed_status_label(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime(flat_values={"P5.s5": 768})
+    runtime._status_label_cache["STATUS_BOILER"] = "Work"
+    descriptor = sensor_descriptor(symbol="STATUS_BOILER", pool="P5", chan="s", idx=5, unit=None)
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "sensor.test_status"
+    entity.async_write_ha_state = MagicMock()  # type: ignore[method-assign]
+    entity.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+
+    await entity.async_added_to_hass()
+
+    entity.async_write_ha_state.assert_called_once()
+    entity.async_schedule_update_ha_state.assert_not_called()
+    assert entity.native_value == "work"
+
+
+@pytest.mark.asyncio
 async def test_sensor_update_uses_dynamic_unit_resolver(hass: HomeAssistant) -> None:
     store = FakeStore(flat_values={"P10.v2": 33})
     resolve_with_unit = AsyncMock(return_value=(42.0, "%"))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from types import SimpleNamespace
 
 import pytest
@@ -19,11 +20,15 @@ from tests.helpers.fakes import FakeParamUpdate, make_runtime  # noqa: E402
 class _FakeResolver:
     def __init__(self, resolved: object | None) -> None:
         self._resolved = resolved
+        self.prefetched: list[str] = []
 
     @classmethod
     def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
         _ = api, store, lang
         return cls(SimpleNamespace(value=10, value_label="Ten", unit="°C"))
+
+    async def prefetch_param_mappings(self, symbols: Iterable[str]) -> None:
+        self.prefetched.extend(list(symbols))
 
     async def resolve_value(self, symbol: str) -> object | None:
         if symbol == "MISSING":
@@ -37,9 +42,31 @@ async def test_async_warm_status_resolver_builds_resolver(monkeypatch: pytest.Mo
     runtime._status_resolver = None
     monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
 
-    await runtime.async_warm_status_resolver()
+    await runtime.async_warm_status_resolver(["STATUS_P5_0"])
 
     assert runtime._status_resolver is not None
+    assert runtime.peek_status_label("STATUS_P5_0") == "Ten"
+    assert runtime._status_resolver.prefetched == ["STATUS_P5_0"]
+
+
+@pytest.mark.asyncio
+async def test_async_warm_status_resolver_noop_without_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    runtime._status_resolver = None
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    await runtime.async_warm_status_resolver([])
+
+    assert runtime._status_resolver is None
+
+
+@pytest.mark.asyncio
+async def test_async_resolve_status_label_uses_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+    runtime._status_label_cache["STATUS_P5_0"] = "Cached"
+
+    assert await runtime.async_resolve_status_label("STATUS_P5_0") == "Cached"
 
 
 @pytest.mark.asyncio

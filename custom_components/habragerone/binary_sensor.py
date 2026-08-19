@@ -146,7 +146,32 @@ class BragerStatusBinarySensor(BinarySensorEntity):
             )
             self.async_write_ha_state()
             return
+        if self._try_apply_status_label_cache(raw_value):
+            self._attr_available = entity_is_available(
+                self._runtime,
+                devid=self._devid,
+                has_value=raw_value is not None or self._runtime.peek_status_label(self._symbol) is not None,
+            )
+            self.async_write_ha_state()
+            return
         self.async_schedule_update_ha_state(True)
+
+    def _try_apply_status_label_cache(self, raw_value: Any | None) -> bool:
+        """Apply on/off from pre-warmed STATUS labels without scheduling ``async_update``."""
+        if not self._symbol.startswith("STATUS_"):
+            return False
+        cached = self._runtime.peek_status_label(self._symbol)
+        if cached is None:
+            return False
+        resolved_bool = status_label_to_bool(cached)
+        if resolved_bool is None:
+            resolved_bool = resolve_entity_bool(
+                descriptor=self._descriptor,
+                flat_values=self._runtime.store.flatten(),
+                default_actual=raw_value if raw_value is not None else cached,
+            )
+        self._attr_is_on = resolved_bool
+        return True
 
     def _try_apply_binary_state_sync(self, raw_value: Any) -> bool:
         """Apply on/off from ParamStore without ``ParamResolver`` when possible."""
