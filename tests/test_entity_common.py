@@ -363,7 +363,91 @@ async def test_async_register_module_parent_devices_no_devids_is_noop(hass: Home
 
     await async_register_module_parent_devices(hass, entry, descriptors=["bad"], modules_meta={})
 
-    assert dr.async_get(hass).devices == {}
+    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is None
+
+
+@pytest.mark.asyncio
+async def test_async_register_module_parent_devices_ignores_non_list_modules(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update({"menu_key": "modules.menu.boiler"})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, "device_grouping": DEVICE_GROUPING_BY_MENU, CONF_MODULES: "not-a-list"},
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+
+    await async_register_module_parent_devices(hass, entry, descriptors=[descriptor], modules_meta={})
+
+    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is not None
+
+
+@pytest.mark.asyncio
+async def test_async_register_module_parent_devices_skips_blank_module_ids(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, "device_grouping": DEVICE_GROUPING_BY_MENU, CONF_MODULES: ["", "   "]},
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+
+    await async_register_module_parent_devices(hass, entry, descriptors=[], modules_meta={"": {}, "  ": {}})
+
+    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is None
+
+
+@pytest.mark.asyncio
+async def test_async_register_module_parent_devices_skips_non_mapping_meta(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update({"menu_key": "modules.menu.boiler"})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "device_grouping": DEVICE_GROUPING_BY_MENU})
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+
+    await async_register_module_parent_devices(hass, entry, descriptors=[descriptor], modules_meta="bad-meta")  # type: ignore[arg-type]
+
+    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is not None
+
+
+@pytest.mark.asyncio
+async def test_async_register_module_parent_devices_skips_invalid_identifiers(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    import custom_components.habragerone.entity_common as entity_common_module
+
+    runtime, *_rest = make_runtime()
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update({"menu_key": "modules.menu.boiler"})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "device_grouping": DEVICE_GROUPING_BY_MENU})
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+
+    def _bad_parent_info(**_kwargs: object) -> dict[str, object]:
+        return {
+            "identifiers": [(DOMAIN, "DEV9")],
+            "manufacturer": "BragerOne",
+            "name": "bad",
+            "model": "bad",
+            "sw_version": None,
+        }
+
+    monkeypatch.setattr(entity_common_module, "module_parent_device_info", _bad_parent_info)
+
+    await async_register_module_parent_devices(hass, entry, descriptors=[descriptor], modules_meta={})
+
+    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is None
 
 
 @pytest.mark.asyncio
