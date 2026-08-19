@@ -443,4 +443,8 @@ async def test_runtime_logs_online_transition_marker(caplog: pytest.LogCaptureFi
     text = caplog.text
     assert "Module online state changed: devid=DEV1 online=True connectedAt=123" in text
     assert "Module online state changed: devid=DEV1 online=False connectedAt=0" in text
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        runtime._apply_module_online("DEV1", False, connected_at=0, online_changed=False)
+    assert "Module online state changed" not in caplog.text
     await runtime.stop()
