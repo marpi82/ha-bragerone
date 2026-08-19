@@ -176,6 +176,27 @@ async def test_dispatch_updates_clears_status_label_cache() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_updates_logs_first_update_once() -> None:
+    runtime, _api, gateway, _store = make_runtime()
+    received = 0
+
+    def _listener(_update: FakeParamUpdate) -> None:
+        nonlocal received
+        received += 1
+
+    runtime.add_listener(_listener)
+    await runtime.start()
+    try:
+        gateway.bus.push(FakeParamUpdate(pool="P1", chan="v", idx=1))
+        gateway.bus.push(FakeParamUpdate(pool="P1", chan="v", idx=2))
+        await asyncio.sleep(0.05)
+        assert received == 2
+        assert runtime._first_update_logged is True
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_async_resolve_status_label_returns_none_for_unresolved(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime, _api, _gateway, _store = make_runtime()
 
@@ -210,6 +231,20 @@ async def test_async_resolve_symbol_with_unit_handles_missing(monkeypatch: pytes
     monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
 
     assert await runtime.async_resolve_symbol_with_unit("MISSING") == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_async_get_resolver_is_idempotent_under_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    runtime._status_resolver = None
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    first, second = await asyncio.gather(
+        runtime._async_get_resolver(),
+        runtime._async_get_resolver(),
+    )
+
+    assert first is second
 
 
 @pytest.mark.asyncio
