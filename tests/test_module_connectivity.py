@@ -428,3 +428,19 @@ async def test_runtime_connectivity_listener_compat_and_seed_edges() -> None:
     runtime.gateway = _NoConnectivityApi()  # type: ignore[assignment]
     await runtime.start()
     await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_runtime_logs_online_transition_marker(caplog: pytest.LogCaptureFixture) -> None:
+    """Online/offline flips emit a concise marker for timeline correlation."""
+    runtime, _api, _gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    await runtime.start()
+
+    with caplog.at_level("WARNING"):
+        runtime._apply_module_online("DEV1", True, connected_at=123)
+        runtime._apply_module_online("DEV1", False, connected_at=0)
+
+    text = caplog.text
+    assert "Module online state changed: devid=DEV1 online=True connectedAt=123" in text
+    assert "Module online state changed: devid=DEV1 online=False connectedAt=0" in text
+    await runtime.stop()
