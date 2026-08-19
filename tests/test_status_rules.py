@@ -9,6 +9,7 @@ from custom_components.habragerone.status_rules import (
     resolve_rule_bool,
     resolve_rule_display_value,
     rule_matches,
+    status_binary_has_sync_path,
 )
 
 
@@ -147,6 +148,33 @@ def test_read_target_actual_handles_address_bit_and_mask() -> None:
     # Bools are not bitmasks — leave the raw value untouched.
     assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": True}) is True
     assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": 1.5}) == 1.5
+
+
+def test_status_binary_has_sync_path() -> None:
+    with_rules = {
+        "mapping": {
+            "command_rules": [
+                {"value": "On", "conditions": [{"operation": "equalTo", "expected": 1, "targets": []}]},
+            ]
+        }
+    }
+    assert status_binary_has_sync_path(descriptor=with_rules, flat_values={}, default_actual=1) is True
+
+    with_bits = {"mapping": {"inputs": [{"address": "P5.s11", "bit": 1}]}}
+    assert status_binary_has_sync_path(descriptor=with_bits, flat_values={"P5.s11": 64.0}, default_actual=64.0) is True
+
+    bare = {"mapping": {"command_rules": []}}
+    assert status_binary_has_sync_path(descriptor=bare, flat_values={}, default_actual=64.0) is False
+
+    assert status_binary_has_sync_path(descriptor={"mapping": "bad"}, flat_values={}, default_actual=1) is False
+    assert (
+        status_binary_has_sync_path(
+            descriptor={"mapping": {"inputs": "bad"}},
+            flat_values={},
+            default_actual=1,
+        )
+        is False
+    )
 
 
 def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:

@@ -31,7 +31,7 @@ from .entity_common import (
     record_platform_entity_stats,
 )
 from .runtime import BragerRuntime
-from .status_rules import coerce_status_bool, resolve_entity_bool, status_label_to_bool
+from .status_rules import coerce_status_bool, resolve_entity_bool, status_binary_has_sync_path, status_label_to_bool
 
 
 def _descriptor_labels(descriptor: dict[str, Any]) -> dict[str, Any]:
@@ -137,7 +137,32 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         """Attach runtime listeners when entity is added."""
         self._unsubscribe_listener = self._runtime.add_listener(self._on_runtime_update)
         self._unsubscribe_connectivity = self._runtime.add_connectivity_listener(self._on_connectivity)
+        raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
+        if raw_value is not None and self._try_apply_binary_state_sync(raw_value):
+            self._attr_available = entity_is_available(
+                self._runtime,
+                devid=self._devid,
+                has_value=True,
+            )
+            self.async_write_ha_state()
+            return
         self.async_schedule_update_ha_state(True)
+
+    def _try_apply_binary_state_sync(self, raw_value: Any) -> bool:
+        """Apply on/off from ParamStore without ``ParamResolver`` when possible."""
+        flat_values = self._runtime.store.flatten()
+        if self._symbol.startswith("STATUS_") and not status_binary_has_sync_path(
+            descriptor=self._descriptor,
+            flat_values=flat_values,
+            default_actual=raw_value,
+        ):
+            return False
+        self._attr_is_on = resolve_entity_bool(
+            descriptor=self._descriptor,
+            flat_values=flat_values,
+            default_actual=raw_value,
+        )
+        return True
 
     async def async_will_remove_from_hass(self) -> None:
         """Detach runtime listeners before entity removal."""
@@ -159,9 +184,11 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         if raw_value is None:
             return
 
-        # STATUS_* diodes (e.g. PumpState) must follow the same ComputedValueEvaluator
-        # path as text sensors — cached command_rules alone miss ``value:`` maps and
-        # dual-bit PumpState inputs (bit 1 ON/OFF + bit 3 manual).
+        if self._try_apply_binary_state_sync(raw_value):
+            return
+
+        # STATUS_* diodes (e.g. PumpState) with value maps / dual-bit inputs need the SPA
+        # ComputedValueEvaluator — cached command_rules alone are not always enough.
         if self._symbol.startswith("STATUS_"):
             resolved = await self._runtime.async_resolve_status_label(self._symbol)
             resolved_bool = status_label_to_bool(resolved)

@@ -386,6 +386,10 @@ class BragerRuntime:
         if not ok:
             raise HomeAssistantError(f"Command write failed for '{symbol}' via raw command route")
 
+    async def async_warm_status_resolver(self) -> None:
+        """Build ``ParamResolver`` once before platform setup (#204)."""
+        await self._async_get_resolver()
+
     async def async_resolve_status_label(self, symbol: str) -> Any | None:
         """Resolve STATUS_* value exactly as parser/UI logic does."""
         if not symbol.startswith("STATUS_"):
