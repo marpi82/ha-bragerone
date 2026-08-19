@@ -232,6 +232,16 @@ def test_menu_device_display_name_falls_back_through_path_segments() -> None:
     assert _menu_device_display_name({}) == "menu"
 
 
+def test_module_parent_device_info_rejects_non_dict_meta() -> None:
+    info = module_parent_device_info(
+        devid="DEV9",
+        domain=DOMAIN,
+        modules_meta={"DEV9": "not-a-dict"},  # type: ignore[dict-item]
+        sample_descriptor={"module_name": "from-desc"},
+    )
+    assert info["name"] == "from-desc"
+
+
 def test_module_parent_device_info_prefers_modules_meta() -> None:
     descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
     descriptor.update({"module_name": "ignored", "module_title": "Ignored", "module_version": "0"})
@@ -292,6 +302,68 @@ async def test_async_register_module_parent_devices_skips_flat_mode(hass: HomeAs
     await async_register_module_parent_devices(hass, entry, descriptors=[descriptor], modules_meta={})
 
     assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is None
+
+
+@pytest.mark.asyncio
+async def test_async_register_module_parent_devices_from_modules_list_only(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, "device_grouping": DEVICE_GROUPING_BY_MENU, CONF_MODULES: ["DEV9"]},
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+
+    await async_register_module_parent_devices(
+        hass,
+        entry,
+        descriptors=[],
+        modules_meta={"DEV9": {"name": "Boiler only modules list"}},
+    )
+
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")})
+    assert device is not None
+    assert device.name == "Boiler only modules list"
+
+
+@pytest.mark.asyncio
+async def test_async_register_module_parent_devices_skips_invalid_rows(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update({"menu_key": "modules.menu.boiler", "module_name": "boiler"})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "device_grouping": DEVICE_GROUPING_BY_MENU})
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+
+    await async_register_module_parent_devices(
+        hass,
+        entry,
+        descriptors=["bad-row", {"devid": ""}, descriptor],
+        modules_meta={},
+    )
+
+    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is not None
+
+
+@pytest.mark.asyncio
+async def test_async_register_module_parent_devices_no_devids_is_noop(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, "device_grouping": DEVICE_GROUPING_BY_MENU, CONF_MODULES: []},
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+
+    await async_register_module_parent_devices(hass, entry, descriptors=["bad"], modules_meta={})
+
+    assert dr.async_get(hass).devices == {}
 
 
 @pytest.mark.asyncio

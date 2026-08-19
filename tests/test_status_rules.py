@@ -166,6 +166,16 @@ def test_status_binary_has_sync_path() -> None:
     bare = {"mapping": {"command_rules": []}}
     assert status_binary_has_sync_path(descriptor=bare, flat_values={}, default_actual=64.0) is False
 
+    assert status_binary_has_sync_path(descriptor={"mapping": "bad"}, flat_values={}, default_actual=1) is False
+    assert (
+        status_binary_has_sync_path(
+            descriptor={"mapping": {"inputs": "bad"}},
+            flat_values={},
+            default_actual=1,
+        )
+        is False
+    )
+
 
 def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:
     from custom_components.habragerone.status_rules import resolve_entity_bool

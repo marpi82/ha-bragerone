@@ -24,6 +24,7 @@ from custom_components.habragerone.const import (  # noqa: E402
     BOOTSTRAP_VERSION,
     CONF_BACKEND_PLATFORM,
     CONF_BOOTSTRAP_VERSION,
+    CONF_CONNECTION_DESCRIPTORS,
     CONF_ENTITY_DESCRIPTORS,
     CONF_MODULES,
     CONF_MODULES_META,
@@ -37,7 +38,9 @@ from tests.helpers.init_setup import make_config_entry, patch_setup_dependencies
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_warms_status_resolver_and_parent_devices(hass: HomeAssistant) -> None:
+async def test_async_setup_entry_registers_parents_and_warms_resolver(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import device_registry as dr
+
     entry = make_config_entry(
         data={
             "device_grouping": "group_by_menu",
@@ -56,6 +59,14 @@ async def test_async_setup_entry_warms_status_resolver_and_parent_devices(hass: 
                     "writable": False,
                 }
             ],
+            CONF_CONNECTION_DESCRIPTORS: [
+                {
+                    "kind": "module_connection",
+                    "devid": "DEV1",
+                    "module_name": "Boiler",
+                    "menu_key": "module.connection",
+                }
+            ],
         },
     )
     entry.add_to_hass(hass)
@@ -66,16 +77,12 @@ async def test_async_setup_entry_warms_status_resolver_and_parent_devices(hass: 
 
     with (
         patch_setup_dependencies(runtime=fake_runtime),
-        patch(
-            "custom_components.habragerone.async_register_module_parent_devices",
-            new=AsyncMock(),
-        ) as register_parents,
         patch.object(hass.config_entries, "async_forward_entry_setups", new=AsyncMock()),
     ):
         assert await async_setup_entry(hass, entry) is True
 
-    register_parents.assert_awaited_once()
     fake_runtime.async_warm_status_resolver.assert_awaited_once()
+    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV1")}) is not None
 
 
 @pytest.mark.asyncio

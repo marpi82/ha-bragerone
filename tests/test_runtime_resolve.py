@@ -32,6 +32,17 @@ class _FakeResolver:
 
 
 @pytest.mark.asyncio
+async def test_async_warm_status_resolver_builds_resolver(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    runtime._status_resolver = None
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    await runtime.async_warm_status_resolver()
+
+    assert runtime._status_resolver is not None
+
+
+@pytest.mark.asyncio
 async def test_async_resolve_status_label_uses_value_label(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime, _api, _gateway, _store = make_runtime()
     monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)

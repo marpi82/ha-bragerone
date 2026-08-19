@@ -108,6 +108,47 @@ async def test_binary_sensor_listener_lifecycle_and_raw_bool_state(hass: HomeAss
 
 
 @pytest.mark.asyncio
+async def test_binary_sensor_added_to_hass_applies_sync_state_without_scheduled_update(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime(flat_values={"P5.s11": 66.0})
+    descriptor = binary_sensor_descriptor(
+        symbol="STATUS_P5_11",
+        pool="P5",
+        chan="s",
+        idx=11,
+        command_rules=[],
+        mapping_inputs=[{"address": "P5.s11", "bit": 1}],
+    )
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerStatusBinarySensor(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "binary_sensor.pump_status"
+    entity.async_write_ha_state = MagicMock()  # type: ignore[method-assign]
+    entity.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+
+    await entity.async_added_to_hass()
+
+    entity.async_write_ha_state.assert_called_once()
+    entity.async_schedule_update_ha_state.assert_not_called()
+    assert entity.is_on is True
+
+
+@pytest.mark.asyncio
+async def test_binary_sensor_try_apply_sync_returns_false_without_sync_path(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime(flat_values={"P5.s11": 64.0})
+    descriptor = binary_sensor_descriptor(
+        symbol="STATUS_P5_11",
+        pool="P5",
+        chan="s",
+        idx=11,
+        command_rules=[],
+    )
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerStatusBinarySensor(entry=entry, runtime=runtime, descriptor=descriptor)
+
+    assert entity._try_apply_binary_state_sync(64.0) is False
+
+
+@pytest.mark.asyncio
 async def test_binary_sensor_status_with_bit_inputs_skips_resolver(hass: HomeAssistant) -> None:
     from unittest.mock import AsyncMock, patch
 
