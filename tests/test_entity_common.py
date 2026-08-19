@@ -518,3 +518,13 @@ def test_collect_resolver_warm_symbols_deduplicates_status_and_enum() -> None:
         {"symbol": "TEMP1"},
     ]
     assert collect_resolver_warm_symbols(items) == ["STATUS_P5_0", "PARAM_14"]
+
+
+def test_collect_resolver_warm_symbols_skips_invalid_entries() -> None:
+    items: list[Any] = [
+        "bad",
+        {"symbol": ""},
+        {"symbol": "PARAM_1", "mapping": "bad"},
+        {"symbol": "PARAM_2", "mapping": {"channels": {"unit": []}}},
+    ]
+    assert collect_resolver_warm_symbols(items) == []
