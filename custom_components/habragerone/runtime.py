@@ -220,7 +220,7 @@ class BragerRuntime:
         if gateway is not None:
             meta["gateway"] = dict(gateway)
         flipped = previous is not online if online_changed is None else online_changed
-        if flipped:
+        if previous is not None and previous is not online:
             LOGGER.warning(
                 "Module online state changed: devid=%s online=%s connectedAt=%s",
                 devid,

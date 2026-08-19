@@ -433,18 +433,23 @@ async def test_runtime_connectivity_listener_compat_and_seed_edges() -> None:
 @pytest.mark.asyncio
 async def test_runtime_logs_online_transition_marker(caplog: pytest.LogCaptureFixture) -> None:
     """Online/offline flips emit a concise marker for timeline correlation."""
-    runtime, _api, _gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
-    await runtime.start()
+    runtime, _api, gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    gateway._online["DEV1"] = True
+    gateway._connected_at["DEV1"] = 1_700_000_000
 
     with caplog.at_level("WARNING"):
-        runtime._apply_module_online("DEV1", True, connected_at=123)
+        await runtime.start()
+    assert "Module online state changed" not in caplog.text
+
+    with caplog.at_level("WARNING"):
         runtime._apply_module_online("DEV1", False, connected_at=0)
+        runtime._apply_module_online("DEV1", True, connected_at=123)
 
     text = caplog.text
-    assert "Module online state changed: devid=DEV1 online=True connectedAt=123" in text
     assert "Module online state changed: devid=DEV1 online=False connectedAt=0" in text
+    assert "Module online state changed: devid=DEV1 online=True connectedAt=123" in text
     caplog.clear()
     with caplog.at_level("WARNING"):
-        runtime._apply_module_online("DEV1", False, connected_at=0, online_changed=False)
+        runtime._apply_module_online("DEV1", True, connected_at=123, online_changed=False)
     assert "Module online state changed" not in caplog.text
     await runtime.stop()
