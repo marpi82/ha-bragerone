@@ -1,5 +1,14 @@
 # BragerOne
 
+[![Release](https://img.shields.io/github/v/release/marpi82/ha-bragerone?include_prereleases&label=release)](https://github.com/marpi82/ha-bragerone/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/marpi82/ha-bragerone/ci.yml?branch=main&label=CI)](https://github.com/marpi82/ha-bragerone/actions/workflows/ci.yml)
+[![HA Integration](https://img.shields.io/github/actions/workflow/status/marpi82/ha-bragerone/ha-integration-test.yml?branch=main&label=HA%20integration)](https://github.com/marpi82/ha-bragerone/actions/workflows/ha-integration-test.yml)
+[![HACS](https://img.shields.io/github/actions/workflow/status/marpi82/ha-bragerone/hacs.yml?branch=main&label=HACS)](https://github.com/marpi82/ha-bragerone/actions/workflows/hacs.yml)
+[![Codecov](https://codecov.io/gh/marpi82/ha-bragerone/graph/badge.svg)](https://codecov.io/gh/marpi82/ha-bragerone)
+[![License](https://img.shields.io/github/license/marpi82/ha-bragerone)](https://github.com/marpi82/ha-bragerone/blob/main/LICENSE)
+[![Renovate](https://img.shields.io/badge/renovate-enabled-blue?logo=renovate&logoColor=white)](https://app.renovatebot.com/dashboard)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-%E2%89%A52026.3.0-blue)](https://www.home-assistant.io/)
+
 Home Assistant custom integration for BragerOne web service.
 
 **Status:** Stable (Production/Stable)
