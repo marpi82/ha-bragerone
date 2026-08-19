@@ -176,6 +176,43 @@ async def test_dispatch_updates_clears_status_label_cache() -> None:
 
 
 @pytest.mark.asyncio
+async def test_async_resolve_status_label_returns_none_for_unresolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+
+    class _MissingStatusResolver(_FakeResolver):
+        async def resolve_value(self, symbol: str) -> object | None:
+            _ = symbol
+            return None
+
+    monkeypatch.setattr(runtime_module, "ParamResolver", _MissingStatusResolver)
+
+    assert await runtime.async_resolve_status_label("STATUS_MISSING") is None
+    assert "STATUS_MISSING" not in runtime._status_label_cache
+
+
+@pytest.mark.asyncio
+async def test_resolve_status_label_uncached_returns_none_when_resolver_misses(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+
+    class _MissingStatusResolver(_FakeResolver):
+        async def resolve_value(self, symbol: str) -> object | None:
+            _ = symbol
+            return None
+
+    monkeypatch.setattr(runtime_module, "ParamResolver", _MissingStatusResolver)
+
+    assert await runtime._resolve_status_label_uncached("STATUS_MISSING") is None
+
+
+@pytest.mark.asyncio
+async def test_async_resolve_symbol_with_unit_handles_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    assert await runtime.async_resolve_symbol_with_unit("MISSING") == (None, None)
+
+
+@pytest.mark.asyncio
 async def test_async_resolve_symbol_value_and_with_unit(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime, _api, _gateway, _store = make_runtime()
     monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
