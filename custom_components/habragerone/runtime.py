@@ -395,21 +395,24 @@ class BragerRuntime:
         resolver = await self._async_get_resolver()
         if resolver is None:
             return
-        await resolver.prefetch_param_mappings(symbol_list)
-        status_symbols = [symbol for symbol in symbol_list if symbol.startswith("STATUS_")]
-        if not status_symbols:
-            return
-        semaphore = asyncio.Semaphore(16)
+        try:
+            await resolver.prefetch_param_mappings(symbol_list)
+            status_symbols = [symbol for symbol in symbol_list if symbol.startswith("STATUS_")]
+            if not status_symbols:
+                return
+            semaphore = asyncio.Semaphore(16)
 
-        async def _resolve_one(symbol: str) -> None:
-            async with semaphore:
-                label = await self._resolve_status_label_uncached(symbol, resolver=resolver)
-            if label is not None:
-                self._status_label_cache[symbol] = label
+            async def _resolve_one(symbol: str) -> None:
+                async with semaphore:
+                    label = await self._resolve_status_label_uncached(symbol, resolver=resolver)
+                if label is not None:
+                    self._status_label_cache[symbol] = label
 
-        async with asyncio.TaskGroup() as group:
-            for symbol in status_symbols:
-                group.create_task(_resolve_one(symbol))
+            async with asyncio.TaskGroup() as group:
+                for symbol in status_symbols:
+                    group.create_task(_resolve_one(symbol))
+        except Exception:
+            LOGGER.debug("STATUS resolver warm-up failed; continuing without prefetch", exc_info=True)
 
     def peek_status_label(self, symbol: str) -> Any | None:
         """Return a pre-warmed STATUS label without triggering resolver I/O."""
@@ -452,16 +455,16 @@ class BragerRuntime:
         if self._status_resolver is not None:
             return self._status_resolver
         async with self._resolver_lock:
-            await asyncio.sleep(0)
-            if self._status_resolver is None:
-                try:
+            try:
+                if self._status_resolver is None:
                     self._status_resolver = ParamResolver.from_api(
                         api=self.api,
                         store=self.store,
                         lang=self.language,
                     )
-                except Exception:
-                    return None
+            except Exception:
+                LOGGER.debug("ParamResolver init failed", exc_info=True)
+                return None
             return self._status_resolver
 
     async def _resolve_status_label_uncached(

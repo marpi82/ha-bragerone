@@ -234,6 +234,23 @@ async def test_async_resolve_symbol_with_unit_handles_missing(monkeypatch: pytes
 
 
 @pytest.mark.asyncio
+async def test_async_warm_status_resolver_continues_when_prefetch_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+
+    class _FailingPrefetchResolver(_FakeResolver):
+        async def prefetch_param_mappings(self, symbols: Iterable[str]) -> None:
+            _ = symbols
+            raise RuntimeError("prefetch failed")
+
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FailingPrefetchResolver)
+
+    await runtime.async_warm_status_resolver(["STATUS_P5_0"])
+
+    assert runtime._status_resolver is not None
+    assert runtime._status_label_cache == {}
+
+
+@pytest.mark.asyncio
 async def test_async_get_resolver_is_idempotent_under_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime, _api, _gateway, _store = make_runtime()
     runtime._status_resolver = None
@@ -245,6 +262,21 @@ async def test_async_get_resolver_is_idempotent_under_concurrency(monkeypatch: p
     )
 
     assert first is second
+
+
+@pytest.mark.asyncio
+async def test_async_get_resolver_reuses_instance_for_lock_waiter(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    runtime._status_resolver = None
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    await runtime._resolver_lock.acquire()
+    pending = asyncio.create_task(runtime._async_get_resolver())
+    await asyncio.sleep(0)
+    runtime._status_resolver = _FakeResolver.from_api(runtime.api, runtime.store, runtime.language)
+    runtime._resolver_lock.release()
+
+    assert await pending is runtime._status_resolver
 
 
 @pytest.mark.asyncio
