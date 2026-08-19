@@ -43,6 +43,29 @@ def resolve_rule_bool(
     return status_label_to_bool(display)
 
 
+def status_binary_has_sync_path(
+    *,
+    descriptor: Mapping[str, Any],
+    flat_values: Mapping[str, Any],
+    default_actual: Any,
+) -> bool:
+    """Return whether a ``STATUS_*`` binary can resolve without ``ParamResolver``."""
+    if resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual) is not None:
+        return True
+    mapping = descriptor.get("mapping")
+    if not isinstance(mapping, Mapping):
+        return False
+    inputs = mapping.get("inputs")
+    if not isinstance(inputs, list):
+        return False
+    bit_inputs = [
+        entry
+        for entry in inputs
+        if isinstance(entry, Mapping) and (isinstance(entry.get("bit"), int) or isinstance(entry.get("mask"), int))
+    ]
+    return _preferred_bit_input(bit_inputs) is not None
+
+
 def status_label_to_bool(value: Any) -> bool | None:
     """Map a STATUS display label/token to on/off, or None when unknown.
 

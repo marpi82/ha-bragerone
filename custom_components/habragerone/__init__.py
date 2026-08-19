@@ -18,6 +18,7 @@ from .const import (
     BOOTSTRAP_VERSION,
     CONF_BACKEND_PLATFORM,
     CONF_BOOTSTRAP_VERSION,
+    CONF_CONNECTION_DESCRIPTORS,
     CONF_ENTITY_DESCRIPTORS,
     CONF_ENTITY_FILTER_MODE,
     CONF_LANGUAGE,
@@ -33,6 +34,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
+from .entity_common import async_register_module_parent_devices
 from .runtime import BragerRuntime
 
 LOGGER = logging.getLogger(__name__)
@@ -195,6 +197,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DATA_RUNTIME: runtime,
         CONF_ENTITY_DESCRIPTORS: descriptors,
     }
+
+    descriptor_sources: list[Any] = list(descriptors) if isinstance(descriptors, list) else []
+    connection_descriptors = entry.data.get(CONF_CONNECTION_DESCRIPTORS)
+    if isinstance(connection_descriptors, list):
+        descriptor_sources.extend(connection_descriptors)
+
+    await async_register_module_parent_devices(
+        hass,
+        entry,
+        descriptors=descriptor_sources,
+        modules_meta=modules_meta if isinstance(modules_meta, dict) else {},
+    )
+
+    if any(isinstance(item, dict) and str(item.get("symbol") or "").startswith("STATUS_") for item in descriptor_sources):
+        await runtime.async_warm_status_resolver()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

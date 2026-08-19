@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import slugify
 from pybragerone.models.param import ParamStore
@@ -15,6 +16,7 @@ from .const import (
     CONF_DEVICE_GROUPING,
     CONF_ENTITY_DESCRIPTORS,
     CONF_ENUM_MAP,
+    CONF_MODULES,
     CONF_OPTIONS,
     CONF_PLATFORM,
     CONF_RAW_TO_LABEL,
@@ -173,6 +175,86 @@ def get_runtime_and_descriptors(
         if isinstance(descriptor, dict) and str(descriptor.get(CONF_PLATFORM, "sensor")) == platform
     ]
     return runtime, filtered
+
+
+def module_parent_device_info(
+    *,
+    devid: str,
+    domain: str,
+    modules_meta: Mapping[str, Any] | None = None,
+    sample_descriptor: Mapping[str, Any] | None = None,
+) -> DeviceInfo:
+    """Build flat module ``DeviceInfo`` for ``via_device`` parents."""
+    meta = modules_meta.get(devid, {}) if isinstance(modules_meta, Mapping) else {}
+    if not isinstance(meta, dict):
+        meta = {}
+    desc = sample_descriptor if isinstance(sample_descriptor, Mapping) else {}
+    module_name = str(meta.get("name") or desc.get("module_name") or devid)
+    module_model = str(meta.get("title") or desc.get("module_title") or "Brager module")
+    module_version = str(meta.get("version") or desc.get("module_version") or "")
+    return DeviceInfo(
+        identifiers={(domain, devid)},
+        manufacturer="BragerOne",
+        name=module_name,
+        model=module_model,
+        sw_version=module_version or None,
+    )
+
+
+async def async_register_module_parent_devices(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    *,
+    descriptors: Iterable[Any],
+    modules_meta: Mapping[str, Any] | None = None,
+) -> None:
+    """Pre-register internet-module devices before menu child ``via_device`` links (#203)."""
+    if device_grouping_mode(entry) != DEVICE_GROUPING_BY_MENU:
+        return
+
+    sample_by_devid: dict[str, dict[str, Any]] = {}
+    for raw in descriptors:
+        if not isinstance(raw, dict):
+            continue
+        devid = str(raw.get("devid") or "").strip()
+        if devid:
+            sample_by_devid.setdefault(devid, raw)
+
+    modules_raw = entry.options.get(CONF_MODULES, entry.data.get(CONF_MODULES, []))
+    if isinstance(modules_raw, list):
+        for raw_devid in modules_raw:
+            devid = str(raw_devid).strip()
+            if devid:
+                sample_by_devid.setdefault(devid, {})
+
+    if isinstance(modules_meta, Mapping):
+        for raw_devid in modules_meta:
+            devid = str(raw_devid).strip()
+            if devid:
+                sample_by_devid.setdefault(devid, sample_by_devid.get(devid, {}))
+
+    if not sample_by_devid:
+        return
+
+    registry = dr.async_get(hass)
+    for devid, sample in sorted(sample_by_devid.items()):
+        info = module_parent_device_info(
+            devid=devid,
+            domain=DOMAIN,
+            modules_meta=modules_meta,
+            sample_descriptor=sample,
+        )
+        identifiers = info.get("identifiers")
+        if not isinstance(identifiers, set):
+            continue
+        registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers=identifiers,
+            manufacturer=str(info.get("manufacturer") or "BragerOne"),
+            name=str(info.get("name") or devid),
+            model=str(info.get("model") or "Brager module"),
+            sw_version=info.get("sw_version"),
+        )
 
 
 def device_info_from_descriptor(

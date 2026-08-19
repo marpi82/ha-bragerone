@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
@@ -34,6 +34,48 @@ from custom_components.habragerone.const import (  # noqa: E402
 from tests.helpers.config_flow import make_bootstrap_payload  # noqa: E402
 from tests.helpers.fakes import make_runtime  # noqa: E402
 from tests.helpers.init_setup import make_config_entry, patch_setup_dependencies  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_warms_status_resolver_and_parent_devices(hass: HomeAssistant) -> None:
+    entry = make_config_entry(
+        data={
+            "device_grouping": "group_by_menu",
+            CONF_ENTITY_DESCRIPTORS: [
+                {
+                    "symbol": "STATUS_P5_11",
+                    "devid": "DEV1",
+                    "pool": "P5",
+                    "chan": "s",
+                    "idx": 11,
+                    "platform": "binary_sensor",
+                    "module_name": "Boiler",
+                    "module_title": "Boiler module",
+                    "menu_key": "modules.menu.boiler",
+                    "mapping": {},
+                    "writable": False,
+                }
+            ],
+        },
+    )
+    entry.add_to_hass(hass)
+
+    fake_runtime = MagicMock()
+    fake_runtime.start = AsyncMock()
+    fake_runtime.async_warm_status_resolver = AsyncMock()
+
+    with (
+        patch_setup_dependencies(runtime=fake_runtime),
+        patch(
+            "custom_components.habragerone.async_register_module_parent_devices",
+            new=AsyncMock(),
+        ) as register_parents,
+        patch.object(hass.config_entries, "async_forward_entry_setups", new=AsyncMock()),
+    ):
+        assert await async_setup_entry(hass, entry) is True
+
+    register_parents.assert_awaited_once()
+    fake_runtime.async_warm_status_resolver.assert_awaited_once()
 
 
 @pytest.mark.asyncio
