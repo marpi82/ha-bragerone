@@ -34,7 +34,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
-from .entity_common import async_register_module_parent_devices
+from .entity_common import async_register_module_parent_devices, collect_resolver_warm_symbols
 from .runtime import BragerRuntime
 
 LOGGER = logging.getLogger(__name__)
@@ -210,8 +210,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         modules_meta=modules_meta if isinstance(modules_meta, dict) else {},
     )
 
-    if any(isinstance(item, dict) and str(item.get("symbol") or "").startswith("STATUS_") for item in descriptor_sources):
-        await runtime.async_warm_status_resolver()
+    warm_symbols = collect_resolver_warm_symbols(descriptor_sources)
+    if warm_symbols:
+        await runtime.async_warm_status_resolver(warm_symbols)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

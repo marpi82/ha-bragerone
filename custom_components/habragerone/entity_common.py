@@ -30,6 +30,30 @@ from .const import (
 from .runtime import BragerRuntime
 
 
+def collect_resolver_warm_symbols(items: Iterable[Any]) -> list[str]:
+    """Return symbol names that benefit from bulk ParamResolver prefetch at startup."""
+    symbols: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("symbol") or "").strip()
+        if not symbol or symbol in seen:
+            continue
+        if symbol.startswith("STATUS_"):
+            seen.add(symbol)
+            symbols.append(symbol)
+            continue
+        mapping = item.get("mapping")
+        if not isinstance(mapping, dict):
+            continue
+        channels = mapping.get("channels")
+        if isinstance(channels, dict) and isinstance(channels.get("unit"), list) and channels.get("unit"):
+            seen.add(symbol)
+            symbols.append(symbol)
+    return symbols
+
+
 def device_grouping_mode(entry: ConfigEntry) -> str:
     """Return the configured device grouping mode for *entry* (flat default)."""
     options = getattr(entry, "options", None)

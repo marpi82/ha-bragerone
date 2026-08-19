@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from types import SimpleNamespace
 
 import pytest
@@ -19,11 +20,15 @@ from tests.helpers.fakes import FakeParamUpdate, make_runtime  # noqa: E402
 class _FakeResolver:
     def __init__(self, resolved: object | None) -> None:
         self._resolved = resolved
+        self.prefetched: list[str] = []
 
     @classmethod
     def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
         _ = api, store, lang
         return cls(SimpleNamespace(value=10, value_label="Ten", unit="°C"))
+
+    async def prefetch_param_mappings(self, symbols: Iterable[str]) -> None:
+        self.prefetched.extend(list(symbols))
 
     async def resolve_value(self, symbol: str) -> object | None:
         if symbol == "MISSING":
@@ -37,9 +42,31 @@ async def test_async_warm_status_resolver_builds_resolver(monkeypatch: pytest.Mo
     runtime._status_resolver = None
     monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
 
-    await runtime.async_warm_status_resolver()
+    await runtime.async_warm_status_resolver(["STATUS_P5_0"])
 
     assert runtime._status_resolver is not None
+    assert runtime.peek_status_label("STATUS_P5_0") == "Ten"
+    assert runtime._status_resolver.prefetched == ["STATUS_P5_0"]
+
+
+@pytest.mark.asyncio
+async def test_async_warm_status_resolver_noop_without_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    runtime._status_resolver = None
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    await runtime.async_warm_status_resolver([])
+
+    assert runtime._status_resolver is None
+
+
+@pytest.mark.asyncio
+async def test_async_resolve_status_label_uses_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+    runtime._status_label_cache["STATUS_P5_0"] = "Cached"
+
+    assert await runtime.async_resolve_status_label("STATUS_P5_0") == "Cached"
 
 
 @pytest.mark.asyncio
@@ -49,6 +76,207 @@ async def test_async_resolve_status_label_uses_value_label(monkeypatch: pytest.M
 
     assert await runtime.async_resolve_status_label("PARAM_1") is None
     assert await runtime.async_resolve_status_label("STATUS_P5_0") == "Ten"
+
+
+@pytest.mark.asyncio
+async def test_peek_status_label_rejects_non_status_symbols() -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    runtime._status_label_cache["STATUS_P5_0"] = "On"
+
+    assert runtime.peek_status_label("PARAM_1") is None
+    assert runtime.peek_status_label("STATUS_P5_0") == "On"
+
+
+@pytest.mark.asyncio
+async def test_async_warm_status_resolver_returns_when_resolver_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+
+    class _BrokenFactory:
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> None:
+            _ = api, store, lang
+            raise RuntimeError("factory failed")
+
+    monkeypatch.setattr(runtime_module, "ParamResolver", _BrokenFactory)
+
+    await runtime.async_warm_status_resolver(["STATUS_P5_0"])
+
+    assert runtime._status_resolver is None
+    assert runtime._status_label_cache == {}
+
+
+@pytest.mark.asyncio
+async def test_async_warm_status_resolver_prefetches_non_status_symbols_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    await runtime.async_warm_status_resolver(["PARAM_14"])
+
+    assert runtime._status_resolver is not None
+    assert runtime._status_resolver.prefetched == ["PARAM_14"]
+    assert runtime._status_label_cache == {}
+
+
+@pytest.mark.asyncio
+async def test_async_warm_status_resolver_skips_unresolved_labels(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+
+    class _EmptyLabelResolver(_FakeResolver):
+        async def resolve_value(self, symbol: str) -> object | None:
+            _ = symbol
+            return SimpleNamespace(value=None, value_label="", unit=None)
+
+    monkeypatch.setattr(runtime_module, "ParamResolver", _EmptyLabelResolver)
+
+    await runtime.async_warm_status_resolver(["STATUS_P5_0", "STATUS_P5_1"])
+
+    assert runtime._status_label_cache == {}
+
+
+@pytest.mark.asyncio
+async def test_async_resolve_status_label_populates_cache_on_miss(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    assert await runtime.async_resolve_status_label("STATUS_P5_0") == "Ten"
+    assert runtime._status_label_cache["STATUS_P5_0"] == "Ten"
+
+
+@pytest.mark.asyncio
+async def test_resolve_status_label_uncached_returns_raw_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+
+    class _RawValueResolver(_FakeResolver):
+        async def resolve_value(self, symbol: str) -> object | None:
+            _ = symbol
+            return SimpleNamespace(value=42, value_label="", unit=None)
+
+    monkeypatch.setattr(runtime_module, "ParamResolver", _RawValueResolver)
+
+    assert await runtime._resolve_status_label_uncached("STATUS_P5_0") == 42
+
+
+@pytest.mark.asyncio
+async def test_dispatch_updates_clears_status_label_cache() -> None:
+    runtime, _api, gateway, _store = make_runtime()
+    runtime._status_label_cache["STATUS_P5_0"] = "On"
+    cleared = asyncio.Event()
+
+    def _listener(_update: FakeParamUpdate) -> None:
+        cleared.set()
+
+    runtime.add_listener(_listener)
+    await runtime.start()
+    try:
+        gateway.bus.push(FakeParamUpdate(pool="P1", chan="v", idx=1))
+        await asyncio.wait_for(cleared.wait(), timeout=1.0)
+        assert runtime._status_label_cache == {}
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_updates_logs_first_update_once() -> None:
+    runtime, _api, gateway, _store = make_runtime()
+    received = 0
+
+    def _listener(_update: FakeParamUpdate) -> None:
+        nonlocal received
+        received += 1
+
+    runtime.add_listener(_listener)
+    await runtime.start()
+    try:
+        gateway.bus.push(FakeParamUpdate(pool="P1", chan="v", idx=1))
+        gateway.bus.push(FakeParamUpdate(pool="P1", chan="v", idx=2))
+        await asyncio.sleep(0.05)
+        assert received == 2
+        assert runtime._first_update_logged is True
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_async_resolve_status_label_returns_none_for_unresolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+
+    class _MissingStatusResolver(_FakeResolver):
+        async def resolve_value(self, symbol: str) -> object | None:
+            _ = symbol
+            return None
+
+    monkeypatch.setattr(runtime_module, "ParamResolver", _MissingStatusResolver)
+
+    assert await runtime.async_resolve_status_label("STATUS_MISSING") is None
+    assert "STATUS_MISSING" not in runtime._status_label_cache
+
+
+@pytest.mark.asyncio
+async def test_resolve_status_label_uncached_returns_none_when_resolver_misses(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+
+    class _MissingStatusResolver(_FakeResolver):
+        async def resolve_value(self, symbol: str) -> object | None:
+            _ = symbol
+            return None
+
+    monkeypatch.setattr(runtime_module, "ParamResolver", _MissingStatusResolver)
+
+    assert await runtime._resolve_status_label_uncached("STATUS_MISSING") is None
+
+
+@pytest.mark.asyncio
+async def test_async_resolve_symbol_with_unit_handles_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    assert await runtime.async_resolve_symbol_with_unit("MISSING") == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_async_warm_status_resolver_continues_when_prefetch_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+
+    class _FailingPrefetchResolver(_FakeResolver):
+        async def prefetch_param_mappings(self, symbols: Iterable[str]) -> None:
+            _ = symbols
+            raise RuntimeError("prefetch failed")
+
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FailingPrefetchResolver)
+
+    await runtime.async_warm_status_resolver(["STATUS_P5_0"])
+
+    assert runtime._status_resolver is not None
+    assert runtime._status_label_cache == {}
+
+
+@pytest.mark.asyncio
+async def test_async_get_resolver_is_idempotent_under_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    runtime._status_resolver = None
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    first, second = await asyncio.gather(
+        runtime._async_get_resolver(),
+        runtime._async_get_resolver(),
+    )
+
+    assert first is second
+
+
+@pytest.mark.asyncio
+async def test_async_get_resolver_reuses_instance_for_lock_waiter(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    runtime._status_resolver = None
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    await runtime._resolver_lock.acquire()
+    pending = asyncio.create_task(runtime._async_get_resolver())
+    await asyncio.sleep(0)
+    runtime._status_resolver = _FakeResolver.from_api(runtime.api, runtime.store, runtime.language)
+    runtime._resolver_lock.release()
+
+    assert await pending is runtime._status_resolver
 
 
 @pytest.mark.asyncio

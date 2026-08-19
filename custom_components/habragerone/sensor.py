@@ -101,7 +101,41 @@ class BragerSymbolSensor(SensorEntity):
         """Subscribe to push updates when entity is added to HA."""
         self._unsubscribe_listener = self._runtime.add_listener(self._on_runtime_update)
         self._unsubscribe_connectivity = self._runtime.add_connectivity_listener(self._on_connectivity)
+        if self._try_apply_initial_state_sync():
+            self.async_write_ha_state()
+            return
         self.async_schedule_update_ha_state(True)
+
+    def _try_apply_initial_state_sync(self) -> bool:
+        """Set first state synchronously when rules or pre-warmed labels allow it."""
+        raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
+        has_value = raw_value is not None
+        if self._is_status_symbol and self._runtime.peek_status_label(self._symbol) is not None:
+            has_value = True
+        self._attr_available = entity_is_available(
+            self._runtime,
+            devid=self._devid,
+            has_value=has_value,
+        )
+        if raw_value is not None:
+            mapped_by_unit = self._raw_to_label.get(str(raw_value))
+            if mapped_by_unit is not None:
+                self._attr_native_value = _normalize_text_state(mapped_by_unit)
+                return True
+            mapped_rule = resolve_rule_display_value(
+                descriptor=self._descriptor,
+                flat_values=self._runtime.store.flatten(),
+                default_actual=raw_value,
+            )
+            if mapped_rule is not None:
+                self._attr_native_value = _normalize_text_state(mapped_rule)
+                return True
+        if self._is_status_symbol:
+            cached = self._runtime.peek_status_label(self._symbol)
+            if cached is not None:
+                self._attr_native_value = _normalize_text_state(cached)
+                return True
+        return False
 
     async def async_will_remove_from_hass(self) -> None:
         """Detach runtime listeners when entity is removed from HA."""

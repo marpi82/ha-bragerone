@@ -12,6 +12,7 @@ ignore:
   - "tests/**/*"
   - "scripts/**/*"
   - "docs/**/*"
+  - "custom_components/habragerone/manifest.json"
 
 comment:
   layout: "reach, diff, flags, files"
