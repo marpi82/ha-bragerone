@@ -25,6 +25,7 @@ from custom_components.habragerone.entity_common import (  # noqa: E402
     async_register_module_parent_devices,
     collect_resolver_warm_symbols,
     descriptor_current_raw_value,
+    descriptor_enabled_by_default,
     descriptor_enum_map,
     descriptor_options,
     descriptor_raw_to_label,
@@ -39,6 +40,20 @@ from custom_components.habragerone.entity_common import (  # noqa: E402
 from tests.helpers.descriptors import switch_descriptor, writable_parameter_descriptor  # noqa: E402
 from tests.helpers.fakes import FakeStore, make_runtime  # noqa: E402
 from tests.helpers.hass import register_config_entry  # noqa: E402
+
+
+def test_descriptor_enabled_by_default_defaults_to_true() -> None:
+    assert descriptor_enabled_by_default({}) is True
+    assert descriptor_enabled_by_default({"enabled_by_default": True}) is True
+
+
+def test_descriptor_enabled_by_default_respects_false() -> None:
+    assert descriptor_enabled_by_default({"enabled_by_default": False}) is False
+
+
+def test_descriptor_enabled_by_default_coerces_truthy_values() -> None:
+    assert descriptor_enabled_by_default({"enabled_by_default": 1}) is True
+    assert descriptor_enabled_by_default({"enabled_by_default": 0}) is False
 
 
 def test_descriptor_refresh_keys_direct_address() -> None:

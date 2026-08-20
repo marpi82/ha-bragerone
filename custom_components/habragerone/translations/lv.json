@@ -9,10 +9,9 @@
       },
       "select_modules": {
         "title": "Moduļu izvēle",
-        "description": "Izvēlieties moduļus, entītiju filtrēšanas režīmu un ierīču grupēšanu.",
+        "description": "Izvēlieties moduļus un ierīču grupēšanu.",
         "data": {
           "modules": "Moduļi",
-          "entity_filter_mode": "Entītiju filtrēšanas režīms",
           "device_grouping": "Ierīču grupēšana"
         },
         "data_description": {
@@ -27,7 +26,6 @@
         "title": "Moduļu izvēle",
         "data": {
           "modules": "Moduļi",
-          "entity_filter_mode": "Entītiju filtrēšanas režīms",
           "device_grouping": "Ierīču grupēšana"
         },
         "data_description": {

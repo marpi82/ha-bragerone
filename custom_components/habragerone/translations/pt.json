@@ -9,10 +9,9 @@
       },
       "select_modules": {
         "title": "Selecionar módulos",
-        "description": "Escolha módulos, modo de filtragem de entidades e agrupamento de dispositivos.",
+        "description": "Escolha módulos e agrupamento de dispositivos.",
         "data": {
           "modules": "Módulos",
-          "entity_filter_mode": "Modo de filtragem de entidades",
           "device_grouping": "Agrupamento de dispositivos"
         },
         "data_description": {
@@ -27,7 +26,6 @@
         "title": "Selecionar módulos",
         "data": {
           "modules": "Módulos",
-          "entity_filter_mode": "Modo de filtragem de entidades",
           "device_grouping": "Agrupamento de dispositivos"
         },
         "data_description": {

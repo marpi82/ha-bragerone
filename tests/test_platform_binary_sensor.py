@@ -80,6 +80,7 @@ async def test_binary_sensor_entity_identity_and_device_info(hass: HomeAssistant
 
     assert entity._attr_name == "Pump active"
     assert entity._attr_unique_id == f"{entry.entry_id}_dev1_pump_on_binary"
+    assert entity._attr_entity_registry_enabled_default is True
     assert entity.device_info["identifiers"] == {(DOMAIN, "DEV1")}
 
 

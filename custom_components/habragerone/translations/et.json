@@ -9,10 +9,9 @@
       },
       "select_modules": {
         "title": "Moodulite valimine",
-        "description": "Valige moodulid, olemite filtreerimisrežiim ja seadmete rühmitamine.",
+        "description": "Valige moodulid ja seadmete rühmitamine.",
         "data": {
           "modules": "Moodulid",
-          "entity_filter_mode": "Olemite filtreerimisrežiim",
           "device_grouping": "Seadmete rühmitamine"
         },
         "data_description": {
@@ -27,7 +26,6 @@
         "title": "Moodulite valimine",
         "data": {
           "modules": "Moodulid",
-          "entity_filter_mode": "Olemite filtreerimisrežiim",
           "device_grouping": "Seadmete rühmitamine"
         },
         "data_description": {

@@ -9,10 +9,9 @@
       },
       "select_modules": {
         "title": "Výběr modulů",
-        "description": "Vyberte moduly, režim filtrování entit a seskupování zařízení.",
+        "description": "Vyberte moduly a seskupování zařízení.",
         "data": {
           "modules": "Moduly",
-          "entity_filter_mode": "Režim filtrování entit",
           "device_grouping": "Seskupování zařízení"
         },
         "data_description": {
@@ -27,7 +26,6 @@
         "title": "Výběr modulů",
         "data": {
           "modules": "Moduly",
-          "entity_filter_mode": "Režim filtrování entit",
           "device_grouping": "Seskupování zařízení"
         },
         "data_description": {

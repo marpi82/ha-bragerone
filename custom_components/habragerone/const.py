@@ -11,13 +11,17 @@ CONF_OBJECT_ID: Final = "object_id"
 CONF_MODULES: Final = "modules"
 CONF_BACKEND_PLATFORM: Final = "backend_platform"
 CONF_LANGUAGE: Final = "language"
+# Deprecated (#212): entities are no longer filtered by UI/permissions mode — every
+# permission-gated entity is created, with non-everyday-UI ones disabled by default
+# (see CONF_ENABLED_BY_DEFAULT). Kept only so old entry data can still be read/migrated.
 CONF_ENTITY_FILTER_MODE: Final = "entity_filter_mode"
 CONF_MODULE_FILTER_MODES: Final = "module_filter_modes"
-CONF_DEVICE_GROUPING: Final = "device_grouping"
 FILTER_MODE_UI: Final = "ui"
 FILTER_MODE_PERMISSIONS: Final = "permissions"
 FILTER_MODES: Final[tuple[str, str]] = (FILTER_MODE_UI, FILTER_MODE_PERMISSIONS)
 DEFAULT_ENTITY_FILTER_MODE: Final = FILTER_MODE_UI
+CONF_ENABLED_BY_DEFAULT: Final = "enabled_by_default"
+CONF_DEVICE_GROUPING: Final = "device_grouping"
 DEVICE_GROUPING_FLAT: Final = "flat"
 DEVICE_GROUPING_BY_MENU: Final = "group_by_menu"
 DEVICE_GROUPING_MODES: Final[tuple[str, str]] = (DEVICE_GROUPING_FLAT, DEVICE_GROUPING_BY_MENU)
@@ -32,7 +36,7 @@ CONF_RAW_TO_LABEL: Final = "raw_to_label"
 CONF_BOOTSTRAP_DEBUG: Final = "bootstrap_debug"
 CONF_BOOTSTRAP_VERSION: Final = "bootstrap_version"
 CONF_UPSTREAM_ASSETS_FINGERPRINT: Final = "upstream_assets_fingerprint"
-BOOTSTRAP_VERSION: Final = 11
+BOOTSTRAP_VERSION: Final = 12
 
 # Stable non-menu source key for module connectivity (SPA ``module.connection.*`` i18n).
 # Kept separate from menu-router paths so HA #165 can place these on a child device.

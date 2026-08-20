@@ -53,6 +53,7 @@ async def test_button_entity_identity_and_device_info(hass: HomeAssistant) -> No
 
     assert entity._attr_name == "Reset alarm"
     assert entity._attr_unique_id == f"{entry.entry_id}_dev1_reset_alarm_button"
+    assert entity._attr_entity_registry_enabled_default is True
     assert entity.device_info["identifiers"] == {(DOMAIN, "DEV1")}
 
 

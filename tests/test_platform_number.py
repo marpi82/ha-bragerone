@@ -71,6 +71,7 @@ async def test_number_entity_identity_min_max_and_device_info(hass: HomeAssistan
     assert entity._attr_native_min_value == 5.0
     assert entity._attr_native_max_value == 30.0
     assert entity._attr_mode == NumberMode.BOX
+    assert entity._attr_entity_registry_enabled_default is True
     assert entity.device_info["identifiers"] == {(DOMAIN, "DEV1")}
 
 
