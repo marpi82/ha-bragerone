@@ -134,14 +134,14 @@ def install_pybragerone_stubs() -> None:
                     continue
                 try:
                     word = int(raw_val)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     continue
                 if selector.get("convert"):
                     word = word & 0xFFFF
                 times = selector.get("times", 1)
                 try:
                     times_n = int(times) if times is not None else 1
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     times_n = 1
                 total += float(word) * float(times_n)
                 found = True
