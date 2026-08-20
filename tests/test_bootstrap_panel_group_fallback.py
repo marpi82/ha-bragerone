@@ -158,8 +158,11 @@ def test_empty_gated_panel_groups_stay_empty_without_ungating(monkeypatch: pytes
         ungated_groups={"Panel": ["SYM_FALLBACK"]},
     )
 
-    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"]]
-    assert web_ui_flags == [True]
+    # #212: the full permission-gated set (web_ui_only=False) and the everyday-UI
+    # route probe (web_ui_only=True) are both requested with the same permissions —
+    # never ungated (permissions=None).
+    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"], ["DISPLAY_PARAMETER_LEVEL_1"]]
+    assert web_ui_flags == [False, True]
     assert payload["entity_descriptors"] == []
 
 
@@ -170,12 +173,13 @@ def test_non_empty_gated_panel_groups_skip_the_fallback_call(monkeypatch: pytest
         ungated_groups={"Panel": ["SYM_FALLBACK"]},
     )
 
-    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"]]
-    assert web_ui_flags == [True]
+    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"], ["DISPLAY_PARAMETER_LEVEL_1"]]
+    assert web_ui_flags == [False, True]
     assert {item["symbol"] for item in payload["entity_descriptors"]} == {"SYM_GATED"}
 
 
-def test_permissions_mode_does_not_request_web_ui_only(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_entity_filter_mode_kwarg_is_ignored_for_panel_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#212: the deprecated ``entity_filter_mode`` kwarg no longer changes discovery."""
     payload, calls, web_ui_flags = _run_bootstrap(
         monkeypatch,
         gated_groups={"Panel": ["SYM_GATED"]},
@@ -183,8 +187,8 @@ def test_permissions_mode_does_not_request_web_ui_only(monkeypatch: pytest.Monke
         entity_filter_mode="permissions",
     )
 
-    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"]]
-    assert web_ui_flags == [False]
+    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"], ["DISPLAY_PARAMETER_LEVEL_1"]]
+    assert web_ui_flags == [False, True]
     assert {item["symbol"] for item in payload["entity_descriptors"]} == {"SYM_GATED"}
 
 
@@ -204,7 +208,7 @@ def test_empty_panel_groups_warn_without_failing_bootstrap(
     with caplog.at_level(logging.WARNING, logger=BOOTSTRAP_LOGGER):
         payload, calls, _web_ui_flags = _run_bootstrap(monkeypatch, gated_groups={}, ungated_groups={"Panel": []})
 
-    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"]]
+    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"], ["DISPLAY_PARAMETER_LEVEL_1"]]
     assert payload["entity_descriptors"] == []
 
     warnings = [record for record in caplog.records if record.levelno == logging.WARNING]

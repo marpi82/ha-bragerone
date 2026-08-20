@@ -22,14 +22,12 @@ from custom_components.habragerone.const import (  # noqa: E402
     CONF_BACKEND_PLATFORM,
     CONF_DEVICE_GROUPING,
     CONF_ENTITY_DESCRIPTORS,
-    CONF_ENTITY_FILTER_MODE,
     CONF_LANGUAGE,
     CONF_MODULES,
     CONF_OBJECT_ID,
     DEFAULT_DEVICE_GROUPING,
     DEVICE_GROUPING_BY_MENU,
     DOMAIN,
-    FILTER_MODE_UI,
 )
 from tests.helpers.config_flow import make_fake_api, patch_config_flow_dependencies  # noqa: E402
 
@@ -103,7 +101,7 @@ async def test_config_flow_happy_path_creates_entry(hass: HomeAssistant) -> None
 
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_MODULES: ["DEV1"], CONF_ENTITY_FILTER_MODE: FILTER_MODE_UI},
+            {CONF_MODULES: ["DEV1"]},
         )
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
@@ -130,7 +128,6 @@ async def test_config_flow_select_modules_persists_group_by_menu(hass: HomeAssis
             result["flow_id"],
             {
                 CONF_MODULES: ["DEV1"],
-                CONF_ENTITY_FILTER_MODE: FILTER_MODE_UI,
                 CONF_DEVICE_GROUPING: DEVICE_GROUPING_BY_MENU,
             },
         )
@@ -140,7 +137,7 @@ async def test_config_flow_select_modules_persists_group_by_menu(hass: HomeAssis
 
 
 @pytest.mark.asyncio
-async def test_config_flow_select_modules_rejects_invalid_filter_mode(hass: HomeAssistant) -> None:
+async def test_config_flow_select_modules_rejects_invalid_device_grouping(hass: HomeAssistant) -> None:
     with patch_config_flow_dependencies():
         result = await hass.config_entries.flow.async_init(
             DOMAIN,
@@ -151,7 +148,7 @@ async def test_config_flow_select_modules_rejects_invalid_filter_mode(hass: Home
         with pytest.raises(InvalidData):
             await hass.config_entries.flow.async_configure(
                 result["flow_id"],
-                {CONF_MODULES: ["DEV1"], CONF_ENTITY_FILTER_MODE: "bad-mode"},
+                {CONF_MODULES: ["DEV1"], CONF_DEVICE_GROUPING: "bad-mode"},
             )
 
 
@@ -166,7 +163,7 @@ async def test_config_flow_select_modules_handles_bootstrap_failure(hass: HomeAs
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_OBJECT_ID: 1})
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {CONF_MODULES: ["DEV1"], CONF_ENTITY_FILTER_MODE: FILTER_MODE_UI},
+            {CONF_MODULES: ["DEV1"]},
         )
 
     assert result["type"] == FlowResultType.FORM
@@ -240,7 +237,6 @@ async def test_options_flow_updates_module_scope(hass: HomeAssistant) -> None:
             CONF_BACKEND_PLATFORM: "bragerone",
             CONF_OBJECT_ID: 1,
             CONF_MODULES: ["DEV1"],
-            CONF_ENTITY_FILTER_MODE: FILTER_MODE_UI,
         },
     )
     entry.add_to_hass(hass)
@@ -258,7 +254,6 @@ async def test_options_flow_updates_module_scope(hass: HomeAssistant) -> None:
             result["flow_id"],
             {
                 CONF_MODULES: ["DEV1"],
-                CONF_ENTITY_FILTER_MODE: FILTER_MODE_UI,
                 CONF_DEVICE_GROUPING: DEVICE_GROUPING_BY_MENU,
             },
         )

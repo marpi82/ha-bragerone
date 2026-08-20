@@ -46,12 +46,17 @@ def test_collect_symbols_from_menu_walks_nested_routes() -> None:
 
 
 def test_normalize_filter_mode_defaults_for_unknown_values() -> None:
+    """``_normalize_filter_mode`` is deprecated (#212) but kept for old-cache reads."""
     assert _normalize_filter_mode("ui") == "ui"
     assert _normalize_filter_mode("permissions") == "permissions"
     assert _normalize_filter_mode("unexpected") == DEFAULT_ENTITY_FILTER_MODE
 
 
-def test_async_build_bootstrap_payload_applies_filter_mode_per_module(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_enabled_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All permission-gated symbols become entities (#212); UI-invisible ones start disabled."""
+
     class _FakeParamStore:
         def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
             return None
@@ -163,16 +168,24 @@ def test_async_build_bootstrap_payload_applies_filter_mode_per_module(monkeypatc
             object_id=1,
             modules=["M1", "M2"],
             language="en",
-            entity_filter_mode="ui",
-            module_filter_modes={"M1": "ui", "M2": "permissions"},
         )
     )
 
-    symbols = {(item["devid"], item["symbol"]) for item in payload["entity_descriptors"]}
-    assert symbols == {("M2", "SYM_M2")}
+    descriptors = {(item["devid"], item["symbol"]): item for item in payload["entity_descriptors"]}
+    # Both modules' permission-gated symbols are created, unlike the old UI-filter behavior
+    # that dropped M1 entirely.
+    assert set(descriptors) == {("M1", "SYM_M1"), ("M2", "SYM_M2")}
+    # M1's symbol fails the SPA visibility check (fake resolver ties visibility to devid),
+    # so it is created but disabled by default; M2's passes and stays enabled.
+    assert descriptors[("M1", "SYM_M1")]["enabled_by_default"] is False
+    assert descriptors[("M2", "SYM_M2")]["enabled_by_default"] is True
 
 
-def test_async_build_bootstrap_payload_ui_excludes_non_panel_actions(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_async_build_bootstrap_payload_includes_non_panel_actions_disabled_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-panel command actions (permissions-only extras) are created but disabled by default."""
+
     class _FakeParamStore:
         def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
             return None
@@ -287,26 +300,18 @@ def test_async_build_bootstrap_payload_ui_excludes_non_panel_actions(monkeypatch
     monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
     monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
 
-    payload_ui = asyncio.run(
+    payload = asyncio.run(
         async_build_bootstrap_payload(
             api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
             object_id=1,
             modules=["M1"],
             language="en",
-            entity_filter_mode="ui",
         )
     )
-    symbols_ui = {item["symbol"] for item in payload_ui["entity_descriptors"]}
-    assert symbols_ui == {"SYM_PANEL"}
 
-    payload_permissions = asyncio.run(
-        async_build_bootstrap_payload(
-            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
-            object_id=1,
-            modules=["M1"],
-            language="en",
-            entity_filter_mode="permissions",
-        )
-    )
-    symbols_permissions = {item["symbol"] for item in payload_permissions["entity_descriptors"]}
-    assert symbols_permissions == {"SYM_PANEL", "COMMAND_MODULE_RESTART"}
+    descriptors = {item["symbol"]: item for item in payload["entity_descriptors"]}
+    assert set(descriptors) == {"SYM_PANEL", "COMMAND_MODULE_RESTART"}
+    # SYM_PANEL is on the everyday-UI route and SPA-visible, so it stays enabled.
+    assert descriptors["SYM_PANEL"]["enabled_by_default"] is True
+    # COMMAND_MODULE_RESTART is a permissions-only extra outside any panel/UI route.
+    assert descriptors["COMMAND_MODULE_RESTART"]["enabled_by_default"] is False
