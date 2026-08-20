@@ -9,10 +9,9 @@
       },
       "select_modules": {
         "title": "Module auswählen",
-        "description": "Module, Entitätsfiltermodus und Gerätegruppierung wählen.",
+        "description": "Module und Gerätegruppierung wählen.",
         "data": {
           "modules": "Module",
-          "entity_filter_mode": "Entitätsfiltermodus",
           "device_grouping": "Gerätegruppierung"
         },
         "data_description": {
@@ -27,7 +26,6 @@
         "title": "Module auswählen",
         "data": {
           "modules": "Module",
-          "entity_filter_mode": "Entitätsfiltermodus",
           "device_grouping": "Gerätegruppierung"
         },
         "data_description": {

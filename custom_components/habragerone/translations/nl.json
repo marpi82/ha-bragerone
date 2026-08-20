@@ -9,10 +9,9 @@
       },
       "select_modules": {
         "title": "Modules selecteren",
-        "description": "Kies modules, entiteitsfiltermodus en apparaatgroepering.",
+        "description": "Kies modules en apparaatgroepering.",
         "data": {
           "modules": "Modules",
-          "entity_filter_mode": "Filtermodus voor entiteiten",
           "device_grouping": "Apparaatgroepering"
         },
         "data_description": {
@@ -27,7 +26,6 @@
         "title": "Modules selecteren",
         "data": {
           "modules": "Modules",
-          "entity_filter_mode": "Filtermodus voor entiteiten",
           "device_grouping": "Apparaatgroepering"
         },
         "data_description": {

@@ -176,6 +176,29 @@ def test_normalize_cached_descriptors_filters_select_options_by_min_max() -> Non
         "Return protection": 2,
         "Pump + circulation": 3,
     }
+    # Pre-#212 caches omit enabled_by_default; normalize fills True as a safe default.
+    assert normalized[0]["enabled_by_default"] is True
+
+
+def test_normalize_cached_descriptors_preserves_explicit_enabled_by_default() -> None:
+    """Descriptors that already carry enabled_by_default must keep the cached flag (#212)."""
+    descriptors = [
+        {
+            "symbol": "PARAM_0",
+            "devid": "MOD1",
+            "pool": "P6",
+            "chan": "v",
+            "idx": 0,
+            "writable": False,
+            "enabled_by_default": False,
+            "mapping": {},
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["enabled_by_default"] is False
 
 
 def test_runtime_visibility_helpers() -> None:

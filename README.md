@@ -51,8 +51,9 @@ The integration can be configured through the Home Assistant UI. You will need:
 
 - BragerOne / TiSConnect credentials and backend platform
 - Installation and module selection
-- Entity filtering mode (UI menu vs permissions)
 - Device grouping (flat = one HA device per internet module for parameter entities; group by menu = child devices per **parent** menu route, linked via the module — remaps device membership when changed). In **both** modes the connectivity diagnostic stays on a separate `{devid}:module.connection` child (`via_device`), so it is not folded into the module device in flat mode.
+
+Every permission-gated parameter becomes an entity — there is no separate UI/permissions filtering mode to choose. Entities that are outside the everyday BragerOne web UI (installer-only panels, or panels the SPA itself hides) are still created, but start **disabled** in the entity registry; enable them manually if you need them. Enable/disable state can be changed per-entity at any time from the entity registry.
 
 ## Contributions are welcome!
 

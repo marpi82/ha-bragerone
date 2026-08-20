@@ -9,10 +9,9 @@
       },
       "select_modules": {
         "title": "Selectare module",
-        "description": "Alegeți modulele, modul de filtrare a entităților și gruparea dispozitivelor.",
+        "description": "Alegeți modulele și gruparea dispozitivelor.",
         "data": {
           "modules": "Module",
-          "entity_filter_mode": "Mod de filtrare al entităților",
           "device_grouping": "Gruparea dispozitivelor"
         },
         "data_description": {
@@ -27,7 +26,6 @@
         "title": "Selectare module",
         "data": {
           "modules": "Module",
-          "entity_filter_mode": "Mod de filtrare al entităților",
           "device_grouping": "Gruparea dispozitivelor"
         },
         "data_description": {

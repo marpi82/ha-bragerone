@@ -60,9 +60,8 @@ def make_language_config() -> SimpleNamespace:
 def make_bootstrap_payload() -> dict[str, Any]:
     """Build a minimal bootstrap payload returned during module selection."""
     return {
-        "entity_descriptors": [{"symbol": "PARAM_0", "devid": "DEV1", "platform": "sensor"}],
+        "entity_descriptors": [{"symbol": "PARAM_0", "devid": "DEV1", "platform": "sensor", "enabled_by_default": True}],
         "modules_meta": {"DEV1": {"name": "Boiler module"}},
-        "module_filter_modes": {"DEV1": "ui"},
     }
 
 

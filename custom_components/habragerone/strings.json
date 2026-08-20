@@ -21,10 +21,9 @@
       },
       "select_modules": {
         "title": "Select modules",
-        "description": "Choose modules, entity filtering mode, and device grouping.",
+        "description": "Choose modules and device grouping.",
         "data": {
           "modules": "Modules",
-          "entity_filter_mode": "Entity filtering mode",
           "device_grouping": "Device grouping"
         },
         "data_description": {
@@ -55,7 +54,6 @@
         "title": "Select modules",
         "data": {
           "modules": "Modules",
-          "entity_filter_mode": "Entity filtering mode",
           "device_grouping": "Device grouping"
         },
         "data_description": {

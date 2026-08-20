@@ -9,10 +9,9 @@
       },
       "select_modules": {
         "title": "Вибір модулів",
-        "description": "Виберіть модулі, режим фільтрації сутностей і групування пристроїв.",
+        "description": "Виберіть модулі і групування пристроїв.",
         "data": {
           "modules": "Модулі",
-          "entity_filter_mode": "Режим фільтрації сутностей",
           "device_grouping": "Групування пристроїв"
         },
         "data_description": {
@@ -27,7 +26,6 @@
         "title": "Вибір модулів",
         "data": {
           "modules": "Модулі",
-          "entity_filter_mode": "Режим фільтрації сутностей",
           "device_grouping": "Групування пристроїв"
         },
         "data_description": {

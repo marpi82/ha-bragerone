@@ -21,10 +21,9 @@
       },
       "select_modules": {
         "title": "Wybór modułów",
-        "description": "Wybierz moduły, tryb filtrowania encji i grupowanie urządzeń.",
+        "description": "Wybierz moduły i grupowanie urządzeń.",
         "data": {
           "modules": "Moduły",
-          "entity_filter_mode": "Tryb filtrowania encji",
           "device_grouping": "Grupowanie urządzeń"
         },
         "data_description": {
@@ -55,7 +54,6 @@
         "title": "Wybór modułów",
         "data": {
           "modules": "Moduły",
-          "entity_filter_mode": "Tryb filtrowania encji",
           "device_grouping": "Grupowanie urządzeń"
         },
         "data_description": {

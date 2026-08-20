@@ -9,10 +9,9 @@
       },
       "select_modules": {
         "title": "モジュールを選択",
-        "description": "モジュール、エンティティのフィルタモード、デバイスのグループ化を選択してください。",
+        "description": "モジュールとデバイスのグループ化を選択してください。",
         "data": {
           "modules": "モジュール",
-          "entity_filter_mode": "エンティティのフィルターモード",
           "device_grouping": "デバイスのグループ化"
         },
         "data_description": {
@@ -27,7 +26,6 @@
         "title": "モジュールを選択",
         "data": {
           "modules": "モジュール",
-          "entity_filter_mode": "エンティティのフィルターモード",
           "device_grouping": "デバイスのグループ化"
         },
         "data_description": {

@@ -56,7 +56,7 @@ class _RecordingResolver:
         _ = device_menu, all_panels
         type(self).calls.append(permissions)
         type(self).web_ui_flags.append(web_ui_only)
-        result = self.gated_groups if permissions else self.ungated_groups
+        result = self.ungated_groups if permissions is None else self.gated_groups
         if isinstance(result, Exception):
             raise result
         return cast(dict[str, list[str]], result)
@@ -158,8 +158,11 @@ def test_empty_gated_panel_groups_stay_empty_without_ungating(monkeypatch: pytes
         ungated_groups={"Panel": ["SYM_FALLBACK"]},
     )
 
-    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"]]
-    assert web_ui_flags == [True]
+    # #212: the full permission-gated set (web_ui_only=False) and the everyday-UI
+    # route probe (web_ui_only=True) are both requested with the same permissions —
+    # never ungated (permissions=None).
+    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"], ["DISPLAY_PARAMETER_LEVEL_1"]]
+    assert web_ui_flags == [False, True]
     assert payload["entity_descriptors"] == []
 
 
@@ -170,12 +173,13 @@ def test_non_empty_gated_panel_groups_skip_the_fallback_call(monkeypatch: pytest
         ungated_groups={"Panel": ["SYM_FALLBACK"]},
     )
 
-    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"]]
-    assert web_ui_flags == [True]
+    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"], ["DISPLAY_PARAMETER_LEVEL_1"]]
+    assert web_ui_flags == [False, True]
     assert {item["symbol"] for item in payload["entity_descriptors"]} == {"SYM_GATED"}
 
 
-def test_permissions_mode_does_not_request_web_ui_only(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_entity_filter_mode_kwarg_is_ignored_for_panel_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#212: the deprecated ``entity_filter_mode`` kwarg no longer changes discovery."""
     payload, calls, web_ui_flags = _run_bootstrap(
         monkeypatch,
         gated_groups={"Panel": ["SYM_GATED"]},
@@ -183,8 +187,8 @@ def test_permissions_mode_does_not_request_web_ui_only(monkeypatch: pytest.Monke
         entity_filter_mode="permissions",
     )
 
-    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"]]
-    assert web_ui_flags == [False]
+    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"], ["DISPLAY_PARAMETER_LEVEL_1"]]
+    assert web_ui_flags == [False, True]
     assert {item["symbol"] for item in payload["entity_descriptors"]} == {"SYM_GATED"}
 
 
@@ -204,7 +208,7 @@ def test_empty_panel_groups_warn_without_failing_bootstrap(
     with caplog.at_level(logging.WARNING, logger=BOOTSTRAP_LOGGER):
         payload, calls, _web_ui_flags = _run_bootstrap(monkeypatch, gated_groups={}, ungated_groups={"Panel": []})
 
-    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"]]
+    assert calls == [["DISPLAY_PARAMETER_LEVEL_1"], ["DISPLAY_PARAMETER_LEVEL_1"]]
     assert payload["entity_descriptors"] == []
 
     warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
@@ -456,6 +460,55 @@ def test_menu_kind_retry_reloads_empty_kinds_with_same_permissions(monkeypatch: 
     assert {item["symbol"] for item in payload["entity_descriptors"]} == {"PARAM_GATED"}
     debug = payload["bootstrap_debug"]["modules"]["M1"]
     assert debug["menu_symbol_kinds_count"] == 1
+
+
+def test_menu_kind_retry_keeps_empty_permissions_list_not_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Empty module permissions must stay ``[]`` on retry — never coerce to ``None`` (ungate)."""
+
+    class _EmptyPermsApi(_FakeApi):
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            modules = await super().get_modules(object_id)
+            for module in modules:
+                module.permissions = []
+            return modules
+
+    assets = _EmptyThenRetryAssets(
+        retry_menu={
+            "routes": [
+                {
+                    "name": "Boiler",
+                    "parameters": {
+                        "read": [{"parameter": {"token": "PARAM_GATED"}}],
+                        "write": [],
+                        "status": [],
+                        "special": [],
+                    },
+                    "children": [],
+                }
+            ]
+        }
+    )
+    resolver_cls = _resolver_with_assets(assets)
+    _RecordingResolver.gated_groups = {"Panel": ["PARAM_GATED"]}
+    _RecordingResolver.ungated_groups = {}
+    _RecordingResolver.calls = []
+    _RecordingResolver.web_ui_flags = []
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", resolver_cls)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _EmptyPermsApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+
+    assert assets.calls == [[], []]
+    assert None not in assets.calls
+    assert {item["symbol"] for item in payload["entity_descriptors"]} == {"PARAM_GATED"}
 
 
 def test_menu_kind_retry_failure_is_logged_without_failing_bootstrap(

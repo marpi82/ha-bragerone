@@ -14,6 +14,7 @@ from pybragerone.models.param import ParamStore
 
 from .const import (
     CONF_DEVICE_GROUPING,
+    CONF_ENABLED_BY_DEFAULT,
     CONF_ENTITY_DESCRIPTORS,
     CONF_ENUM_MAP,
     CONF_MODULES,
@@ -361,6 +362,16 @@ def descriptor_raw_to_label(descriptor: dict[str, Any]) -> dict[str, str]:
     if not isinstance(raw_to_label, dict):
         return {}
     return {str(key): str(value) for key, value in raw_to_label.items()}
+
+
+def descriptor_enabled_by_default(descriptor: Mapping[str, Any]) -> bool:
+    """Return whether an entity should be enabled by default (#212).
+
+    Every permission-gated symbol still becomes an entity; only entities outside
+    the everyday web UI (or not SPA-visible) start disabled in the entity registry.
+    """
+    raw = descriptor.get(CONF_ENABLED_BY_DEFAULT, True)
+    return bool(raw)
 
 
 def descriptor_display_name(

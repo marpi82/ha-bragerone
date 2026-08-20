@@ -61,7 +61,19 @@ async def test_sensor_entity_identity_and_device_info(hass: HomeAssistant) -> No
     assert entity._attr_native_unit_of_measurement == UnitOfTemperature.CELSIUS
     assert entity._attr_device_class == SensorDeviceClass.TEMPERATURE
     assert entity._attr_state_class == SensorStateClass.MEASUREMENT
+    assert entity._attr_entity_registry_enabled_default is True
     assert entity.device_info["identifiers"] == {(DOMAIN, "DEV1")}
+
+
+@pytest.mark.asyncio
+async def test_sensor_respects_enabled_by_default_false(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime()
+    descriptor = sensor_descriptor(symbol="TEMP_HIDDEN")
+    descriptor["enabled_by_default"] = False
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)
+
+    assert entity._attr_entity_registry_enabled_default is False
 
 
 @pytest.mark.asyncio
