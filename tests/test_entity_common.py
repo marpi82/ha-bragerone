@@ -70,6 +70,94 @@ def test_descriptor_refresh_keys_mapping_inputs() -> None:
     assert descriptor_refresh_keys(descriptor) == {"P1.v2", "P6.s0"}
 
 
+def test_descriptor_refresh_keys_includes_multi_register_value_channels() -> None:
+    """Multi-word SPA values must refresh when either register updates (#214)."""
+    descriptor = {
+        "pool": "P4",
+        "chan": "v",
+        "idx": 59,
+        "mapping": {
+            "channels": {
+                "value": [
+                    {"address": "P4.v59", "channel": "P4.v59"},
+                    {"address": "P4.v60", "channel": "P4.v60"},
+                ],
+            },
+            "paths": {
+                "value": [
+                    {"group": "P4", "number": 59, "use": "v", "convert": "_x"},
+                    {"group": "P4", "number": 60, "use": "v", "convert": "_x", "times": 65536},
+                ],
+            },
+        },
+    }
+    assert descriptor_refresh_keys(descriptor) == {"P4.v59", "P4.v60"}
+
+
+def test_descriptor_refresh_keys_skips_invalid_channel_and_path_entries() -> None:
+    """Malformed channel/path rows must not raise or invent refresh keys (#214)."""
+    descriptor = {
+        "mapping": {
+            "channels": {
+                "value": [
+                    "not-a-dict",
+                    {"address": ""},
+                    {"channel": "   "},
+                    {"address": "P4.v59"},
+                ],
+            },
+            "paths": {
+                "value": [
+                    "not-a-dict",
+                    {"group": "", "number": 59, "use": "v"},
+                    {"group": "P4", "number": "59", "use": "v"},
+                    {"group": "P4", "number": 59, "use": ""},
+                    {"group": "P4", "number": 60, "use": "v"},
+                ],
+            },
+        },
+    }
+    assert descriptor_refresh_keys(descriptor) == {"P4.v59", "P4.v60"}
+
+
+def test_descriptor_refresh_keys_ignores_non_list_channel_and_path_values() -> None:
+    """channels.value / paths.value that are not lists contribute no extra keys (#214)."""
+    descriptor = {
+        "pool": "P4",
+        "chan": "v",
+        "idx": 59,
+        "mapping": {
+            "channels": {"value": {"address": "P4.v60"}},
+            "paths": {"value": {"group": "P4", "number": 60, "use": "v"}},
+        },
+    }
+    assert descriptor_refresh_keys(descriptor) == {"P4.v59"}
+
+
+def test_descriptor_current_raw_value_compose_none_falls_back_to_direct() -> None:
+    """When compose returns None (non-selector mapping), use pool/chan/idx (#214)."""
+    descriptor = switch_descriptor(
+        pool="P5",
+        chan="s",
+        idx=0,
+        mapping_inputs=[{"address": "P1.v2"}],
+    )
+    # Explicit non-selector paths so the stub compose path runs and returns None.
+    descriptor["mapping"] = {
+        "paths": {"value": [{"if": [], "then": "e.ON"}]},
+        "inputs": [{"address": "P1.v2"}],
+    }
+    store_with_input = FakeStore(flat_values={"P5.s0": 3, "P1.v2": 99})
+    assert descriptor_current_raw_value(store_with_input, descriptor) == 3
+
+
+def test_descriptor_current_raw_value_non_dict_mapping_uses_direct_address() -> None:
+    """Non-dict mapping skips compose and still reads pool/chan/idx (#214)."""
+    store = FakeStore(flat_values={"P5.s0": 8})
+    descriptor = {"pool": "P5", "chan": "s", "idx": 0, "mapping": "not-a-dict"}
+    assert descriptor_current_raw_value(store, descriptor) == 8
+
+
 def test_store_value_for_address_reads_family_channel() -> None:
     store = FakeStore(flat_values={"P6.v0": 42, "P6.s0": 1})
     assert store_value_for_address(store, "P6.v0") == 42
@@ -91,6 +179,25 @@ def test_descriptor_current_raw_value_prefers_direct_mapping() -> None:
         mapping_inputs=[{"address": "P1.v2"}],
     )
     assert descriptor_current_raw_value(store, descriptor) == 0
+
+
+def test_descriptor_current_raw_value_composes_multi_register_feeder_runtime() -> None:
+    """PARAM_P4_59-style mapping must uint16-compose low+high*65536 (#214/#327)."""
+    store = FakeStore(flat_values={"P4.v59": -27473, "P4.v60": 0})
+    descriptor = {
+        "pool": "P4",
+        "chan": "v",
+        "idx": 59,
+        "mapping": {
+            "paths": {
+                "value": [
+                    {"group": "P4", "number": 59, "use": "v", "convert": "_0x35dce1"},
+                    {"group": "P4", "number": 60, "use": "v", "convert": "_0x35dce1", "times": 65536},
+                ],
+            },
+        },
+    }
+    assert descriptor_current_raw_value(store, descriptor) == 38063
 
 
 def test_descriptor_current_raw_value_falls_back_to_mapping_input() -> None:

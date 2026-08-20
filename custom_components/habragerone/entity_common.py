@@ -109,6 +109,20 @@ def _display_name_panel_prefix(descriptor: dict[str, Any]) -> str:
     return ""
 
 
+def _address_from_value_selector(entry: Mapping[str, Any]) -> str | None:
+    """Build ``P<n>.<chan><idx>`` from an SPA value-path address selector."""
+    group = entry.get("group")
+    number = entry.get("number")
+    use = entry.get("use")
+    if not isinstance(group, str) or not group.strip():
+        return None
+    if not isinstance(number, int):
+        return None
+    if not isinstance(use, str) or not use.strip():
+        return None
+    return f"{group.strip()}.{use.strip()[0]}{number}"
+
+
 def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
     """Return address keys that should trigger entity refresh for a descriptor."""
     keys: set[str] = set()
@@ -130,6 +144,28 @@ def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
                 if isinstance(address, str) and address.strip():
                     keys.add(address.strip())
 
+        channels = mapping.get("channels")
+        if isinstance(channels, dict):
+            value_channels = channels.get("value")
+            if isinstance(value_channels, list):
+                for candidate in value_channels:
+                    if not isinstance(candidate, dict):
+                        continue
+                    address = candidate.get("address") or candidate.get("channel")
+                    if isinstance(address, str) and address.strip():
+                        keys.add(address.strip())
+
+        paths = mapping.get("paths")
+        if isinstance(paths, dict):
+            value_paths = paths.get("value")
+            if isinstance(value_paths, list):
+                for candidate in value_paths:
+                    if not isinstance(candidate, dict):
+                        continue
+                    address = _address_from_value_selector(candidate)
+                    if address is not None:
+                        keys.add(address)
+
     return keys
 
 
@@ -149,11 +185,22 @@ def store_value_for_address(store: ParamStore, address: str) -> Any | None:
 
 
 def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) -> Any | None:
-    """Return current raw value for descriptor from ParamStore.
+    """Return current raw/display value for descriptor from ParamStore.
 
-    Prefers direct ``pool/chan/idx`` mapping, then falls back to first mapping input
-    address when available.
+    Prefer SPA multi-register composition (``convert`` + ``times``) via
+    :meth:`ParamResolver.compose_mapping_register_value` when the mapping carries
+    address-selector value paths (#327 / ha-bragerone#214). Fall back to direct
+    ``pool/chan/idx``, then the first mapping input address.
     """
+    from pybragerone.models.param_resolver import ParamResolver
+
+    mapping = descriptor.get("mapping")
+    compose = getattr(ParamResolver, "compose_mapping_register_value", None)
+    if callable(compose) and isinstance(mapping, dict):
+        composed = compose(store, mapping)
+        if composed is not None:
+            return composed
+
     pool = descriptor.get("pool")
     chan = descriptor.get("chan")
     idx = descriptor.get("idx")
@@ -162,7 +209,6 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
         if direct is not None:
             return direct
 
-    mapping = descriptor.get("mapping")
     if not isinstance(mapping, dict):
         return None
     inputs = mapping.get("inputs")

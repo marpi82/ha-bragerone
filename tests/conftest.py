@@ -94,7 +94,68 @@ def install_pybragerone_stubs() -> None:
     sys.modules["pybragerone.models.param"] = pybragerone_models_param_stub
 
     pybragerone_models_param_resolver_stub = types.ModuleType("pybragerone.models.param_resolver")
-    pybragerone_models_param_resolver_stub.ParamResolver = object
+
+    class _ParamResolverStub:
+        @staticmethod
+        def compose_mapping_register_value(store: object, mapping: object) -> int | float | None:
+            """Minimal stub mirroring pybragerone multi-register compose (#327)."""
+            if not isinstance(mapping, dict):
+                return None
+            paths = mapping.get("paths") if isinstance(mapping.get("paths"), dict) else {}
+            raw = mapping.get("raw") if isinstance(mapping.get("raw"), dict) else {}
+            entries = paths.get("value") if isinstance(paths, dict) else None
+            if not isinstance(entries, list) or not entries:
+                entries = raw.get("value") if isinstance(raw, dict) else None
+            if not isinstance(entries, list) or not entries:
+                return None
+            if any(isinstance(e, dict) and any(k in e for k in ("if", "elseif", "then", "else")) for e in entries):
+                return None
+            if not any(isinstance(e, dict) and "group" in e and "number" in e and "use" in e for e in entries):
+                return None
+
+            total = 0.0
+            found = False
+            get_family = getattr(store, "get_family", None)
+            if not callable(get_family):
+                return None
+            for selector in entries:
+                if not isinstance(selector, dict):
+                    continue
+                group = selector.get("group")
+                number = selector.get("number")
+                use = selector.get("use")
+                if not isinstance(group, str) or not isinstance(number, int) or not isinstance(use, str) or not use:
+                    continue
+                family = get_family(group, number)
+                if family is None:
+                    continue
+                raw_val = family.get(use[0]) if hasattr(family, "get") else None
+                if raw_val is None:
+                    continue
+                try:
+                    word = int(raw_val)
+                except TypeError:
+                    continue
+                except ValueError:
+                    continue
+                if selector.get("convert"):
+                    word = word & 0xFFFF
+                times = selector.get("times", 1)
+                try:
+                    times_n = int(times) if times is not None else 1
+                except TypeError:
+                    times_n = 1
+                except ValueError:
+                    times_n = 1
+                total += float(word) * float(times_n)
+                found = True
+            if not found:
+                return None
+            if float(total).is_integer():
+                return int(total)
+            return total
+
+    pybragerone_models_param_resolver_stub.ParamResolver = _ParamResolverStub
     sys.modules["pybragerone.models.param_resolver"] = pybragerone_models_param_resolver_stub
 
     pybragerone_models_events_stub = types.ModuleType("pybragerone.models.events")
