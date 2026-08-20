@@ -9,10 +9,9 @@
       },
       "select_modules": {
         "title": "Modulok kiválasztása",
-        "description": "Válassza ki a modulokat, az entitásszűrési módot és az eszközcsoportosítást.",
+        "description": "Válassza ki a modulokat és az eszközcsoportosítást.",
         "data": {
           "modules": "Modulok",
-          "entity_filter_mode": "Entitásszűrés módja",
           "device_grouping": "Eszközcsoportosítás"
         },
         "data_description": {
@@ -27,7 +26,6 @@
         "title": "Modulok kiválasztása",
         "data": {
           "modules": "Modulok",
-          "entity_filter_mode": "Entitásszűrés módja",
           "device_grouping": "Eszközcsoportosítás"
         },
         "data_description": {

@@ -9,10 +9,9 @@
       },
       "select_modules": {
         "title": "Izbira modulov",
-        "description": "Izberite module, način filtriranja entitet in združevanje naprav.",
+        "description": "Izberite module in združevanje naprav.",
         "data": {
           "modules": "Moduli",
-          "entity_filter_mode": "Način filtriranja entitet",
           "device_grouping": "Združevanje naprav"
         },
         "data_description": {
@@ -27,7 +26,6 @@
         "title": "Izbira modulov",
         "data": {
           "modules": "Moduli",
-          "entity_filter_mode": "Način filtriranja entitet",
           "device_grouping": "Združevanje naprav"
         },
         "data_description": {
