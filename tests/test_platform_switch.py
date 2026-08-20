@@ -92,6 +92,7 @@ async def test_switch_entity_identity_and_device_info(hass: HomeAssistant) -> No
     assert entity._attr_name == "Boiler - Boiler run"
     assert entity._attr_suggested_object_id == "dev1_uruchomienie_kotla"
     assert entity._attr_unique_id == f"{entry.entry_id}_dev1_uruchomienie_kotla_switch"
+    assert entity._attr_entity_registry_enabled_default is True
     assert entity.device_info["identifiers"] == {(DOMAIN, "DEV1")}
 
 
