@@ -11,10 +11,9 @@ from typing import TYPE_CHECKING, Any, NotRequired, TypedDict, cast
 from .const import (
     CONF_BOOTSTRAP_DEBUG,
     CONF_CONNECTION_DESCRIPTORS,
+    CONF_ENABLED_BY_DEFAULT,
     CONF_ENTITY_DESCRIPTORS,
-    CONF_ENTITY_FILTER_MODE,
     CONF_ENUM_MAP,
-    CONF_MODULE_FILTER_MODES,
     CONF_MODULES_META,
     CONF_OPTIONS,
     CONF_PLATFORM,
@@ -65,6 +64,7 @@ class EntityDescriptor(TypedDict, total=False):
     enum_map: dict[str, str | int | float | bool]
     raw_to_label: dict[str, str]
     menu_kinds: list[str]
+    enabled_by_default: bool
 
 
 _SWITCHISH_RULE_VALUES = {"0", "1", "true", "false", "on", "off", "enabled", "disabled", "yes", "no"}
@@ -828,6 +828,10 @@ def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescr
             continue
 
         descriptor = cast(EntityDescriptor, dict(descriptor_raw))
+        if CONF_ENABLED_BY_DEFAULT not in descriptor:
+            # Old caches predate #212's enabled_by_default field; keep everything enabled
+            # until the next bootstrap rebuild (triggered separately by BOOTSTRAP_VERSION).
+            descriptor[CONF_ENABLED_BY_DEFAULT] = True
         symbol = str(descriptor.get("symbol") or "")
         pool = descriptor.get("pool")
         chan = descriptor.get("chan")
@@ -887,6 +891,7 @@ async def _build_permission_gated_panel_groups(
     permissions: list[str],
     devid: str,
     web_ui_only: bool = False,
+    warn_if_empty: bool = True,
 ) -> dict[str, list[str]]:
     """Build panel groups for *permissions* only — never retry with ``permissions=None``.
 
@@ -901,8 +906,12 @@ async def _build_permission_gated_panel_groups(
         permissions: Permission strings reported by the API for this module.
         devid: Module device identifier, used for logging only.
         web_ui_only: When True, apply SPA side-menu gating (hide installer routes /
-            ``isVisibleOnSideMenu=False``). Per-parameter SPA ``isParameterVisible``
-            status checks still run separately for UI filter mode.
+            ``isVisibleOnSideMenu=False``) so the result matches everyday web-UI
+            navigation. Used to compute ``enabled_by_default``, not for gating which
+            entities get created (#212).
+        warn_if_empty: When True, log a warning if the result is empty. Callers pass
+            False for the ``web_ui_only=True`` UI-route probe, where an empty result
+            just means the module has no everyday-UI routes (not a discovery failure).
 
     Returns:
         Mapping of panel name to symbols (possibly empty).
@@ -916,7 +925,7 @@ async def _build_permission_gated_panel_groups(
             web_ui_only=web_ui_only,
         ),
     )
-    if not _panel_group_symbols(groups):
+    if warn_if_empty and not _panel_group_symbols(groups):
         LOGGER.warning(
             "Panel-group discovery returned no symbols for module %s with the module permissions; "
             "no panel-derived entities will be created for it",
@@ -931,8 +940,6 @@ class BootstrapPayload(TypedDict):
     entity_descriptors: list[EntityDescriptor]
     connection_descriptors: list[dict[str, Any]]
     modules_meta: dict[str, dict[str, Any]]
-    entity_filter_mode: str
-    module_filter_modes: dict[str, str]
     bootstrap_debug: dict[str, Any]
     upstream_assets_fingerprint: NotRequired[str]
 
@@ -1010,10 +1017,19 @@ async def async_build_bootstrap_payload(
     object_id: int,
     modules: list[str],
     language: str | None = None,
-    entity_filter_mode: str = DEFAULT_ENTITY_FILTER_MODE,
+    entity_filter_mode: str | None = None,
     module_filter_modes: dict[str, str] | None = None,
 ) -> BootstrapPayload:
-    """Build one-time cached descriptors from menu/assets + prime snapshot."""
+    """Build one-time cached descriptors from menu/assets + prime snapshot.
+
+    Every permission-gated symbol with a display value becomes an entity (#212).
+    ``entity_filter_mode``/``module_filter_modes`` are accepted only for call-site
+    compatibility with old callers/tests and are otherwise ignored: they no longer
+    change which entities are created. Whether a created entity starts enabled is
+    controlled by ``EntityDescriptor.enabled_by_default``, computed per symbol from
+    the everyday-UI route set and SPA visibility (see the accept loop below).
+    """
+    _ = entity_filter_mode, module_filter_modes
     from pybragerone.models.param import ParamStore
     from pybragerone.models.param_resolver import ParamResolver
 
@@ -1023,10 +1039,6 @@ async def async_build_bootstrap_payload(
 
     store = ParamStore()
     resolver = ParamResolver.from_api(api=api, store=store, lang=language)
-    filter_mode = _normalize_filter_mode(entity_filter_mode)
-    normalized_module_modes = {
-        str(devid): _normalize_filter_mode(mode) for devid, mode in (module_filter_modes or {}).items() if str(devid).strip()
-    }
 
     prime_result = await api.modules_parameters_prime([module.devid for module in effective_modules], return_data=True)
     if isinstance(prime_result, tuple) and len(prime_result) == 2:
@@ -1036,6 +1048,7 @@ async def async_build_bootstrap_payload(
 
     per_module_candidate_symbols: dict[str, set[str]] = {}
     per_module_panel_paths: dict[str, dict[str, str]] = {}
+    per_module_ui_route_symbols: dict[str, set[str]] = {}
     per_module_symbol_kinds: dict[str, dict[str, set[str]]] = {}
     per_module_symbol_routes: dict[str, dict[str, list[dict[str, Any]]]] = {}
     per_module_route_diagnostics: dict[str, list[dict[str, Any]]] = {}
@@ -1044,19 +1057,17 @@ async def async_build_bootstrap_payload(
 
     for module in effective_modules:
         module_permissions = [str(perm) for perm in getattr(module, "permissions", []) or []]
-        symbols: set[str] = set()
         panel_paths: dict[str, str] = {}
-        module_mode = normalized_module_modes.get(str(module.devid), filter_mode)
-        web_ui_only = module_mode == FILTER_MODE_UI
 
+        # Full permission-gated set: every panel the account can see, regardless of
+        # whether it is reachable from the everyday web UI (#212).
         groups = await _build_permission_gated_panel_groups(
             resolver,
             device_menu=module.deviceMenu,
             permissions=module_permissions,
             devid=str(module.devid),
-            web_ui_only=web_ui_only,
+            web_ui_only=False,
         )
-
         symbols = _panel_group_symbols(groups)
         for panel_name, panel_symbols in groups.items():
             panel_title = _normalize_panel_path(str(panel_name))
@@ -1065,6 +1076,19 @@ async def async_build_bootstrap_payload(
             for symbol in panel_symbols:
                 if isinstance(symbol, str) and symbol and symbol not in panel_paths:
                     panel_paths[symbol] = panel_title
+
+        # Everyday-UI route set (subset of the above): used only to decide
+        # ``enabled_by_default``, never to reject candidates. An empty result here is
+        # normal (e.g. installer-only modules) and not worth warning about.
+        ui_groups = await _build_permission_gated_panel_groups(
+            resolver,
+            device_menu=module.deviceMenu,
+            permissions=module_permissions,
+            devid=str(module.devid),
+            web_ui_only=True,
+            warn_if_empty=False,
+        )
+        per_module_ui_route_symbols[module.devid] = _panel_group_symbols(ui_groups)
 
         per_module_candidate_symbols[module.devid] = symbols
         per_module_panel_paths[module.devid] = panel_paths
@@ -1080,7 +1104,7 @@ async def async_build_bootstrap_payload(
                 per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
                     menu,
                     all_panels=True,
-                    web_ui_only=web_ui_only,
+                    web_ui_only=False,
                     routes_i18n=await resolver._i18n.get_namespace("routes"),
                 )
             except Exception:
@@ -1097,7 +1121,7 @@ async def async_build_bootstrap_payload(
                 per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
                     menu_retry,
                     all_panels=True,
-                    web_ui_only=web_ui_only,
+                    web_ui_only=False,
                     routes_i18n=await resolver._i18n.get_namespace("routes"),
                 )
             except Exception:
@@ -1108,14 +1132,18 @@ async def async_build_bootstrap_payload(
     flat_values = store.flatten()
     per_module_symbols: dict[str, set[str]] = {}
 
+    per_module_enabled_by_default: dict[str, dict[str, bool]] = {}
+
     for module in effective_modules:
         module_symbols: set[str] = set()
         devid_text = str(module.devid)
-        module_mode = normalized_module_modes.get(devid_text, filter_mode)
         module_rejections: list[dict[str, Any]] = []
         module_accepts: list[dict[str, Any]] = []
         boiler_accepts: list[dict[str, Any]] = []
+        module_enabled_by_default: dict[str, bool] = {}
+        per_module_enabled_by_default[module.devid] = module_enabled_by_default
         module_candidates = per_module_candidate_symbols.get(module.devid, set())
+        module_ui_route_symbols = per_module_ui_route_symbols.get(module.devid, set())
         kinds_map = per_module_symbol_kinds.get(module.devid, {})
         routes_map = per_module_symbol_routes.get(module.devid, {})
         panel_paths_map = per_module_panel_paths.get(module.devid, {})
@@ -1138,6 +1166,8 @@ async def async_build_bootstrap_payload(
             "panel_symbols_without_routes_sample": panels_without_routes[:200],
             "accepted_count": 0,
             "rejection_count": 0,
+            "enabled_by_default_count": 0,
+            "disabled_by_default_count": 0,
             "rejections": module_rejections,
             "accepted_debug": module_accepts,
             "boiler_panel_debug": boiler_accepts,
@@ -1172,12 +1202,15 @@ async def async_build_bootstrap_payload(
             resolved_value_label: Any = None
             has_runtime_raw = False
             visible_diag: Any = None
+            is_ui_route_symbol = symbol in module_ui_route_symbols
+            enabled_by_default = False
             try:
                 resolved = await resolver.resolve_value(symbol)
                 resolved_value = resolved.value
                 resolved_value_label = resolved.value_label
                 # SPA ``isParameterVisible`` requires ``parameter.value !== undefined``.
                 # Command-like writes without a display value are not shown on the web UI.
+                # This still gates entity creation (#212 only changes UI-visibility, not this).
                 if not _has_display_value(value=resolved.value, value_label=resolved.value_label):
                     if len(module_rejections) < 500:
                         module_rejections.append(
@@ -1192,112 +1225,118 @@ async def async_build_bootstrap_payload(
                     continue
                 has_runtime_raw = _has_runtime_raw_value(payload=payload, mapping=mapping_dict, flat_values=flat_values)
 
-                if module_mode == FILTER_MODE_UI:
-                    visible, visible_diag = resolver.parameter_visibility_diagnostics(
-                        desc=payload,
-                        resolved=resolved,
-                        flat_values=flat_values,
-                    )
+                # Everyday-UI route + SPA-visible now decides ``enabled_by_default``, never
+                # whether the entity is created at all (#212): every permission-gated symbol
+                # with a display value is accepted.
+                if is_ui_route_symbol:
+                    try:
+                        visible, visible_diag = resolver.parameter_visibility_diagnostics(
+                            desc=payload,
+                            resolved=resolved,
+                            flat_values=flat_values,
+                        )
+                        enabled_by_default = bool(visible)
+                    except Exception:
+                        LOGGER.debug("Visibility diagnostics failed for %s/%s", module.devid, symbol, exc_info=True)
+                        enabled_by_default = True
                 else:
-                    visible = True
+                    enabled_by_default = False
             except Exception:
-                LOGGER.debug("Visibility diagnostics failed for %s/%s", module.devid, symbol, exc_info=True)
-                visible = True
+                LOGGER.debug("Value resolution failed for %s/%s", module.devid, symbol, exc_info=True)
+                enabled_by_default = is_ui_route_symbol
 
-            if visible:
+            module_symbols.add(symbol)
+            module_enabled_by_default[symbol] = enabled_by_default
+            if len(module_accepts) < 500:
+                module_accepts.append(
+                    {
+                        "symbol": symbol,
+                        "panel_path": panel_path,
+                        "menu_kinds": sorted(symbol_kinds),
+                        "has_runtime_raw": has_runtime_raw,
+                        "value": resolved_value,
+                        "value_label": resolved_value_label,
+                        "ui_route_symbol": is_ui_route_symbol,
+                        "enabled_by_default": enabled_by_default,
+                        "ui_visible_diag": visible_diag,
+                    }
+                )
+            if _is_boiler_panel(panel_path) and len(boiler_accepts) < 200:
+                boiler_accepts.append(
+                    {
+                        "symbol": symbol,
+                        "menu_kinds": sorted(symbol_kinds),
+                        "has_runtime_raw": has_runtime_raw,
+                        "value": resolved_value,
+                        "value_label": resolved_value_label,
+                        "enabled_by_default": enabled_by_default,
+                        "ui_visible_diag": visible_diag,
+                    }
+                )
+
+        # Secondary pass: include command-like/special actions that are outside panel groups
+        # (permissions-only extras, e.g. module restart commands). These are always disabled
+        # by default — they are never part of the everyday web UI.
+        extra_candidates = per_module_symbol_kinds.get(module.devid, {})
+        symbols_to_resolve: list[str] = [
+            symbol
+            for symbol, kinds in extra_candidates.items()
+            if symbol not in module_symbols and ("write" in kinds or "special" in kinds) and symbol not in details
+        ]
+        if symbols_to_resolve:
+            try:
+                extra_details = await resolver.describe_symbols(sorted(set(symbols_to_resolve)))
+                details.update(extra_details)
+            except Exception:
+                LOGGER.debug(
+                    "Extra descriptor batch resolution failed for %s (count=%s)",
+                    module.devid,
+                    len(symbols_to_resolve),
+                    exc_info=True,
+                )
+        for symbol, kinds in extra_candidates.items():
+            if symbol in module_symbols:
+                continue
+            if "write" not in kinds and "special" not in kinds:
+                continue
+            payload = details.get(symbol)
+            if payload is None:
+                if _is_command_like_symbol(symbol):
+                    # Keep unresolved command-like tokens as synthetic button actions.
+                    details[symbol] = {
+                        "label": symbol,
+                        "unit": None,
+                        "pool": None,
+                        "idx": None,
+                        "chan": None,
+                        "min": None,
+                        "max": None,
+                        "mapping": {
+                            "command_rules": [{"command": symbol}],
+                        },
+                    }
+                    payload = details[symbol]
+                else:
+                    continue
+            mapping = payload.get("mapping") if isinstance(payload.get("mapping"), dict) else None
+            if not _has_named_command_rule(mapping):
+                continue
+            commands = _command_rule_names(mapping)
+            if _is_command_like_symbol(symbol) or any(_is_action_command_name(cmd) for cmd in commands):
                 module_symbols.add(symbol)
-                if len(module_accepts) < 500:
-                    module_accepts.append(
-                        {
-                            "symbol": symbol,
-                            "panel_path": panel_path,
-                            "menu_kinds": sorted(symbol_kinds),
-                            "has_runtime_raw": has_runtime_raw,
-                            "value": resolved_value,
-                            "value_label": resolved_value_label,
-                            "ui_visible_diag": visible_diag,
-                        }
-                    )
-                if _is_boiler_panel(panel_path) and len(boiler_accepts) < 200:
-                    boiler_accepts.append(
-                        {
-                            "symbol": symbol,
-                            "menu_kinds": sorted(symbol_kinds),
-                            "has_runtime_raw": has_runtime_raw,
-                            "value": resolved_value,
-                            "value_label": resolved_value_label,
-                            "ui_visible_diag": visible_diag,
-                        }
-                    )
-            else:
-                if len(module_rejections) < 500:
-                    module_rejections.append(
-                        {
-                            "symbol": symbol,
-                            "reason": "ui_visibility_false",
-                            "menu_kinds": sorted(symbol_kinds),
-                            "value": resolved_value,
-                            "value_label": resolved_value_label,
-                            "ui_visible_diag": visible_diag,
-                        }
-                    )
-
-        # Secondary pass: include command-like/special actions that are outside panel groups.
-        # In UI mode keep parity with CLI and expose only panel-derived symbols.
-        if module_mode != FILTER_MODE_UI:
-            extra_candidates = per_module_symbol_kinds.get(module.devid, {})
-            symbols_to_resolve: list[str] = [
-                symbol
-                for symbol, kinds in extra_candidates.items()
-                if symbol not in module_symbols and ("write" in kinds or "special" in kinds) and symbol not in details
-            ]
-            if symbols_to_resolve:
-                try:
-                    extra_details = await resolver.describe_symbols(sorted(set(symbols_to_resolve)))
-                    details.update(extra_details)
-                except Exception:
-                    LOGGER.debug(
-                        "Extra descriptor batch resolution failed for %s (count=%s)",
-                        module.devid,
-                        len(symbols_to_resolve),
-                        exc_info=True,
-                    )
-            for symbol, kinds in extra_candidates.items():
-                if symbol in module_symbols:
-                    continue
-                if "write" not in kinds and "special" not in kinds:
-                    continue
-                payload = details.get(symbol)
-                if payload is None:
-                    if _is_command_like_symbol(symbol):
-                        # Keep unresolved command-like tokens as synthetic button actions.
-                        details[symbol] = {
-                            "label": symbol,
-                            "unit": None,
-                            "pool": None,
-                            "idx": None,
-                            "chan": None,
-                            "min": None,
-                            "max": None,
-                            "mapping": {
-                                "command_rules": [{"command": symbol}],
-                            },
-                        }
-                        payload = details[symbol]
-                    else:
-                        continue
-                mapping = payload.get("mapping") if isinstance(payload.get("mapping"), dict) else None
-                if not _has_named_command_rule(mapping):
-                    continue
-                commands = _command_rule_names(mapping)
-                if _is_command_like_symbol(symbol) or any(_is_action_command_name(cmd) for cmd in commands):
-                    module_symbols.add(symbol)
+                module_enabled_by_default[symbol] = False
 
         per_module_symbols[module.devid] = module_symbols
         module_debug = bootstrap_debug["modules"].get(module.devid)
         if isinstance(module_debug, dict):
             module_debug["accepted_count"] = len(module_symbols)
             module_debug["rejection_count"] = len(module_rejections)
+            module_debug["enabled_by_default_count"] = sum(
+                1 for symbol in module_symbols if module_enabled_by_default.get(symbol, False)
+            )
+            module_debug["disabled_by_default_count"] = sum(
+                1 for symbol in module_symbols if not module_enabled_by_default.get(symbol, False)
+            )
             accepted_symbols_sample = sorted(module_symbols)[:200]
             module_debug["accepted_symbols_sample"] = accepted_symbols_sample
             module_debug["accepted_symbol_routes_sample"] = {
@@ -1310,7 +1349,7 @@ async def async_build_bootstrap_payload(
     modules_meta: dict[str, dict[str, Any]] = {}
 
     for module in effective_modules:
-        module_mode = normalized_module_modes.get(str(module.devid), filter_mode)
+        module_enabled_by_default = per_module_enabled_by_default.get(module.devid, {})
         modules_meta[module.devid] = {
             "name": module.name,
             "title": module.moduleTitle,
@@ -1387,6 +1426,7 @@ async def async_build_bootstrap_payload(
                 "mapping": mapping,
                 "writable": writable,
                 "menu_kinds": sorted(symbol_kinds),
+                "enabled_by_default": module_enabled_by_default.get(symbol, False),
             }
             if menu_key:
                 descriptor["menu_key"] = menu_key
@@ -1475,10 +1515,6 @@ async def async_build_bootstrap_payload(
         CONF_ENTITY_DESCRIPTORS: descriptors,
         CONF_CONNECTION_DESCRIPTORS: connection_descriptors,
         CONF_MODULES_META: modules_meta,
-        CONF_ENTITY_FILTER_MODE: filter_mode,
-        CONF_MODULE_FILTER_MODES: {
-            str(module.devid): normalized_module_modes.get(str(module.devid), filter_mode) for module in effective_modules
-        },
         CONF_BOOTSTRAP_DEBUG: bootstrap_debug,
     }
     if upstream_fingerprint:

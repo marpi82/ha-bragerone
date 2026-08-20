@@ -20,9 +20,7 @@ from .const import (
     CONF_BOOTSTRAP_VERSION,
     CONF_CONNECTION_DESCRIPTORS,
     CONF_ENTITY_DESCRIPTORS,
-    CONF_ENTITY_FILTER_MODE,
     CONF_LANGUAGE,
-    CONF_MODULE_FILTER_MODES,
     CONF_MODULES,
     CONF_MODULES_META,
     CONF_OBJECT_ID,
@@ -30,7 +28,6 @@ from .const import (
     DATA_GATEWAY,
     DATA_RUNTIME,
     DATA_STORE,
-    DEFAULT_ENTITY_FILTER_MODE,
     DOMAIN,
     PLATFORMS,
 )
@@ -73,25 +70,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     modules = [str(module) for module in modules_raw] if isinstance(modules_raw, list) else []
     platform_raw = str(entry.data.get(CONF_BACKEND_PLATFORM, Platform.BRAGERONE.value)).strip().lower()
     language = str(entry.data.get(CONF_LANGUAGE, "")).strip().lower() or None
-    entity_filter_mode = (
-        str(
-            entry.options.get(
-                CONF_ENTITY_FILTER_MODE,
-                entry.data.get(CONF_ENTITY_FILTER_MODE, DEFAULT_ENTITY_FILTER_MODE),
-            )
-        )
-        .strip()
-        .lower()
-        or DEFAULT_ENTITY_FILTER_MODE
-    )
-    module_filter_modes_raw = entry.options.get(
-        CONF_MODULE_FILTER_MODES,
-        entry.data.get(CONF_MODULE_FILTER_MODES, {}),
-    )
-    module_filter_modes_source = module_filter_modes_raw if isinstance(module_filter_modes_raw, dict) else {}
-    module_filter_modes = {
-        str(devid): str(mode).strip().lower() for devid, mode in module_filter_modes_source.items() if str(devid).strip()
-    }
 
     try:
         server = server_for(platform_raw)
@@ -110,18 +88,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data_object_id = int(entry.data[CONF_OBJECT_ID])
     data_modules_raw = entry.data.get(CONF_MODULES, [])
     data_modules = [str(module) for module in data_modules_raw] if isinstance(data_modules_raw, list) else []
-    data_filter_mode = str(entry.data.get(CONF_ENTITY_FILTER_MODE, DEFAULT_ENTITY_FILTER_MODE)).strip().lower()
-    data_module_filter_modes_raw = entry.data.get(CONF_MODULE_FILTER_MODES, {})
-    data_module_filter_modes_source = data_module_filter_modes_raw if isinstance(data_module_filter_modes_raw, dict) else {}
-    data_module_filter_modes = {
-        str(devid): str(mode).strip().lower() for devid, mode in data_module_filter_modes_source.items() if str(devid).strip()
-    }
-    options_changed = (
-        object_id != data_object_id
-        or modules != data_modules
-        or entity_filter_mode != data_filter_mode
-        or module_filter_modes != data_module_filter_modes
-    )
+    options_changed = object_id != data_object_id or modules != data_modules
     cached_descriptors = entry.data.get(CONF_ENTITY_DESCRIPTORS)
     bootstrap_version = entry.data.get(CONF_BOOTSTRAP_VERSION)
     missing_cached_payload = (
@@ -146,8 +113,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             object_id=object_id,
             modules=modules,
             language=language,
-            entity_filter_mode=entity_filter_mode,
-            module_filter_modes=module_filter_modes,
         )
         platform_counter: Counter[str] = Counter()
         for descriptor in bootstrap_payload[CONF_ENTITY_DESCRIPTORS]:

@@ -13,6 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .entity_common import (
     descriptor_display_name,
+    descriptor_enabled_by_default,
     descriptor_suggested_object_id,
     device_grouping_mode,
     device_info_from_descriptor,
@@ -59,6 +60,7 @@ class BragerActionButton(ButtonEntity):
         self._attr_name = label
         self._attr_suggested_object_id = descriptor_suggested_object_id(descriptor)
         self._attr_unique_id = f"{entry.entry_id}_{self._devid}_{self._symbol}_button".lower().replace(" ", "_")
+        self._attr_entity_registry_enabled_default = descriptor_enabled_by_default(descriptor)
         self._attr_available = module_is_reachable(runtime, self._devid)
         self._unsubscribe_connectivity: Any = None
 
