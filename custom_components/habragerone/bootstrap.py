@@ -1114,7 +1114,7 @@ async def async_build_bootstrap_payload(
             try:
                 menu_retry = await assets.get_module_menu(
                     device_menu=module.deviceMenu,
-                    permissions=module_permissions or None,
+                    permissions=module_permissions,
                 )
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu_retry)
                 per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu_retry)
