@@ -55,6 +55,30 @@ def test_descriptor_refresh_keys_mapping_inputs() -> None:
     assert descriptor_refresh_keys(descriptor) == {"P1.v2", "P6.s0"}
 
 
+def test_descriptor_refresh_keys_includes_multi_register_value_channels() -> None:
+    """Multi-word SPA values must refresh when either register updates (#214)."""
+    descriptor = {
+        "pool": "P4",
+        "chan": "v",
+        "idx": 59,
+        "mapping": {
+            "channels": {
+                "value": [
+                    {"address": "P4.v59", "channel": "P4.v59"},
+                    {"address": "P4.v60", "channel": "P4.v60"},
+                ],
+            },
+            "paths": {
+                "value": [
+                    {"group": "P4", "number": 59, "use": "v", "convert": "_x"},
+                    {"group": "P4", "number": 60, "use": "v", "convert": "_x", "times": 65536},
+                ],
+            },
+        },
+    }
+    assert descriptor_refresh_keys(descriptor) == {"P4.v59", "P4.v60"}
+
+
 def test_store_value_for_address_reads_family_channel() -> None:
     store = FakeStore(flat_values={"P6.v0": 42, "P6.s0": 1})
     assert store_value_for_address(store, "P6.v0") == 42
@@ -76,6 +100,25 @@ def test_descriptor_current_raw_value_prefers_direct_mapping() -> None:
         mapping_inputs=[{"address": "P1.v2"}],
     )
     assert descriptor_current_raw_value(store, descriptor) == 0
+
+
+def test_descriptor_current_raw_value_composes_multi_register_feeder_runtime() -> None:
+    """PARAM_P4_59-style mapping must uint16-compose low+high*65536 (#214/#327)."""
+    store = FakeStore(flat_values={"P4.v59": -27473, "P4.v60": 0})
+    descriptor = {
+        "pool": "P4",
+        "chan": "v",
+        "idx": 59,
+        "mapping": {
+            "paths": {
+                "value": [
+                    {"group": "P4", "number": 59, "use": "v", "convert": "_0x35dce1"},
+                    {"group": "P4", "number": 60, "use": "v", "convert": "_0x35dce1", "times": 65536},
+                ],
+            },
+        },
+    }
+    assert descriptor_current_raw_value(store, descriptor) == 38063
 
 
 def test_descriptor_current_raw_value_falls_back_to_mapping_input() -> None:
