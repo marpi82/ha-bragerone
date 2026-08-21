@@ -200,6 +200,22 @@ def test_descriptor_current_raw_value_composes_multi_register_feeder_runtime() -
     assert descriptor_current_raw_value(store, descriptor) == 38063
 
 
+def test_descriptor_current_raw_value_preserves_half_degree_float() -> None:
+    """Plain single-selector temp mappings must not int-truncate store floats."""
+    store = FakeStore(flat_values={"P7.v12": 40.5})
+    descriptor = {
+        "pool": "P7",
+        "chan": "v",
+        "idx": 12,
+        "mapping": {
+            "paths": {
+                "value": [{"group": "P7", "number": 12, "use": "v"}],
+            },
+        },
+    }
+    assert descriptor_current_raw_value(store, descriptor) == 40.5
+
+
 def test_descriptor_current_raw_value_falls_back_to_mapping_input() -> None:
     store = FakeStore(flat_values={"P1.v2": 7})
     descriptor = {
