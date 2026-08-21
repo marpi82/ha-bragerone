@@ -73,6 +73,10 @@ if [ "$BRANCH" = "HEAD" ]; then
     log_error "Detached HEAD — check out main or a release/* branch before tagging"
     exit 1
 fi
+if [ "$BRANCH" != "main" ] && [[ "$BRANCH" != release/* ]]; then
+    log_error "Releases must be tagged from main or release/* (current: ${BRANCH})"
+    exit 1
+fi
 
 # Exact tag existence (avoid grep regex false positives on CalVer dots).
 tag_exists() {
