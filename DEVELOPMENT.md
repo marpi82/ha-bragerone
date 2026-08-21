@@ -59,7 +59,7 @@ Do **not** cut a stable HACS tag until the same version has been smoke-tested as
 | `main` | Stable (`2026.x.y`) and pre (`aN` / `bN` / `rcN`) |
 | `release/YYYY.M` or `release/YYYY.M.N` | Pre only — `release.sh` and the release workflow refuse stable |
 
-`scripts/release.sh` tags the **current** branch (it no longer switches to `main`). Pin `py-bragerone==…` in `manifest.json` to a published library pre-release when testing a train. Ruleset checklist: `.github/branch-protection-checklist.md`.
+`scripts/release.sh` tags the **current** branch (it no longer switches to `main`). The branch tip must already be on the remote. When testing a train, pin `py-bragerone==…` in `manifest.json`, keep `pyproject.toml` / `uv.lock` aligned, and bump `manifest.json` `"version"` to the tag. Ruleset checklist: `.github/branch-protection-checklist.md`.
 
 #### Release checklist (maintainers) — from `main`
 
@@ -81,15 +81,20 @@ Do **not** cut a stable HACS tag until the same version has been smoke-tested as
 
 #### Release train (future work off `main`)
 
-1. `git checkout -b release/2026.9` from `main` and develop there.
-2. Publish library pre on PyPI from the matching `py-bragerone` train, then bump the integration pin / `manifest.json` `"version"`.
-3. From the train branch: `./scripts/release.sh 2026.9.0 rc` (alpha/beta/rc only).
+1. `git checkout -b release/2026.9` from `main`, develop there, then publish the branch:
+
+   ```bash
+   git push -u origin release/2026.9
+   ```
+
+2. Publish library pre on PyPI from the matching `py-bragerone` train, then bump the integration pin in `manifest.json`, `pyproject.toml`, and `uv.lock`, plus `manifest.json` `"version"`.
+3. From the train branch (already pushed): `./scripts/release.sh 2026.9.0 rc` (alpha/beta/rc only).
 4. HACS beta smoke as above.
 5. Open a PR `release/2026.9` → `main`; after merge, cut stable from `main`.
 
 Bump `custom_components/habragerone/manifest.json` `"version"` to the **exact** tag string before tagging (the HACS zip embeds that file).
 
-Tag suffix matters: `.github/workflows/release.yml` (`Detect tag and pre-release`) sets `prerelease=true` when the tag matches `(a|b|rc)[0-9]+$` (`2026.x.ya1`, `…b1`, `…rc1`). **Enforce release channel** fails the job if a stable tag’s commit is not on `origin/main`. HACS surfaces pre tags as opt-in; unsuffixed `2026.x.y` is the stable channel. Tags do **not** use a `v` prefix (match existing releases such as `2026.8.4`).
+Tag suffix matters: `.github/workflows/release.yml` (`Detect tag and pre-release`) sets `prerelease=true` when the tag matches `(a|b|rc)[0-9]+$` (`2026.x.ya1`, `…b1`, `…rc1`). **Enforce release channel** fails the job if a stable tag’s commit is not on `origin/main`, or if a pre-release commit is not on `origin/main` / `origin/release/*`. HACS surfaces pre tags as opt-in; unsuffixed `2026.x.y` is the stable channel. Tags do **not** use a `v` prefix (match existing releases such as `2026.8.4`).
 
 #### Commands
 
