@@ -8,6 +8,7 @@ HACS custom integration (`custom_components/habragerone`) connecting BragerOne h
 - **Python**: `>=3.14.2,<3.15`; **HA**: `homeassistant>=2026.3.0`; iot_class `cloud_push`.
 - **Dependencies**: **uv** (`uv.lock` committed). Runtime deps pinned exactly in `manifest.json`.
 - **Build/versioning**: hatchling + hatch-vcs, CalVer from git tags.
+- **Releases**: `scripts/release.sh` tags the current branch; HACS zip via `.github/workflows/release.yml`. `main` may cut stable or `aN`/`bN`/`rcN`; `release/*` trains are pre-only (script + workflow refuse stable off main). See `DEVELOPMENT.md` and `.github/branch-protection-checklist.md`.
 
 ## Common commands
 

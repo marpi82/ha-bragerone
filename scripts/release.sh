@@ -9,6 +9,9 @@
 # Tag suffix drives GitHub/HACS channel via .github/workflows/release.yml
 # (tags matching (a|b|rc)[0-9]+$ are marked prerelease=true).
 #
+# Tag from the current branch (main or release/*). Stable tags are refused
+# on release/* — merge to main first. main may cut both pre and stable.
+#
 # Before tagging a pre-release/stable, bump custom_components/habragerone/manifest.json
 # "version" to the same string as the tag (HACS zip embeds that file).
 #
@@ -17,6 +20,9 @@
 #   ./scripts/release.sh 2026.8.5 rc     # Optional RC after beta (2026.8.5rc1)
 #   ./scripts/release.sh 2026.8.5        # Stable only after live smoke (2026.8.5)
 #   ./scripts/release.sh 2026.8.5 alpha  # Early alpha if needed
+#
+# Release trains (pre-only):
+#   git checkout -b release/2026.9 && ./scripts/release.sh 2026.9.0 rc
 
 set -e
 
@@ -62,6 +68,12 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$BRANCH" = "HEAD" ]; then
+    log_error "Detached HEAD — check out main or a release/* branch before tagging"
+    exit 1
+fi
+
 # Exact tag existence (avoid grep regex false positives on CalVer dots).
 tag_exists() {
     git rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1
@@ -103,13 +115,21 @@ case $RELEASE_TYPE in
         ;;
 esac
 
+# release/* trains may only publish pre-releases (a/b/rc).
+if [[ "$BRANCH" == release/* ]] && [ "$RELEASE_TYPE" = "stable" ]; then
+    log_error "Stable tags are not allowed on ${BRANCH}."
+    log_error "Merge the train into main, then cut the stable tag from main."
+    log_error "From release/* use: alpha, beta, or rc."
+    exit 1
+fi
+
 # Check if tag already exists
 if tag_exists "$TAG"; then
     log_error "Tag $TAG already exists"
     exit 1
 fi
 
-log_info "Preparing release $TAG ($RELEASE_TYPE)"
+log_info "Preparing release $TAG ($RELEASE_TYPE) on branch $BRANCH"
 
 # HACS zip embeds manifest.json — version must match the tag.
 REPO_ROOT="$(git rev-parse --show-toplevel)"
@@ -139,10 +159,13 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-# Update to latest main branch
-log_info "Updating to latest main branch..."
-git checkout main
-git pull origin main
+# Refresh current branch from its upstream (do not switch branches).
+if git rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
+    log_info "Pulling latest for $BRANCH..."
+    git pull --ff-only
+else
+    log_warn "No upstream for $BRANCH — tagging local tip"
+fi
 
 # Create and push tag
 log_info "Creating tag $TAG..."
