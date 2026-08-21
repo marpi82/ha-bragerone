@@ -110,7 +110,26 @@ def install_pybragerone_stubs() -> None:
                 return None
             if any(isinstance(e, dict) and any(k in e for k in ("if", "elseif", "then", "else")) for e in entries):
                 return None
-            if not any(isinstance(e, dict) and "group" in e and "number" in e and "use" in e for e in entries):
+
+            def _is_selector(entry: object) -> bool:
+                if not isinstance(entry, dict):
+                    return False
+                group = entry.get("group")
+                number = entry.get("number")
+                use = entry.get("use")
+                return isinstance(group, str) and bool(group) and isinstance(number, int) and isinstance(use, str) and bool(use)
+
+            selectors = [entry for entry in entries if _is_selector(entry)]
+            if not selectors:
+                return None
+            needs_compose = len(selectors) >= 2
+            if not needs_compose:
+                only = selectors[0]
+                times = only.get("times")
+                needs_compose = bool(only.get("convert")) or (
+                    isinstance(times, (int, float)) and not isinstance(times, bool) and float(times) != 1.0
+                )
+            if not needs_compose:
                 return None
 
             total = 0.0
@@ -133,20 +152,22 @@ def install_pybragerone_stubs() -> None:
                 if raw_val is None:
                     continue
                 try:
-                    word = int(raw_val)
+                    word_f = float(raw_val)
                 except TypeError:
                     continue
                 except ValueError:
                     continue
                 if selector.get("convert"):
-                    word = word & 0xFFFF
+                    word: int | float = int(word_f) & 0xFFFF
+                elif word_f.is_integer():
+                    word = int(word_f)
+                else:
+                    word = word_f
                 times = selector.get("times", 1)
-                try:
-                    times_n = int(times) if times is not None else 1
-                except TypeError:
-                    times_n = 1
-                except ValueError:
-                    times_n = 1
+                if isinstance(times, bool) or not isinstance(times, (int, float)):
+                    times_n: int | float = 1
+                else:
+                    times_n = times
                 total += float(word) * float(times_n)
                 found = True
             if not found:

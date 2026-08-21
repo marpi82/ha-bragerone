@@ -123,6 +123,54 @@ def _address_from_value_selector(entry: Mapping[str, Any]) -> str | None:
     return f"{group.strip()}.{use.strip()[0]}{number}"
 
 
+def _is_address_selector_entry(entry: Any) -> bool:
+    """Return whether *entry* is a ``{group, number, use[, convert, times]}`` selector."""
+    if not isinstance(entry, Mapping):
+        return False
+    group = entry.get("group")
+    number = entry.get("number")
+    use = entry.get("use")
+    return isinstance(group, str) and bool(group) and isinstance(number, int) and isinstance(use, str) and bool(use)
+
+
+def _address_selectors_need_compose(entries: list[Any]) -> bool:
+    """Return whether address selectors need multi-register composition.
+
+    Plain single ``{group, number, use}`` paths must not call compose: older
+    ``py-bragerone`` builds coerce words with ``int()`` and truncate half-degree
+    floats (``40.5`` → ``40``). Compose only for multi-selector lists or
+    selectors that carry ``convert`` / a non-default ``times``.
+    """
+    selectors = [entry for entry in entries if _is_address_selector_entry(entry)]
+    if len(selectors) >= 2:
+        return True
+    if len(selectors) != 1:
+        return False
+    entry = selectors[0]
+    if entry.get("convert"):
+        return True
+    times = entry.get("times")
+    return isinstance(times, (int, float)) and not isinstance(times, bool) and float(times) != 1.0
+
+
+def _mapping_value_selector_entries(mapping: Mapping[str, Any]) -> list[Any] | None:
+    """Return SPA address-selector value paths from a cached descriptor mapping."""
+    for key in ("paths", "raw"):
+        container = mapping.get(key)
+        if not isinstance(container, Mapping):
+            continue
+        candidate = container.get("value")
+        if not isinstance(candidate, list) or not candidate:
+            continue
+        if any(
+            isinstance(entry, Mapping) and any(rule in entry for rule in ("if", "elseif", "then", "else")) for entry in candidate
+        ):
+            continue
+        if any(_is_address_selector_entry(entry) for entry in candidate):
+            return candidate
+    return None
+
+
 def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
     """Return address keys that should trigger entity refresh for a descriptor."""
     keys: set[str] = set()
@@ -189,17 +237,21 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
 
     Prefer SPA multi-register composition (``convert`` + ``times``) via
     :meth:`ParamResolver.compose_mapping_register_value` when the mapping carries
-    address-selector value paths (#327 / ha-bragerone#214). Fall back to direct
-    ``pool/chan/idx``, then the first mapping input address.
+    multi-register / converted address-selector value paths (#327 /
+    ha-bragerone#214). Plain single ``{group, number, use}`` selectors fall through
+    to a direct store read so half-degree floats are preserved. Fall back to
+    direct ``pool/chan/idx``, then the first mapping input address.
     """
     from pybragerone.models.param_resolver import ParamResolver
 
     mapping = descriptor.get("mapping")
     compose = getattr(ParamResolver, "compose_mapping_register_value", None)
     if callable(compose) and isinstance(mapping, dict):
-        composed = compose(store, mapping)
-        if composed is not None:
-            return composed
+        entries = _mapping_value_selector_entries(mapping)
+        if entries is not None and _address_selectors_need_compose(entries):
+            composed = compose(store, mapping)
+            if composed is not None:
+                return composed
 
     pool = descriptor.get("pool")
     chan = descriptor.get("chan")
