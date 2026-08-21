@@ -36,6 +36,7 @@ from .entity_common import (
     get_runtime_and_descriptors,
     record_platform_entity_stats,
 )
+from .event_feeds import iter_alarm_feed_entities
 from .runtime import BragerRuntime
 from .status_rules import resolve_rule_display_value
 
@@ -47,12 +48,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         return
     runtime, descriptors = runtime_and_descriptors
 
-    entities = [BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor) for descriptor in descriptors]
+    entities: list[SensorEntity] = [
+        BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor) for descriptor in descriptors
+    ]
+    alarm_entities = await iter_alarm_feed_entities(hass, entry, runtime)
+    entities.extend(alarm_entities)
     record_platform_entity_stats(
         hass,
         entry,
         platform="sensor",
-        descriptor_count=len(descriptors),
+        descriptor_count=len(descriptors) + len(alarm_entities),
         created_count=len(entities),
     )
     async_add_entities(entities)
