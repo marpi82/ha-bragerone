@@ -21,6 +21,9 @@ from custom_components.habragerone.const import (  # noqa: E402
     DOMAIN,
 )
 from custom_components.habragerone.entity_common import (  # noqa: E402
+    _address_selectors_need_compose,
+    _is_address_selector_entry,
+    _mapping_value_selector_entries,
     _menu_device_display_name,
     async_register_module_parent_devices,
     collect_resolver_warm_symbols,
@@ -214,6 +217,64 @@ def test_descriptor_current_raw_value_preserves_half_degree_float() -> None:
         },
     }
     assert descriptor_current_raw_value(store, descriptor) == 40.5
+
+
+def test_address_selector_compose_helpers() -> None:
+    """Cover compose-gate helpers used before calling ParamResolver."""
+    assert _is_address_selector_entry("not-a-mapping") is False
+    assert _is_address_selector_entry({"group": "P7", "number": 12, "use": "v"}) is True
+    assert _address_selectors_need_compose([]) is False
+    assert _address_selectors_need_compose([{"group": "P7", "number": 12, "use": "v"}]) is False
+    assert _address_selectors_need_compose([{"group": "P4", "number": 59, "use": "v", "convert": "_x"}]) is True
+    assert (
+        _address_selectors_need_compose(
+            [
+                {"group": "P4", "number": 59, "use": "v"},
+                {"group": "P4", "number": 60, "use": "v", "times": 65536},
+            ]
+        )
+        is True
+    )
+
+    assert _mapping_value_selector_entries({"paths": "not-a-dict"}) is None
+    assert _mapping_value_selector_entries({"paths": {"value": []}}) is None
+    assert _mapping_value_selector_entries({"paths": {"value": [{"foo": 1}]}}) is None
+    assert _mapping_value_selector_entries(
+        {
+            "paths": {"value": [{"if": [], "then": "e.ON"}]},
+            "raw": {"value": [{"group": "P7", "number": 1, "use": "v"}]},
+        }
+    ) == [{"group": "P7", "number": 1, "use": "v"}]
+
+
+def test_descriptor_current_raw_value_compose_none_falls_back_when_needed() -> None:
+    """When compose is required but returns None, fall back to pool/chan/idx."""
+    from pybragerone.models import param_resolver as resolver_mod
+
+    original = resolver_mod.ParamResolver.compose_mapping_register_value
+
+    def _always_none(store: object, mapping: object) -> int | float | None:
+        return None
+
+    resolver_mod.ParamResolver.compose_mapping_register_value = staticmethod(_always_none)
+    try:
+        store = FakeStore(flat_values={"P4.v59": 12})
+        descriptor = {
+            "pool": "P4",
+            "chan": "v",
+            "idx": 59,
+            "mapping": {
+                "paths": {
+                    "value": [
+                        {"group": "P4", "number": 59, "use": "v", "convert": "_x"},
+                        {"group": "P4", "number": 60, "use": "v", "convert": "_x", "times": 65536},
+                    ],
+                },
+            },
+        }
+        assert descriptor_current_raw_value(store, descriptor) == 12
+    finally:
+        resolver_mod.ParamResolver.compose_mapping_register_value = original
 
 
 def test_descriptor_current_raw_value_falls_back_to_mapping_input() -> None:

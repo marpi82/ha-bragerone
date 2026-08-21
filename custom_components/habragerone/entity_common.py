@@ -163,8 +163,7 @@ def _mapping_value_selector_entries(mapping: Mapping[str, Any]) -> list[Any] | N
         if not isinstance(candidate, list) or not candidate:
             continue
         if any(
-            isinstance(entry, Mapping) and any(rule in entry for rule in ("if", "elseif", "then", "else"))
-            for entry in candidate
+            isinstance(entry, Mapping) and any(rule in entry for rule in ("if", "elseif", "then", "else")) for entry in candidate
         ):
             continue
         if any(_is_address_selector_entry(entry) for entry in candidate):
