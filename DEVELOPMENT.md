@@ -48,6 +48,19 @@ CI uploads `coverage.xml` to Codecov (skipped for Dependabot/Renovate and fork P
 
 Issue and PR templates live under `.github/ISSUE_TEMPLATE/` and `.github/PULL_REQUEST_TEMPLATE.md`. Optional Copilot code review is configured in the GitHub repo settings (not via a workflow).
 
+### Diagnostics: obfuscated `minValue` / `maxValue` strings
+
+Some SPA factory mappings still emit unevaluated expressions in diagnostics dumps
+(for example `_0x…?.['minValue']||[{group,number,use}]`). Everyday Number/Select
+`min`/`max` already come from ParamStore channels `n`/`x` on the primary register,
+so users usually see correct limits.
+
+Catalog-side extraction of those `||` fallbacks is tracked and fixed in
+[py-bragerone#329](https://github.com/marpi82/py-bragerone/issues/329) /
+PR targeting `release/2026.9`. No Home Assistant code change is required for that
+parser fix; bump the `py-bragerone` pin when a matching pre-release from that train
+is published.
+
 ### Publishing Releases
 
 Do **not** cut a stable HACS tag until the same version has been smoke-tested as a HACS **pre-release** on a live Home Assistant install. Tooling already supports this (`scripts/release.sh` + `.github/workflows/release.yml`); skipping the beta/rc step is a process failure, not a tooling gap.
