@@ -42,16 +42,18 @@ Main development workflow helper with various commands:
 ```
 
 ### release.sh
-Release helper that creates and pushes version tags used by the GitHub release workflow.
+Release helper that creates and pushes version tags from the **current** branch
+(`main` or `release/*`). Used by the GitHub release workflow. Stable tags are
+refused on `release/*` — merge to `main` first. See `DEVELOPMENT.md`.
 
 ```bash
-# Stable release tag (2025.1.0)
-./scripts/release.sh 2025.1.0
+# Stable release tag from main (2026.9.0)
+./scripts/release.sh 2026.9.0
 
-# Pre-release tags (2025.1.0a1 / 2025.1.0b1 / 2025.1.0rc1)
-./scripts/release.sh 2025.1.0 alpha
-./scripts/release.sh 2025.1.0 beta
-./scripts/release.sh 2025.1.0 rc
+# Pre-release tags (2026.9.0a1 / 2026.9.0b1 / 2026.9.0rc1)
+./scripts/release.sh 2026.9.0 alpha
+./scripts/release.sh 2026.9.0 beta
+./scripts/release.sh 2026.9.0 rc
 ```
 
 ## Quick Start

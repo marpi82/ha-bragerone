@@ -9,6 +9,11 @@
 # Tag suffix drives GitHub/HACS channel via .github/workflows/release.yml
 # (tags matching (a|b|rc)[0-9]+$ are marked prerelease=true).
 #
+# Tag from the current branch (main or release/*). Stable tags are refused
+# on release/* — merge to main first. main may cut both pre and stable.
+# The branch tip must already be on the remote (CI checks origin/main and
+# origin/release/* only).
+#
 # Before tagging a pre-release/stable, bump custom_components/habragerone/manifest.json
 # "version" to the same string as the tag (HACS zip embeds that file).
 #
@@ -17,6 +22,11 @@
 #   ./scripts/release.sh 2026.8.5 rc     # Optional RC after beta (2026.8.5rc1)
 #   ./scripts/release.sh 2026.8.5        # Stable only after live smoke (2026.8.5)
 #   ./scripts/release.sh 2026.8.5 alpha  # Early alpha if needed
+#
+# Release trains (pre-only):
+#   git checkout -b release/2026.9
+#   git push -u origin release/2026.9
+#   ./scripts/release.sh 2026.9.0 rc
 
 set -e
 
@@ -62,10 +72,65 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$BRANCH" = "HEAD" ]; then
+    log_error "Detached HEAD — check out main or a release/* branch before tagging"
+    exit 1
+fi
+if [ "$BRANCH" != "main" ] && [[ "$BRANCH" != release/* ]]; then
+    log_error "Releases must be tagged from main or release/* (current: ${BRANCH})"
+    exit 1
+fi
+
+# release/* trains may only publish pre-releases (a/b/rc).
+if [[ "$BRANCH" == release/* ]] && [ "$RELEASE_TYPE" = "stable" ]; then
+    log_error "Stable tags are not allowed on ${BRANCH}."
+    log_error "Merge the train into main, then cut the stable tag from main."
+    log_error "From release/* use: alpha, beta, or rc."
+    exit 1
+fi
+
 # Exact tag existence (avoid grep regex false positives on CalVer dots).
 tag_exists() {
     git rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1
 }
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+MANIFEST_PATH="$REPO_ROOT/custom_components/habragerone/manifest.json"
+
+# Refresh from upstream before constructing the tag so sequence / manifest
+# checks apply to the tip that will actually be tagged.
+log_info "Fetching origin/${BRANCH}..."
+if ! git fetch origin "refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"; then
+    log_error "Could not fetch origin/${BRANCH}."
+    log_error "Push the branch first: git push -u origin ${BRANCH}"
+    exit 1
+fi
+if ! git rev-parse -q --verify "refs/remotes/origin/${BRANCH}" >/dev/null; then
+    log_error "Remote branch origin/${BRANCH} does not exist."
+    log_error "Push the branch first: git push -u origin ${BRANCH}"
+    exit 1
+fi
+
+if git rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
+    log_info "Pulling latest for ${BRANCH}..."
+    git pull --ff-only
+else
+    log_info "Setting upstream to origin/${BRANCH}..."
+    git branch --set-upstream-to="origin/${BRANCH}" "$BRANCH"
+    git pull --ff-only
+fi
+
+# HEAD must already be on the remote tip history (no unpushed commits).
+if ! git merge-base --is-ancestor HEAD "origin/${BRANCH}"; then
+    log_error "Local ${BRANCH} has commits not on origin/${BRANCH}."
+    log_error "Push them first: git push origin ${BRANCH}"
+    exit 1
+fi
+if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/${BRANCH}")" ]; then
+    log_error "Local ${BRANCH} is behind origin/${BRANCH} after pull — unexpected state."
+    exit 1
+fi
 
 # Construct tag name based on release type (no "v" prefix — matches existing tags)
 case $RELEASE_TYPE in
@@ -73,7 +138,6 @@ case $RELEASE_TYPE in
         TAG="$VERSION"
         ;;
     alpha)
-        # Find next alpha number
         ALPHA_NUM=1
         while tag_exists "${VERSION}a${ALPHA_NUM}"; do
             ((ALPHA_NUM++))
@@ -81,7 +145,6 @@ case $RELEASE_TYPE in
         TAG="${VERSION}a${ALPHA_NUM}"
         ;;
     beta)
-        # Find next beta number
         BETA_NUM=1
         while tag_exists "${VERSION}b${BETA_NUM}"; do
             ((BETA_NUM++))
@@ -89,7 +152,6 @@ case $RELEASE_TYPE in
         TAG="${VERSION}b${BETA_NUM}"
         ;;
     rc)
-        # Find next rc number
         RC_NUM=1
         while tag_exists "${VERSION}rc${RC_NUM}"; do
             ((RC_NUM++))
@@ -103,17 +165,14 @@ case $RELEASE_TYPE in
         ;;
 esac
 
-# Check if tag already exists
 if tag_exists "$TAG"; then
     log_error "Tag $TAG already exists"
     exit 1
 fi
 
-log_info "Preparing release $TAG ($RELEASE_TYPE)"
+log_info "Preparing release $TAG ($RELEASE_TYPE) on branch $BRANCH"
 
 # HACS zip embeds manifest.json — version must match the tag.
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-MANIFEST_PATH="$REPO_ROOT/custom_components/habragerone/manifest.json"
 MANIFEST_VERSION="$(python3 -c "import json; print(json.load(open(\"$MANIFEST_PATH\"))[\"version\"])" 2>/dev/null || true)"
 if [ -z "$MANIFEST_VERSION" ]; then
     log_error "Could not read $MANIFEST_PATH version"
@@ -124,14 +183,12 @@ if [ "$MANIFEST_VERSION" != "$TAG" ]; then
     exit 1
 fi
 
-# Show what will be published
 if [ "$RELEASE_TYPE" = "stable" ]; then
     log_info "This will create a stable GitHub release"
 else
     log_info "This will create a GitHub pre-release"
 fi
 
-# Confirm with user
 read -p "Do you want to continue? (y/N) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -139,12 +196,6 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-# Update to latest main branch
-log_info "Updating to latest main branch..."
-git checkout main
-git pull origin main
-
-# Create and push tag
 log_info "Creating tag $TAG..."
 git tag -a "$TAG" -m "Release $TAG"
 
