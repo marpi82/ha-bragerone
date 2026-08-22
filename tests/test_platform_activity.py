@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import types
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.const import EntityCategory
@@ -273,3 +275,24 @@ async def test_iter_activity_feed_entities_fail_closed_without_api(hass: HomeAss
     )
     entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
     assert await iter_activity_feed_entities(hass, entry, runtime) == []
+
+
+@pytest.mark.asyncio
+async def test_async_get_activity_index_label_loads_from_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Activity index label is fetched from routes + i18n when not cached."""
+    catalog = types.SimpleNamespace(
+        refresh_index=AsyncMock(),
+        get_i18n=AsyncMock(
+            side_effect=[
+                {"activity": {"index": " Activity "}},
+                {"state": {"success": "Completed"}},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog,
+    )
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.language = "en"
+    assert await runtime.async_get_activity_index_label() == "Activity"
