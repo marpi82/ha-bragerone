@@ -24,7 +24,11 @@ from custom_components.habragerone.event_feeds import (  # noqa: E402
     BragerActivitySensor,
     iter_activity_feed_entities,
 )
-from custom_components.habragerone.runtime import _extract_activity_rows  # noqa: E402
+from custom_components.habragerone.runtime import (  # noqa: E402
+    _activity_row_devid,
+    _activity_value_scalar,
+    _extract_activity_rows,
+)
 from custom_components.habragerone.sensor import async_setup_entry  # noqa: E402
 from tests.helpers.descriptors import sensor_descriptor  # noqa: E402
 from tests.helpers.fakes import FakeApi, make_runtime  # noqa: E402
@@ -296,3 +300,61 @@ async def test_async_get_activity_index_label_loads_from_catalog(monkeypatch: py
     runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
     runtime.language = "en"
     assert await runtime.async_get_activity_index_label() == "Activity"
+
+
+def test_activity_row_devid_and_value_scalar_helpers() -> None:
+    """Row devid falls back to module.devid; nested value maps unwrap."""
+    assert _activity_row_devid({"module": {"devid": "M1"}}, default_devid="DEV1") == "M1"
+    assert _activity_row_devid({}, default_devid="DEV1") == "DEV1"
+    assert _activity_value_scalar({"value": {"prevValue": 3}}) == 3
+    assert _activity_value_scalar({"other": 1}) is None
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_activity_noops_on_blank_devid() -> None:
+    """Whitespace devids are ignored."""
+    runtime, api = _runtime_with_activity()
+    await runtime.async_refresh_activity("  ")
+    assert api.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_activity_logs_api_failures() -> None:
+    """REST failures are logged and leave caches empty."""
+    runtime, api = _runtime_with_activity()
+
+    async def boom(*_a: object, **_k: object) -> tuple[int, Any]:
+        raise RuntimeError("network down")
+
+    api.modules_activity = boom  # type: ignore[method-assign]
+    await runtime.async_refresh_activity("DEV1")
+    assert runtime.activity("DEV1") == []
+
+
+@pytest.mark.asyncio
+async def test_load_activity_assets_fail_closed_without_language(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing language prevents activity chrome from loading."""
+    catalog = types.SimpleNamespace(refresh_index=AsyncMock(), get_i18n=AsyncMock())
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog,
+    )
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.language = None
+    assert await runtime.async_get_activity_index_label() is None
+    catalog.get_i18n.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_iter_activity_feed_entities_skips_blank_devids(hass: HomeAssistant) -> None:
+    """Blank module keys in modules_meta are ignored."""
+    runtime, api = _runtime_with_activity()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_MODULES_META: {"": {"name": "Empty"}, "DEV1": {"name": "Boiler"}}},
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    entities = await iter_activity_feed_entities(hass, entry, runtime)
+    assert len(entities) == 1
+    assert api.calls == 1
