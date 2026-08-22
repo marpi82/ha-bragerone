@@ -297,9 +297,8 @@ class BragerRuntime:
             return {}
 
         try:
-            refresh = getattr(catalog, "refresh_index_minimal", None) or getattr(catalog, "refresh_index", None)
-            if callable(refresh):
-                await refresh()
+            # ``get_i18n`` auto-loads the index via ``LiveAssetsCatalog._ensure_index_loaded``.
+            # Do not call ``refresh_index()`` here — it requires an explicit index URL.
             get_i18n = getattr(catalog, "get_i18n", None)
             if not callable(get_i18n):
                 return {}
@@ -337,9 +336,6 @@ class BragerRuntime:
             return
 
         try:
-            refresh = getattr(catalog, "refresh_index_minimal", None) or getattr(catalog, "refresh_index", None)
-            if callable(refresh):
-                await refresh()
             get_i18n = getattr(catalog, "get_i18n", None)
             if callable(get_i18n) and lang:
                 errors = await get_i18n(lang, "errors")
@@ -453,9 +449,6 @@ class BragerRuntime:
             return
 
         try:
-            refresh = getattr(catalog, "refresh_index_minimal", None) or getattr(catalog, "refresh_index", None)
-            if callable(refresh):
-                await refresh()
             get_i18n = getattr(catalog, "get_i18n", None)
             if not callable(get_i18n):
                 self._activity_index_label = None

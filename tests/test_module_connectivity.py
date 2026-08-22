@@ -20,8 +20,10 @@ from custom_components.habragerone.binary_sensor import (  # noqa: E402
 )
 from custom_components.habragerone.const import (  # noqa: E402
     CONF_CONNECTION_DESCRIPTORS,
+    CONF_DEVICE_GROUPING,
     CONF_MODULES_META,
     DATA_ENTITY_STATS,
+    DEVICE_GROUPING_BY_MENU,
     DOMAIN,
 )
 from custom_components.habragerone.entity_common import entity_is_available, module_is_reachable  # noqa: E402
@@ -120,12 +122,42 @@ async def test_async_setup_adds_connectivity_sensor(hass: HomeAssistant) -> None
     assert entity._attr_unique_id.endswith("_dev1_connectivity_binary")
     info = entity.device_info
     assert info is not None
-    assert (DOMAIN, "DEV1:module.connection") in info["identifiers"]
-    assert info.get("via_device") == (DOMAIN, "DEV1")
-    assert info.get("name") == "Boiler — Connection with module"
+    assert (DOMAIN, "DEV1") in info["identifiers"]
+    assert "via_device" not in info
+    assert info.get("name") == "Boiler"
     stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]["binary_sensor"]
     assert stats["created_count"] == 3
     assert stats["descriptor_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_async_setup_connectivity_on_parent_in_group_by_menu(hass: HomeAssistant) -> None:
+    """Group-by-menu keeps module connectivity on the parent internet-module device."""
+    runtime, *_rest = make_runtime(
+        modules_meta={"DEV1": {"name": "Boiler", "title": "DasPell", "version": "V2"}},
+    )
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **entry.data,
+            CONF_DEVICE_GROUPING: DEVICE_GROUPING_BY_MENU,
+            CONF_MODULES_META: {"DEV1": {"name": "Boiler", "title": "DasPell", "version": "V2"}},
+            CONF_CONNECTION_DESCRIPTORS: [CONNECTION_DESCRIPTOR],
+        },
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+
+    added: list[object] = []
+    await async_setup_entry(hass, entry, added.extend)
+
+    connectivity = [entity for entity in added if isinstance(entity, BragerModuleConnectivityBinarySensor)]
+    assert len(connectivity) == 1
+    info = connectivity[0].device_info
+    assert info is not None
+    assert (DOMAIN, "DEV1") in info["identifiers"]
+    assert "via_device" not in info
+    assert (DOMAIN, "DEV1:module.connection") not in info.get("identifiers", set())
 
 
 @pytest.mark.asyncio

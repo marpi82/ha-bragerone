@@ -302,6 +302,31 @@ async def test_async_get_activity_index_label_loads_from_catalog(monkeypatch: py
     assert await runtime.async_get_activity_index_label() == "Activity"
 
 
+@pytest.mark.asyncio
+async def test_async_get_activity_index_label_skips_broken_refresh_index(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: activity chrome must load even when refresh_index() would fail."""
+
+    async def _broken_refresh_index() -> None:
+        msg = "refresh_index() missing 1 required positional argument: 'index_url'"
+        raise TypeError(msg)
+
+    get_i18n = AsyncMock(
+        side_effect=[
+            {"activity": {"index": " Activity "}},
+            {"state": {"success": "Completed"}},
+        ]
+    )
+    catalog = types.SimpleNamespace(refresh_index=_broken_refresh_index, get_i18n=get_i18n)
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog,
+    )
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.language = "en"
+    assert await runtime.async_get_activity_index_label() == "Activity"
+    assert get_i18n.await_count == 2
+
+
 def test_activity_row_devid_and_value_scalar_helpers() -> None:
     """Row devid falls back to module.devid; nested value maps unwrap."""
     assert _activity_row_devid({"module": {"devid": "M1"}}, default_devid="DEV1") == "M1"
