@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -55,8 +56,7 @@ async def iter_alarm_feed_entities(
         devids.append(devid)
         module_metas[devid] = meta if isinstance(meta, dict) else {}
 
-    for devid in devids:
-        await runtime.async_refresh_alarms(devid)
+    await asyncio.gather(*(runtime.async_refresh_alarms(devid) for devid in devids))
 
     entities: list[SensorEntity] = []
     for devid in devids:

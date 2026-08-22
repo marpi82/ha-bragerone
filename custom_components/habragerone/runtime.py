@@ -971,7 +971,7 @@ async def _fetch_alarms_chunk_source(catalog: Any, api: Any) -> str | bytes | No
     except Exception:
         LOGGER.debug("Failed to fetch Alarms chunk from %s", url, exc_info=True)
         return None
-    if isinstance(payload, bytes | str):
+    if isinstance(payload, (bytes, str)):
         return payload
     if isinstance(payload, bytearray):
         return bytes(payload)

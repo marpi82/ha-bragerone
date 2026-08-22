@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import types
 from typing import Any
 
 import pytest
@@ -21,6 +23,10 @@ from custom_components.habragerone.event_feeds import (  # noqa: E402
     BragerAlarmsCurrentSensor,
     BragerAlarmsHistorySensor,
     iter_alarm_feed_entities,
+)
+from custom_components.habragerone.runtime import (  # noqa: E402
+    _extract_alarm_rows,
+    _fetch_alarms_chunk_source,
 )
 from custom_components.habragerone.sensor import async_setup_entry  # noqa: E402
 from tests.helpers.descriptors import sensor_descriptor  # noqa: E402
@@ -265,3 +271,125 @@ async def test_alarm_sensor_event_feed_updates_state(hass: HomeAssistant) -> Non
     assert entity._attr_native_value == 2
     entity._on_event_feed("OTHER")
     assert entity._attr_native_value == 2
+
+
+def test_extract_alarm_rows_handles_list_and_nested_shapes() -> None:
+    """REST payloads may expose alarms as a list or ``{data: [...]}`` mapping."""
+    list_payload = (200, {"alarms": [{"id": 1}]})
+    nested_payload = (200, {"alarms": {"data": [{"id": 2}]}})
+    assert _extract_alarm_rows(list_payload) == [{"id": 1}]
+    assert _extract_alarm_rows(nested_payload) == [{"id": 2}]
+    assert _extract_alarm_rows((200, {"alarms": "bad"})) == []
+    assert _extract_alarm_rows("not-a-tuple") == []
+
+
+@pytest.mark.asyncio
+async def test_normalize_alarm_row_coerces_numeric_ids() -> None:
+    """Alarm ids may arrive as int, float, or digit strings."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime._alarm_names = {7: "ERROR_FOO"}
+    runtime._errors_i18n = {"ERROR_FOO": "Foo"}
+    row = runtime._normalize_alarm_row(
+        {"id": "7", "devid": "DEV1", "created_at": "t0", "finished_at": 99},
+        default_devid="DEV1",
+    )
+    assert row["id"] == 7
+    assert row["name"] == "Foo"
+    assert row["finished_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_alarms_dedupes_concurrent_tasks() -> None:
+    """Parallel refreshes for one devid share a single in-flight task."""
+    runtime, api = _runtime_with_alarms()
+
+    async def slow_current(*_args: Any, **kwargs: Any) -> tuple[int, Any] | bool:
+        await asyncio.sleep(0.05)
+        api.current_calls += 1
+        return (200, api.current_payload) if kwargs.get("return_data") else True
+
+    api.modules_alarms = slow_current  # type: ignore[method-assign]
+    await asyncio.gather(runtime.async_refresh_alarms("DEV1"), runtime.async_refresh_alarms("DEV1"))
+    assert api.current_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_alarms_logs_api_failures() -> None:
+    """REST failures are logged and leave caches empty."""
+    runtime, api = _runtime_with_alarms()
+
+    async def boom(*_a: Any, **_k: Any) -> tuple[int, Any]:
+        raise RuntimeError("network down")
+
+    api.modules_alarms = boom  # type: ignore[method-assign]
+    await runtime.async_refresh_alarms("DEV1")
+    assert runtime.alarms_current("DEV1") == []
+
+
+@pytest.mark.asyncio
+async def test_event_feed_listener_exceptions_do_not_break_dispatch() -> None:
+    """Listener failures are isolated so other subscribers still run."""
+    runtime, _api = _runtime_with_alarms()
+    seen: list[str] = []
+
+    def bad(_devid: str) -> None:
+        raise ValueError("boom")
+
+    runtime.add_event_feed_listener(bad)
+    runtime.add_event_feed_listener(seen.append)
+    await runtime.async_refresh_alarms("DEV1")
+    assert seen == ["DEV1"]
+
+
+@pytest.mark.asyncio
+async def test_async_get_alarm_chrome_labels_caches_results() -> None:
+    """Chrome labels are loaded once and then served from cache."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime._alarm_chrome_labels = {"currentAlarms": "Current", "historyAlarms": "History"}
+    assert await runtime.async_get_alarm_chrome_labels() == {
+        "currentAlarms": "Current",
+        "historyAlarms": "History",
+    }
+
+
+@pytest.mark.asyncio
+async def test_fetch_alarms_chunk_source_reads_bytes_payload() -> None:
+    """Alarms chunk fetch accepts bytes/str/bytearray API payloads."""
+    catalog = types.SimpleNamespace(
+        _idx=types.SimpleNamespace(
+            find_asset_for_basename=lambda _name: types.SimpleNamespace(url="https://example/alarms.js"),
+            assets_by_basename={},
+        )
+    )
+
+    async def _get_bytes(_url: str) -> bytes:
+        return b'38:"ERROR_BYTES"'
+
+    api = types.SimpleNamespace(get_bytes=_get_bytes)
+
+    source = await _fetch_alarms_chunk_source(catalog, api)
+    assert source == b'38:"ERROR_BYTES"'
+
+
+@pytest.mark.asyncio
+async def test_iter_alarm_feed_entities_fail_closed_without_api(hass: HomeAssistant) -> None:
+    """No entities when the API client lacks alarms helpers."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_MODULES_META: {"DEV1": {"name": "Boiler"}}},
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    assert await iter_alarm_feed_entities(hass, entry, runtime) == []
+
+
+@pytest.mark.asyncio
+async def test_iter_alarm_feed_entities_uses_runtime_modules_meta(hass: HomeAssistant) -> None:
+    """Entry data may omit modules_meta; runtime.modules_meta is the fallback."""
+    runtime, api = _runtime_with_alarms()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    entities = await iter_alarm_feed_entities(hass, entry, runtime)
+    assert len(entities) == 2
+    assert api.current_calls == 1
