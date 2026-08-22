@@ -65,6 +65,12 @@ is published.
 
 Per-module diagnostic sensors expose SPA **current** and **history** alarms (`alarm.currentAlarms` / `alarm.historyAlarms`) with state = item count and an `alarms` attribute list (`id`, `name`, `devid`, `created_at`, `finished_at`). Labels come from SPA i18n / `AlarmName` via `pybragerone` (never hardcoded PL/EN). Lists refresh on platform setup and when a module connectivity flip goes online — no blind polling. Requires a `py-bragerone` build that provides `modules_alarms` / `modules_alarms_history` (see library PR #338); older pins skip entity creation.
 
+
+### Module activity sensors (#223)
+
+Per-module diagnostic sensors expose the SPA **Activity** feed (`routes.activity.index`) with state = loaded row count (first page, SPA default `limit=20`) and an `activities` attribute list (`id`, `devid`, `parameter`, `parameter_key`, `value`, `value_raw`, `prev_value`, `prev_value_raw`, `state`, `state_key`, `created_at`, `created_by`). Labels come from SPA i18n (`activity.state.*`, parameters/units via `ParamResolver` / catalog) — never hardcoded PL/EN. Lists refresh on platform setup and when a module connectivity flip goes online — no blind polling. Soft-depends on `py-bragerone` `modules_activity` (library PR #338); older pins skip entity creation.
+
+
 ### Publishing Releases
 
 Do **not** cut a stable HACS tag until the same version has been smoke-tested as a HACS **pre-release** on a live Home Assistant install. Tooling already supports this (`scripts/release.sh` + `.github/workflows/release.yml`); skipping the beta/rc step is a process failure, not a tooling gap.
