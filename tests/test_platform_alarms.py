@@ -28,6 +28,7 @@ from custom_components.habragerone.event_feeds import (  # noqa: E402
 from custom_components.habragerone.runtime import (  # noqa: E402
     _extract_alarm_rows,
     _fetch_alarms_chunk_source,
+    _resolve_alarm_row_name,
 )
 from custom_components.habragerone.sensor import async_setup_entry  # noqa: E402
 from tests.helpers.descriptors import sensor_descriptor  # noqa: E402
@@ -476,6 +477,151 @@ async def test_iter_alarm_feed_entities_fail_closed_without_history_label(hass: 
     """Missing history chrome label suppresses all alarm entities."""
     runtime, api = _runtime_with_alarms()
     runtime._alarm_chrome_labels = {"currentAlarms": "Current alarms"}
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_MODULES_META: {"DEV1": {"name": "Boiler"}}},
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    assert await iter_alarm_feed_entities(hass, entry, runtime) == []
+    assert api.current_calls == 0
+
+
+def test_resolve_alarm_row_name_fallback_without_library_helper(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fallback path resolves ERROR_* via errors_i18n when resolve_alarm_label is absent."""
+    monkeypatch.setattr("custom_components.habragerone.runtime._alarm_name_helpers", lambda: (None, None))
+    label = _resolve_alarm_row_name(5, alarm_names={5: "ERROR_FOO"}, errors_i18n={"ERROR_FOO": "Foo"})
+    assert label == "Foo"
+    assert _resolve_alarm_row_name(5, alarm_names={5: "NOT_ERROR"}, errors_i18n={"NOT_ERROR": "X"}) is None
+
+
+def test_resolve_alarm_row_name_swallows_resolver_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolver exceptions are contained and yield None."""
+
+    def _boom(*_a: object, **_k: object) -> str:
+        raise RuntimeError("resolver failed")
+
+    monkeypatch.setattr("custom_components.habragerone.runtime._alarm_name_helpers", lambda: (None, _boom))
+    assert _resolve_alarm_row_name(1, alarm_names={1: "ERROR_X"}, errors_i18n={}) is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_alarms_chunk_source_uses_assets_by_basename_fallback() -> None:
+    """When find_asset_for_basename misses, scan assets_by_basename for alarms*.js."""
+    asset = types.SimpleNamespace(url="https://example/Alarms-abc.js")
+    catalog = types.SimpleNamespace(
+        _idx=types.SimpleNamespace(
+            find_asset_for_basename=lambda _name: None,
+            assets_by_basename={"Alarms-abc.js": [asset]},
+        )
+    )
+
+    async def _get_bytes(_url: str) -> str:
+        return '1:"ERROR_ONE"'
+
+    source = await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=_get_bytes))
+    assert source == '1:"ERROR_ONE"'
+
+
+@pytest.mark.asyncio
+async def test_fetch_alarms_chunk_source_returns_none_on_failures() -> None:
+    """Missing URL/get_bytes or transport errors yield None."""
+    catalog = types.SimpleNamespace(_idx=types.SimpleNamespace(find_asset_for_basename=lambda _n: None, assets_by_basename={}))
+    assert await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace()) is None
+
+    bad_asset = types.SimpleNamespace(url="")
+    catalog2 = types.SimpleNamespace(
+        _idx=types.SimpleNamespace(find_asset_for_basename=lambda _n: bad_asset, assets_by_basename={})
+    )
+    assert await _fetch_alarms_chunk_source(catalog2, types.SimpleNamespace(get_bytes=AsyncMock())) is None
+
+    good_asset = types.SimpleNamespace(url="https://example/a.js")
+
+    async def _boom(_url: str) -> bytes:
+        raise OSError("network")
+
+    catalog3 = types.SimpleNamespace(
+        _idx=types.SimpleNamespace(find_asset_for_basename=lambda _n: good_asset, assets_by_basename={})
+    )
+    assert await _fetch_alarms_chunk_source(catalog3, types.SimpleNamespace(get_bytes=_boom)) is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_alarms_chunk_source_accepts_bytearray_payload() -> None:
+    """Bytearray payloads are normalized to bytes."""
+    asset = types.SimpleNamespace(url="https://example/a.js")
+    catalog = types.SimpleNamespace(_idx=types.SimpleNamespace(find_asset_for_basename=lambda _n: asset, assets_by_basename={}))
+
+    async def _get_bytes(_url: str) -> bytearray:
+        return bytearray(b'2:"ERROR_TWO"')
+
+    source = await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=_get_bytes))
+    assert source == b'2:"ERROR_TWO"'
+
+
+@pytest.mark.asyncio
+async def test_event_feed_listener_unsubscribe() -> None:
+    """add_event_feed_listener returns a callable that removes the callback."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    seen: list[str] = []
+    remove = runtime.add_event_feed_listener(seen.append)
+    runtime._notify_event_feed_listeners("DEV1")
+    assert seen == ["DEV1"]
+    remove()
+    runtime._notify_event_feed_listeners("DEV1")
+    assert seen == ["DEV1"]
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_alarms_noops_on_blank_devid() -> None:
+    """Whitespace devids are ignored."""
+    runtime, api = _runtime_with_alarms()
+    await runtime.async_refresh_alarms("   ")
+    assert api.current_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_async_get_alarm_chrome_labels_returns_none_for_empty_cache() -> None:
+    """Cached empty dict is treated as unavailable chrome (fail closed)."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime._alarm_chrome_labels = {}
+    assert await runtime.async_get_alarm_chrome_labels() is None
+
+
+@pytest.mark.asyncio
+async def test_normalize_alarm_row_handles_non_string_devid_and_bool_id() -> None:
+    """Rows coerce devid fallback and reject bool ids."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    row = runtime._normalize_alarm_row(
+        {"id": True, "devid": 123, "created_at": 1, "finished_at": "done"},
+        default_devid="DEV1",
+    )
+    assert row["id"] is None
+    assert row["devid"] == "DEV1"
+    assert row["created_at"] is None
+    assert row["finished_at"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_iter_alarm_feed_entities_skips_blank_devids(hass: HomeAssistant) -> None:
+    """Blank module keys in modules_meta are ignored."""
+    runtime, api = _runtime_with_alarms()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_MODULES_META: {"": {"name": "Empty"}, "DEV1": {"name": "Boiler"}}},
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    entities = await iter_alarm_feed_entities(hass, entry, runtime)
+    assert len(entities) == 2
+    assert api.current_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_iter_alarm_feed_entities_fail_closed_on_whitespace_labels(hass: HomeAssistant) -> None:
+    """Whitespace-only chrome labels fail closed."""
+    runtime, api = _runtime_with_alarms()
+    runtime._alarm_chrome_labels = {"currentAlarms": "   ", "historyAlarms": "History"}
     entry = register_config_entry(hass, runtime=runtime, descriptors=[])
     hass.config_entries.async_update_entry(
         entry,
