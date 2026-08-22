@@ -25,7 +25,11 @@ UpdateCallback = Callable[[ParamUpdate], None]
 ConnectivityCallback = Callable[[str, bool, bool], None]
 # library↔cloud Socket.IO session: up, changed.
 CloudSessionCallback = Callable[[bool, bool], None]
+# Module event-feed (alarms) refresh completed for one devid.
+EventFeedCallback = Callable[[str], None]
 LOGGER = logging.getLogger(__name__)
+
+_ALARM_CHROME_KEYS = ("currentAlarms", "historyAlarms")
 
 
 @dataclass(slots=True)
@@ -42,6 +46,7 @@ class BragerRuntime:
     _listeners: set[UpdateCallback] = field(default_factory=set)
     _connectivity_listeners: set[ConnectivityCallback] = field(default_factory=set)
     _cloud_session_listeners: set[CloudSessionCallback] = field(default_factory=set)
+    _event_feed_listeners: set[EventFeedCallback] = field(default_factory=set)
     _module_online: dict[str, bool] = field(default_factory=dict)
     _cloud_session_up: bool | None = None
     _start_monotonic: float | None = None
@@ -49,6 +54,14 @@ class BragerRuntime:
     _status_resolver: ParamResolver | None = None
     _resolver_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _status_label_cache: dict[str, Any] = field(default_factory=dict)
+    _alarms_current: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    _alarms_history: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    _alarm_chrome_labels: dict[str, str] | None = None
+    _alarm_names: dict[int, str] = field(default_factory=dict)
+    _errors_i18n: dict[str, Any] = field(default_factory=dict)
+    _alarm_assets_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _alarm_names_loaded: bool = False
+    _alarms_refresh_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
 
     async def start(self) -> None:
         """Start gateway, state store ingestion and update dispatcher."""
@@ -120,6 +133,15 @@ class BragerRuntime:
 
         return _remove
 
+    def add_event_feed_listener(self, callback: EventFeedCallback) -> Callable[[], None]:
+        """Register a module alarms/event-feed listener and return unsubscribe callable."""
+        self._event_feed_listeners.add(callback)
+
+        def _remove() -> None:
+            self._event_feed_listeners.discard(callback)
+
+        return _remove
+
     def module_online(self, devid: str) -> bool | None:
         """Return cached module online state, or ``None`` if not yet known."""
         return self._module_online.get(devid)
@@ -141,6 +163,192 @@ class BragerRuntime:
         return callable(getattr(self.gateway, "on_cloud_session", None)) and callable(
             getattr(self.gateway, "ws_session_up", None)
         )
+
+    @property
+    def supports_module_alarms(self) -> bool:
+        """Return whether the API client exposes module alarms list helpers (#222)."""
+        return callable(getattr(self.api, "modules_alarms", None)) and callable(getattr(self.api, "modules_alarms_history", None))
+
+    def alarms_current(self, devid: str) -> list[dict[str, Any]]:
+        """Return cached active alarms for *devid* (empty when unknown)."""
+        return list(self._alarms_current.get(devid, ()))
+
+    def alarms_history(self, devid: str) -> list[dict[str, Any]]:
+        """Return cached history alarms for *devid* (empty when unknown)."""
+        return list(self._alarms_history.get(devid, ()))
+
+    async def async_get_alarm_chrome_labels(self) -> dict[str, str] | None:
+        """Return SPA ``alarm.currentAlarms`` / ``alarm.historyAlarms`` labels, or ``None``.
+
+        Fail closed when the catalog/i18n cannot supply both chrome strings so
+        entities are never created with hardcoded language fallbacks.
+        """
+        async with self._alarm_assets_lock:
+            cached = self._alarm_chrome_labels
+            if cached is not None:
+                return cached or None
+            labels = await self._load_alarm_chrome_labels()
+            self._alarm_chrome_labels = labels
+            return labels or None
+
+    async def async_refresh_alarms(self, devid: str) -> None:
+        """Fetch active + history alarms for *devid*, normalize, and notify listeners.
+
+        No-ops when the installed pybragerone build lacks the alarms REST helpers.
+        Concurrent refreshes for the same devid share one in-flight task.
+        """
+        devid_key = str(devid or "").strip()
+        if not devid_key or not self.supports_module_alarms:
+            return
+
+        existing = self._alarms_refresh_tasks.get(devid_key)
+        if existing is not None and not existing.done():
+            await existing
+            return
+
+        task = asyncio.create_task(self._async_refresh_alarms_impl(devid_key), name=f"habragerone-alarms-{devid_key}")
+        self._alarms_refresh_tasks[devid_key] = task
+        try:
+            await task
+        finally:
+            if self._alarms_refresh_tasks.get(devid_key) is task:
+                self._alarms_refresh_tasks.pop(devid_key, None)
+
+    async def _async_refresh_alarms_impl(self, devid_key: str) -> None:
+        current_fn = getattr(self.api, "modules_alarms", None)
+        history_fn = getattr(self.api, "modules_alarms_history", None)
+        if not callable(current_fn) or not callable(history_fn):
+            return
+
+        await self._ensure_alarm_name_maps()
+
+        try:
+            current_result = await current_fn([devid_key], page=1, limit=20, return_data=True)
+            history_result = await history_fn([devid_key], page=1, limit=20, return_data=True)
+        except Exception:
+            LOGGER.exception("Failed to refresh module alarms for devid=%s", devid_key)
+            return
+
+        current_rows = _extract_alarm_rows(current_result)
+        history_rows = _extract_alarm_rows(history_result)
+        self._alarms_current[devid_key] = [self._normalize_alarm_row(row, default_devid=devid_key) for row in current_rows]
+        self._alarms_history[devid_key] = [self._normalize_alarm_row(row, default_devid=devid_key) for row in history_rows]
+        self._notify_event_feed_listeners(devid_key)
+
+    def _notify_event_feed_listeners(self, devid: str) -> None:
+        for callback in list(self._event_feed_listeners):
+            try:
+                callback(devid)
+            except Exception:
+                LOGGER.exception("Event feed listener failed for devid=%s", devid)
+
+    def _normalize_alarm_row(self, row: Mapping[str, Any], *, default_devid: str) -> dict[str, Any]:
+        """Normalize one REST alarm row into the HA attributes shape."""
+        raw_id = row.get("id")
+        alarm_id: int | None
+        if isinstance(raw_id, bool):
+            alarm_id = None
+        elif isinstance(raw_id, int):
+            alarm_id = raw_id
+        elif isinstance(raw_id, float) and raw_id.is_integer():
+            alarm_id = int(raw_id)
+        elif isinstance(raw_id, str) and raw_id.strip().isdigit():
+            alarm_id = int(raw_id.strip())
+        else:
+            alarm_id = None
+
+        row_devid = row.get("devid")
+        devid = str(row_devid).strip() if isinstance(row_devid, str) and row_devid.strip() else default_devid
+
+        name: str | None = None
+        if alarm_id is not None:
+            name = _resolve_alarm_row_name(
+                alarm_id,
+                alarm_names=self._alarm_names,
+                errors_i18n=self._errors_i18n,
+            )
+
+        created_at = row.get("created_at")
+        finished_at = row.get("finished_at")
+        return {
+            "id": alarm_id,
+            "name": name,
+            "devid": devid,
+            "created_at": created_at if isinstance(created_at, str) else None,
+            "finished_at": finished_at if isinstance(finished_at, str) else None,
+        }
+
+    async def _load_alarm_chrome_labels(self) -> dict[str, str]:
+        """Load ``alarm.*`` chrome labels from LiveAssetsCatalog (empty on failure)."""
+        catalog = _try_live_assets_catalog(self.api)
+        if catalog is None:
+            return {}
+
+        lang = (self.language or "").strip()
+        if not lang:
+            return {}
+
+        try:
+            refresh = getattr(catalog, "refresh_index_minimal", None) or getattr(catalog, "refresh_index", None)
+            if callable(refresh):
+                await refresh()
+            get_i18n = getattr(catalog, "get_i18n", None)
+            if not callable(get_i18n):
+                return {}
+            alarm_ns = await get_i18n(lang, "alarm")
+        except Exception:
+            LOGGER.debug("Failed to load alarm chrome i18n", exc_info=True)
+            return {}
+
+        if not isinstance(alarm_ns, Mapping):
+            return {}
+        out: dict[str, str] = {}
+        for key in _ALARM_CHROME_KEYS:
+            value = alarm_ns.get(key)
+            if isinstance(value, str) and value.strip():
+                out[key] = value.strip()
+        if all(key in out for key in _ALARM_CHROME_KEYS):
+            return out
+        return {}
+
+    async def _ensure_alarm_name_maps(self) -> None:
+        """Best-effort load of AlarmName enum + ``errors.*`` i18n for row titles."""
+        async with self._alarm_assets_lock:
+            if self._alarm_names_loaded:
+                return
+            try:
+                await self._load_alarm_name_maps()
+            finally:
+                self._alarm_names_loaded = True
+
+    async def _load_alarm_name_maps(self) -> None:
+        parse_fn, _resolve_fn = _alarm_name_helpers()
+        lang = (self.language or "").strip()
+        catalog = _try_live_assets_catalog(self.api)
+        if catalog is None:
+            return
+
+        try:
+            refresh = getattr(catalog, "refresh_index_minimal", None) or getattr(catalog, "refresh_index", None)
+            if callable(refresh):
+                await refresh()
+            get_i18n = getattr(catalog, "get_i18n", None)
+            if callable(get_i18n) and lang:
+                errors = await get_i18n(lang, "errors")
+                if isinstance(errors, Mapping):
+                    self._errors_i18n = dict(errors)
+            if callable(parse_fn):
+                source = await _fetch_alarms_chunk_source(catalog, self.api)
+                if source:
+                    parsed = parse_fn(source)
+                    if isinstance(parsed, dict):
+                        self._alarm_names = {
+                            int(key): str(value)
+                            for key, value in parsed.items()
+                            if isinstance(key, int) and isinstance(value, str)
+                        }
+        except Exception:
+            LOGGER.debug("Failed to load AlarmName / errors i18n maps", exc_info=True)
 
     def _seed_module_online_from_gateway(self) -> None:
         """Pull initial online bits from the gateway after start."""
@@ -667,3 +875,104 @@ def _compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
     if op == "notEqualTo":
         return bool(actual != expected)
     return False
+
+
+def _extract_alarm_rows(result: Any) -> list[Mapping[str, Any]]:
+    """Pull alarm row mappings from a ``modules_alarms*`` ``return_data`` result."""
+    payload: Any = result
+    if isinstance(result, tuple) and len(result) >= 2:
+        payload = result[1]
+    if not isinstance(payload, Mapping):
+        return []
+    alarms = payload.get("alarms")
+    if isinstance(alarms, list):
+        return [row for row in alarms if isinstance(row, Mapping)]
+    if isinstance(alarms, Mapping):
+        data = alarms.get("data")
+        if isinstance(data, list):
+            return [row for row in data if isinstance(row, Mapping)]
+    return []
+
+
+def _alarm_name_helpers() -> tuple[Any, Any]:
+    """Import AlarmName helpers when present; otherwise return ``(None, None)``."""
+    try:
+        import importlib
+
+        module = importlib.import_module("pybragerone.models.alarm_names")
+    except ImportError:
+        return None, None
+    return getattr(module, "parse_alarm_name_enum", None), getattr(module, "resolve_alarm_label", None)
+
+
+def _try_live_assets_catalog(api: Any) -> Any | None:
+    """Construct ``LiveAssetsCatalog(api)`` when the installed library supports it."""
+    try:
+        from pybragerone.models.catalog import LiveAssetsCatalog as catalog_cls
+    except ImportError:
+        LOGGER.debug("LiveAssetsCatalog unavailable; alarm chrome/name maps skipped")
+        return None
+    try:
+        return catalog_cls(api)
+    except TypeError:
+        # Unit-test stub sets ``LiveAssetsCatalog = object``.
+        return None
+
+
+def _resolve_alarm_row_name(
+    alarm_id: int,
+    *,
+    alarm_names: Mapping[int, str],
+    errors_i18n: Mapping[str, Any],
+) -> str | None:
+    """Resolve ``errors.*`` label for one alarm id; leave null when helpers/maps miss."""
+    _parse_fn, resolve_fn = _alarm_name_helpers()
+    if callable(resolve_fn):
+        try:
+            label = resolve_fn(alarm_id, alarm_names=alarm_names, errors_i18n=errors_i18n)
+        except Exception:
+            return None
+        return label if isinstance(label, str) and label.strip() else None
+    key = alarm_names.get(alarm_id)
+    if not isinstance(key, str) or not key.startswith("ERROR_"):
+        return None
+    value = errors_i18n.get(key)
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+async def _fetch_alarms_chunk_source(catalog: Any, api: Any) -> str | bytes | None:
+    """Best-effort fetch of the SPA Alarms chunk for ``AlarmName`` parsing."""
+    idx = getattr(catalog, "_idx", None)
+    assets = getattr(idx, "assets_by_basename", None)
+    find_basename = getattr(idx, "find_asset_for_basename", None)
+    asset = None
+    if callable(find_basename):
+        for candidate in ("Alarms", "alarms"):
+            asset = find_basename(candidate)
+            if asset is not None:
+                break
+    if asset is None and isinstance(assets, Mapping):
+        for basename, refs in assets.items():
+            if not isinstance(basename, str) or not basename.casefold().startswith("alarms"):
+                continue
+            if isinstance(refs, list) and refs:
+                asset = refs[-1]
+                break
+    if asset is None:
+        return None
+    url = getattr(asset, "url", None)
+    if not isinstance(url, str) or not url.strip():
+        return None
+    get_bytes = getattr(api, "get_bytes", None)
+    if not callable(get_bytes):
+        return None
+    try:
+        payload = await get_bytes(url)
+    except Exception:
+        LOGGER.debug("Failed to fetch Alarms chunk from %s", url, exc_info=True)
+        return None
+    if isinstance(payload, (bytes, str)):
+        return payload
+    if isinstance(payload, bytearray):
+        return bytes(payload)
+    return None
