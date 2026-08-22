@@ -618,6 +618,27 @@ async def test_iter_alarm_feed_entities_skips_blank_devids(hass: HomeAssistant) 
 
 
 @pytest.mark.asyncio
+async def test_async_get_alarm_chrome_labels_skips_broken_refresh_index(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: never call ``refresh_index()`` without URL — it blocks ``get_i18n``."""
+
+    async def _broken_refresh_index() -> None:
+        msg = "refresh_index() missing 1 required positional argument: 'index_url'"
+        raise TypeError(msg)
+
+    get_i18n = AsyncMock(return_value={"currentAlarms": "Aktualne", "historyAlarms": "Historia"})
+    catalog = types.SimpleNamespace(refresh_index=_broken_refresh_index, get_i18n=get_i18n)
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog,
+    )
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.language = "pl"
+    labels = await runtime.async_get_alarm_chrome_labels()
+    assert labels == {"currentAlarms": "Aktualne", "historyAlarms": "Historia"}
+    get_i18n.assert_awaited_once_with("pl", "alarm")
+
+
+@pytest.mark.asyncio
 async def test_iter_alarm_feed_entities_fail_closed_on_whitespace_labels(hass: HomeAssistant) -> None:
     """Whitespace-only chrome labels fail closed."""
     runtime, api = _runtime_with_alarms()

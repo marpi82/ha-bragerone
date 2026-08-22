@@ -120,9 +120,9 @@ async def test_async_setup_adds_connectivity_sensor(hass: HomeAssistant) -> None
     assert entity._attr_unique_id.endswith("_dev1_connectivity_binary")
     info = entity.device_info
     assert info is not None
-    assert (DOMAIN, "DEV1:module.connection") in info["identifiers"]
-    assert info.get("via_device") == (DOMAIN, "DEV1")
-    assert info.get("name") == "Boiler — Connection with module"
+    assert (DOMAIN, "DEV1") in info["identifiers"]
+    assert "via_device" not in info
+    assert info.get("name") == "Boiler"
     stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]["binary_sensor"]
     assert stats["created_count"] == 3
     assert stats["descriptor_count"] == 3
