@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import types
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.const import EntityCategory
@@ -393,3 +394,93 @@ async def test_iter_alarm_feed_entities_uses_runtime_modules_meta(hass: HomeAssi
     entities = await iter_alarm_feed_entities(hass, entry, runtime)
     assert len(entities) == 2
     assert api.current_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_async_get_alarm_chrome_labels_loads_from_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chrome labels are fetched from LiveAssetsCatalog when not cached."""
+    catalog = types.SimpleNamespace(
+        refresh_index=AsyncMock(),
+        get_i18n=AsyncMock(return_value={"currentAlarms": " Current ", "historyAlarms": " History "}),
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog,
+    )
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.language = "en"
+    labels = await runtime.async_get_alarm_chrome_labels()
+    assert labels == {"currentAlarms": "Current", "historyAlarms": "History"}
+
+
+@pytest.mark.asyncio
+async def test_async_get_alarm_chrome_labels_fail_closed_on_partial_i18n(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Incomplete alarm chrome namespaces return None (fail closed)."""
+    catalog = types.SimpleNamespace(
+        refresh_index_minimal=AsyncMock(),
+        get_i18n=AsyncMock(return_value={"currentAlarms": "Current"}),
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog,
+    )
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.language = "pl"
+    assert await runtime.async_get_alarm_chrome_labels() is None
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_alarms_loads_name_maps_from_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Alarm rows resolve ERROR_* labels via catalog-backed name maps."""
+    catalog = types.SimpleNamespace(
+        refresh_index_minimal=AsyncMock(),
+        get_i18n=AsyncMock(return_value={"ERROR_FOO": "Foo alarm"}),
+        _idx=types.SimpleNamespace(
+            find_asset_for_basename=lambda _name: types.SimpleNamespace(url="https://example/alarms.js"),
+            assets_by_basename={},
+        ),
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog,
+    )
+
+    def _parse(_source: object) -> dict[int, str]:
+        return {9: "ERROR_FOO"}
+
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._alarm_name_helpers",
+        lambda: (_parse, None),
+    )
+
+    api = _AlarmsApi()
+    api.current_payload = {
+        "status": True,
+        "alarms": [{"id": 9, "devid": "DEV1", "created_at": "t0"}],
+    }
+    runtime, *_rest = make_runtime(api=api, modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.language = "en"
+
+    async def _get_bytes(_url: str) -> bytes:
+        return b'9:"ERROR_FOO"'
+
+    api.get_bytes = _get_bytes  # type: ignore[attr-defined]
+
+    await runtime.async_refresh_alarms("DEV1")
+    current = runtime.alarms_current("DEV1")
+    assert current[0]["name"] == "Foo alarm"
+
+
+@pytest.mark.asyncio
+async def test_iter_alarm_feed_entities_fail_closed_without_history_label(hass: HomeAssistant) -> None:
+    """Missing history chrome label suppresses all alarm entities."""
+    runtime, api = _runtime_with_alarms()
+    runtime._alarm_chrome_labels = {"currentAlarms": "Current alarms"}
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_MODULES_META: {"DEV1": {"name": "Boiler"}}},
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    assert await iter_alarm_feed_entities(hass, entry, runtime) == []
+    assert api.current_calls == 0
