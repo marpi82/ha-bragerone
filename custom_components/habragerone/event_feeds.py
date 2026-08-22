@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -88,7 +88,6 @@ class _BragerAlarmsFeedSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_state_class = SensorStateClass.MEASUREMENT
     _feed_kind: str
 
     def __init__(
@@ -242,7 +241,6 @@ class BragerActivitySensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
         self,
