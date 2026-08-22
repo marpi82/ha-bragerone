@@ -156,6 +156,7 @@ async def test_iter_and_setup_create_activity_sensor(hass: HomeAssistant) -> Non
 
     entity = activity[0]
     assert entity._attr_entity_category == EntityCategory.DIAGNOSTIC
+    assert getattr(entity, "_attr_state_class", None) is None
     assert entity._attr_should_poll is False
     assert entity._attr_has_entity_name is True
     assert entity._attr_name == "Activity"
