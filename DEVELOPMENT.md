@@ -48,6 +48,19 @@ CI uploads `coverage.xml` to Codecov (skipped for Dependabot/Renovate and fork P
 
 Issue and PR templates live under `.github/ISSUE_TEMPLATE/` and `.github/PULL_REQUEST_TEMPLATE.md`. Optional Copilot code review is configured in the GitHub repo settings (not via a workflow).
 
+### Diagnostics: obfuscated `minValue` / `maxValue` strings
+
+Some SPA factory mappings still emit unevaluated expressions in diagnostics dumps
+(for example `_0x…?.['minValue']||[{group,number,use}]`). Everyday Number/Select
+`min`/`max` already come from ParamStore channels `n`/`x` on the primary register,
+so users usually see correct limits.
+
+Catalog-side extraction of those `||` fallbacks is tracked and fixed in
+[py-bragerone#329](https://github.com/marpi82/py-bragerone/issues/329) /
+PR targeting `release/2026.9`. No Home Assistant code change is required for that
+parser fix; bump the `py-bragerone` pin when a matching pre-release from that train
+is published.
+
 ### Module alarms sensors (#222)
 
 Per-module diagnostic sensors expose SPA **current** and **history** alarms (`alarm.currentAlarms` / `alarm.historyAlarms`) with state = item count and an `alarms` attribute list (`id`, `name`, `devid`, `created_at`, `finished_at`). Labels come from SPA i18n / `AlarmName` via `pybragerone` (never hardcoded PL/EN). Lists refresh on platform setup and when a module connectivity flip goes online — no blind polling. Requires a `py-bragerone` build that provides `modules_alarms` / `modules_alarms_history` (see library PR #338); older pins skip entity creation.
