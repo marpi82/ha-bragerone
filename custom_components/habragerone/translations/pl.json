@@ -27,7 +27,7 @@
           "device_grouping": "Grupowanie urządzeń"
         },
         "data_description": {
-          "device_grouping": "Płasko = jedno urządzenie HA na moduł dla parametrów; łączność zostaje na osobnym dziecku module.connection (via_device). Grupuj po menu = urządzenia potomne po stabilnym kluczu menu nadrzędnego (via_device). Zmiana remapuje członkostwo urządzeń (automatyzacje/dashboardy)."
+          "device_grouping": "Płasko = jedno urządzenie HA na moduł internetowy (parametry, łączność, alarmy, aktywność). Grupuj po menu = parametry na urządzeniach potomnych menu (via_device); łączność, alarmy i aktywność na urządzeniu nadrzędnym modułu. Zmiana remapuje członkostwo urządzeń (automatyzacje/dashboardy)."
         }
       }
     },
@@ -57,7 +57,7 @@
           "device_grouping": "Grupowanie urządzeń"
         },
         "data_description": {
-          "device_grouping": "Płasko = jedno urządzenie HA na moduł dla parametrów; łączność zostaje na osobnym dziecku module.connection (via_device). Grupuj po menu = urządzenia potomne po stabilnym kluczu menu nadrzędnego (via_device). Zmiana remapuje członkostwo urządzeń (automatyzacje/dashboardy)."
+          "device_grouping": "Płasko = jedno urządzenie HA na moduł internetowy (parametry, łączność, alarmy, aktywność). Grupuj po menu = parametry na urządzeniach potomnych menu (via_device); łączność, alarmy i aktywność na urządzeniu nadrzędnym modułu. Zmiana remapuje członkostwo urządzeń (automatyzacje/dashboardy)."
         }
       }
     }

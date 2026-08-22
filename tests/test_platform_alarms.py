@@ -473,6 +473,54 @@ async def test_async_refresh_alarms_loads_name_maps_from_catalog(monkeypatch: py
 
 
 @pytest.mark.asyncio
+async def test_async_refresh_alarms_resolves_names_without_refresh_index(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: alarm name maps must load even when refresh_index() would fail."""
+
+    async def _broken_refresh_index() -> None:
+        msg = "refresh_index() missing 1 required positional argument: 'index_url'"
+        raise TypeError(msg)
+
+    get_i18n = AsyncMock(return_value={"ERROR_FOO": "Foo alarm"})
+    catalog = types.SimpleNamespace(
+        refresh_index=_broken_refresh_index,
+        get_i18n=get_i18n,
+        _idx=types.SimpleNamespace(
+            find_asset_for_basename=lambda _name: types.SimpleNamespace(url="https://example/alarms.js"),
+            assets_by_basename={},
+        ),
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog,
+    )
+
+    def _parse(_source: object) -> dict[int, str]:
+        return {9: "ERROR_FOO"}
+
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._alarm_name_helpers",
+        lambda: (_parse, None),
+    )
+
+    api = _AlarmsApi()
+    api.current_payload = {
+        "status": True,
+        "alarms": [{"id": 9, "devid": "DEV1", "created_at": "t0"}],
+    }
+    runtime, *_rest = make_runtime(api=api, modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.language = "en"
+
+    async def _get_bytes(_url: str) -> bytes:
+        return b'9:"ERROR_FOO"'
+
+    api.get_bytes = _get_bytes  # type: ignore[attr-defined]
+
+    await runtime.async_refresh_alarms("DEV1")
+    assert runtime.alarms_current("DEV1")[0]["name"] == "Foo alarm"
+    get_i18n.assert_awaited()
+
+
+@pytest.mark.asyncio
 async def test_iter_alarm_feed_entities_fail_closed_without_history_label(hass: HomeAssistant) -> None:
     """Missing history chrome label suppresses all alarm entities."""
     runtime, api = _runtime_with_alarms()
