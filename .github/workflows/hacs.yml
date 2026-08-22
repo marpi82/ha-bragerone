@@ -2,9 +2,9 @@ name: HACS Validation
 
 on:
     push:
-        branches: [main]
+        branches: [main, "release/**"]
     pull_request:
-        branches: [main]
+        branches: [main, "release/**"]
     schedule:
         # Run weekly to catch any HACS requirement changes
         - cron: "0 6 * * 1"
