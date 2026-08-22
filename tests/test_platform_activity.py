@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -21,6 +22,7 @@ from custom_components.habragerone.event_feeds import (  # noqa: E402
     BragerActivitySensor,
     iter_activity_feed_entities,
 )
+from custom_components.habragerone.runtime import _extract_activity_rows  # noqa: E402
 from custom_components.habragerone.sensor import async_setup_entry  # noqa: E402
 from tests.helpers.descriptors import sensor_descriptor  # noqa: E402
 from tests.helpers.fakes import FakeApi, make_runtime  # noqa: E402
@@ -234,3 +236,40 @@ async def test_activity_sensor_event_feed_updates_state(hass: HomeAssistant) -> 
     assert entity._attr_native_value == 3
     entity._on_event_feed("OTHER")
     assert entity._attr_native_value == 3
+
+
+def test_extract_activity_rows_handles_list_and_nested_shapes() -> None:
+    """REST payloads may expose activities as a list or ``{data: [...]}`` mapping."""
+    list_payload = (200, {"activities": [{"id": 1}]})
+    nested_payload = (200, {"activities": {"data": [{"id": 2}]}})
+    assert _extract_activity_rows(list_payload) == [{"id": 1}]
+    assert _extract_activity_rows(nested_payload) == [{"id": 2}]
+    assert _extract_activity_rows((200, {"activities": "bad"})) == []
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_activity_dedupes_concurrent_tasks() -> None:
+    """Parallel refreshes for one devid share a single in-flight task."""
+    runtime, api = _runtime_with_activity()
+
+    async def slow_activity(*_args: Any, **kwargs: Any) -> tuple[int, Any] | bool:
+        await asyncio.sleep(0.05)
+        api.calls += 1
+        return (200, api.payload) if kwargs.get("return_data") else True
+
+    api.modules_activity = slow_activity  # type: ignore[method-assign]
+    await asyncio.gather(runtime.async_refresh_activity("DEV1"), runtime.async_refresh_activity("DEV1"))
+    assert api.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_iter_activity_feed_entities_fail_closed_without_api(hass: HomeAssistant) -> None:
+    """No entities when the API client lacks activity helpers."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_MODULES_META: {"DEV1": {"name": "Boiler"}}},
+    )
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    assert await iter_activity_feed_entities(hass, entry, runtime) == []

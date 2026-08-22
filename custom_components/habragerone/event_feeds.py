@@ -222,8 +222,7 @@ async def iter_activity_feed_entities(
         devids.append(devid)
         module_metas[devid] = meta if isinstance(meta, dict) else {}
 
-    for devid in devids:
-        await runtime.async_refresh_activity(devid)
+    await asyncio.gather(*(runtime.async_refresh_activity(devid) for devid in devids))
 
     return [
         BragerActivitySensor(
@@ -238,7 +237,7 @@ async def iter_activity_feed_entities(
 
 
 class BragerActivitySensor(SensorEntity):
-    """Diagnostic sensor: count + list of module activity (SPA Aktywność) rows."""
+    """Diagnostic sensor: count + list of module activity rows."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
