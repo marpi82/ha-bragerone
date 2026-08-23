@@ -145,6 +145,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
                 self._runtime,
                 devid=self._devid,
                 has_value=True,
+                descriptor=self._descriptor,
             )
             self.async_write_ha_state()
             return
@@ -153,6 +154,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
                 self._runtime,
                 devid=self._devid,
                 has_value=raw_value is not None or self._runtime.peek_status_label(self._symbol) is not None,
+                descriptor=self._descriptor,
             )
             self.async_write_ha_state()
             return
@@ -207,6 +209,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
             self._runtime,
             devid=self._devid,
             has_value=raw_value is not None,
+            descriptor=self._descriptor,
         )
         if raw_value is None:
             return

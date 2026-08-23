@@ -102,6 +102,7 @@ class BragerSymbolSwitch(SwitchEntity):
             self._runtime,
             devid=self._devid,
             has_value=raw_value is not None,
+            descriptor=self._descriptor,
         )
         if raw_value is None:
             return

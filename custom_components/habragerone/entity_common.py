@@ -21,6 +21,7 @@ from .const import (
     CONF_OPTIONS,
     CONF_PLATFORM,
     CONF_RAW_TO_LABEL,
+    CONF_UI_ROUTE_SYMBOL,
     DATA_ENTITY_STATS,
     DATA_RUNTIME,
     DEFAULT_DEVICE_GROUPING,
@@ -429,8 +430,23 @@ def module_is_reachable(runtime: BragerRuntime, devid: str) -> bool:
     return online
 
 
-def entity_is_available(runtime: BragerRuntime, *, devid: str, has_value: bool) -> bool:
-    """Combine ParamStore value presence with module cloud connectivity."""
+def entity_is_available(
+    runtime: BragerRuntime,
+    *,
+    devid: str,
+    has_value: bool,
+    descriptor: Mapping[str, Any] | None = None,
+    symbol: str | None = None,
+) -> bool:
+    """Combine value presence, module connectivity, and SPA route visibility (#192)."""
+    symbol_name = symbol
+    if descriptor is not None:
+        if bool(descriptor.get(CONF_UI_ROUTE_SYMBOL)):
+            symbol_name = str(descriptor.get("symbol") or symbol_name or "")
+            if symbol_name and not runtime.route_visible_for_symbol(devid, symbol_name):
+                return False
+    elif symbol_name and not runtime.route_visible_for_symbol(devid, symbol_name):
+        return False
     return bool(has_value) and module_is_reachable(runtime, devid)
 
 

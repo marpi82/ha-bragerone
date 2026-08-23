@@ -125,6 +125,7 @@ class BragerSymbolSensor(SensorEntity):
             self._runtime,
             devid=self._devid,
             has_value=has_value,
+            descriptor=self._descriptor,
         )
         if raw_value is not None:
             mapped_by_unit = self._raw_to_label.get(str(raw_value))
@@ -171,6 +172,7 @@ class BragerSymbolSensor(SensorEntity):
             self._runtime,
             devid=self._devid,
             has_value=raw_value is not None,
+            descriptor=self._descriptor,
         )
         if raw_value is None:
             return

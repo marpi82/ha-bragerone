@@ -18,6 +18,7 @@ from pybragerone.models.param import ParamStore
 from pybragerone.models.param_resolver import ParamResolver
 
 from .command_write import WriteContext, WriteValidationError, prepare_write
+from .const import CONF_ROUTE_VISIBILITY_DEPS, CONF_ROUTE_VISIBILITY_NAME, CONF_ROUTE_VISIBILITY_PATH, CONF_UI_ROUTE_SYMBOL
 from .numeric_display import descriptor_numeric_transform
 
 UpdateCallback = Callable[[ParamUpdate], None]
@@ -27,6 +28,8 @@ ConnectivityCallback = Callable[[str, bool, bool], None]
 CloudSessionCallback = Callable[[bool, bool], None]
 # Module event-feed (alarms / activity) refresh completed for one devid.
 EventFeedCallback = Callable[[str], None]
+# Route visibility changed for one symbol on a module (devid, symbol, visible).
+RouteVisibilityCallback = Callable[[str, str, bool], None]
 LOGGER = logging.getLogger(__name__)
 
 _ALARM_CHROME_KEYS = ("currentAlarms", "historyAlarms")
@@ -70,6 +73,12 @@ class BragerRuntime:
     _activity_assets_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _activity_assets_loaded: bool = False
     _activity_refresh_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
+    _route_visibility_listeners: set[RouteVisibilityCallback] = field(default_factory=set)
+    _symbol_route_visible: dict[str, bool] = field(default_factory=dict)
+    _symbol_route_lookup: dict[str, tuple[str, str, str, str]] = field(default_factory=dict)
+    _route_visibility_dep_to_symbols: dict[str, set[str]] = field(default_factory=dict)
+    _route_visibility_symbol_to_devid: dict[str, str] = field(default_factory=dict)
+    _menu_cache: dict[str, Any] = field(default_factory=dict)
 
     async def start(self) -> None:
         """Start gateway, state store ingestion and update dispatcher."""
@@ -95,6 +104,7 @@ class BragerRuntime:
             raise
         self._seed_module_online_from_gateway()
         self._seed_cloud_session_from_gateway()
+        await self.refresh_route_visibility()
         if self._start_monotonic is not None:
             LOGGER.debug(
                 "Runtime gateway.start completed in %.3fs (modules=%s)",
@@ -113,6 +123,118 @@ class BragerRuntime:
         self._status_resolver = None
         await self.gateway.stop()
         await self.api.close()
+
+    def add_route_visibility_listener(self, callback: RouteVisibilityCallback) -> Callable[[], None]:
+        """Register a route-visibility listener and return unsubscribe callable."""
+        self._route_visibility_listeners.add(callback)
+
+        def _unsubscribe() -> None:
+            self._route_visibility_listeners.discard(callback)
+
+        return _unsubscribe
+
+    def register_route_visibility(self, descriptors: Iterable[Any]) -> None:
+        """Index UI-route symbols and their visibility dependency keys (#192)."""
+        self._route_visibility_dep_to_symbols.clear()
+        self._symbol_route_lookup.clear()
+        self._route_visibility_symbol_to_devid.clear()
+        self._symbol_route_visible.clear()
+        for item in descriptors:
+            if not isinstance(item, Mapping):
+                continue
+            if not bool(item.get(CONF_UI_ROUTE_SYMBOL)):
+                continue
+            devid = str(item.get("devid") or "").strip()
+            symbol = str(item.get("symbol") or "").strip()
+            if not devid or not symbol:
+                continue
+            lookup_key = f"{devid}:{symbol}"
+            route_name = str(item.get(CONF_ROUTE_VISIBILITY_NAME) or "").strip()
+            route_path = str(item.get(CONF_ROUTE_VISIBILITY_PATH) or "").strip()
+            self._symbol_route_lookup[lookup_key] = (devid, symbol, route_name, route_path)
+            self._route_visibility_symbol_to_devid[symbol] = devid
+            deps = item.get(CONF_ROUTE_VISIBILITY_DEPS)
+            if isinstance(deps, list):
+                for dep in deps:
+                    if isinstance(dep, str) and dep.strip():
+                        self._route_visibility_dep_to_symbols.setdefault(dep.strip(), set()).add(symbol)
+
+    def route_visible_for_symbol(self, devid: str, symbol: str) -> bool:
+        """Return whether the everyday-UI route for *symbol* is currently visible."""
+        lookup_key = f"{devid}:{symbol}"
+        if lookup_key not in self._symbol_route_lookup:
+            return True
+        return bool(self._symbol_route_visible.get(lookup_key, True))
+
+    async def refresh_route_visibility(self, symbols: set[str] | None = None) -> None:
+        """Re-evaluate SPA route visibility for indexed UI-route symbols."""
+        if not self._symbol_route_lookup:
+            return
+        resolver = await self._async_get_resolver()
+        if resolver is None:
+            return
+        flat_values = self.store.flatten()
+        changed: list[tuple[str, str, bool]] = []
+        for lookup_key, (devid, symbol, route_name, route_path) in self._symbol_route_lookup.items():
+            if symbols is not None and symbol not in symbols:
+                continue
+            menu = await self._menu_for_devid(devid, resolver)
+            if menu is None:
+                continue
+            route_match = self._find_menu_route(menu, route_name=route_name, route_path=route_path)
+            if route_match is None:
+                continue
+            route, ancestors = route_match
+            visible, _reason = ParamResolver.route_visibility_diagnostics(
+                route,
+                ancestors=ancestors,
+                flat_values=flat_values,
+                all_panels=True,
+                web_ui_only=True,
+            )
+            previous = self._symbol_route_visible.get(lookup_key, True)
+            self._symbol_route_visible[lookup_key] = visible
+            if visible != previous:
+                changed.append((devid, symbol, visible))
+        for devid, symbol, visible in changed:
+            for callback in tuple(self._route_visibility_listeners):
+                try:
+                    callback(devid, symbol, visible)
+                except Exception:
+                    LOGGER.exception("Route visibility listener failed for %s/%s", devid, symbol)
+
+    async def _menu_for_devid(self, devid: str, resolver: ParamResolver) -> Any | None:
+        if devid in self._menu_cache:
+            return self._menu_cache[devid]
+        meta = self.modules_meta.get(devid)
+        if not isinstance(meta, Mapping):
+            return None
+        device_menu = meta.get("device_menu")
+        if not isinstance(device_menu, int):
+            return None
+        perms_raw = meta.get("permissions")
+        permissions = [str(perm) for perm in perms_raw] if isinstance(perms_raw, list) else []
+        try:
+            menu = await resolver.get_module_menu(device_menu=device_menu, permissions=permissions)
+        except Exception:
+            LOGGER.debug("Menu fetch failed for route visibility devid=%s", devid, exc_info=True)
+            return None
+        self._menu_cache[devid] = menu
+        return menu
+
+    @staticmethod
+    def _find_menu_route(menu: Any, *, route_name: str, route_path: str) -> tuple[Any, tuple[Any, ...]] | None:
+        routes = getattr(menu, "routes", None)
+        if not isinstance(routes, list):
+            return None
+        for route, ancestors in ParamResolver._iter_routes_with_ancestors(routes):
+            name = str(getattr(route, "name", "") or "")
+            path = str(getattr(route, "path", "") or "")
+            if route_name and name == route_name:
+                return route, ancestors
+            if route_path and path == route_path:
+                return route, ancestors
+        return None
 
     def add_listener(self, callback: UpdateCallback) -> Callable[[], None]:
         """Register an entity listener and return unsubscribe callable."""
@@ -910,6 +1032,10 @@ class BragerRuntime:
                     update.idx,
                 )
                 self._first_update_logged = True
+            update_key = f"{update.pool}.{update.chan}{update.idx}"
+            affected_symbols = self._route_visibility_dep_to_symbols.get(update_key)
+            if affected_symbols:
+                await self.refresh_route_visibility(set(affected_symbols))
             for callback in tuple(self._listeners):
                 try:
                     callback(update)

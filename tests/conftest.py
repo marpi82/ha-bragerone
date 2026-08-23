@@ -176,6 +176,26 @@ def install_pybragerone_stubs() -> None:
                 return int(total)
             return total
 
+        @staticmethod
+        def _iter_routes_with_ancestors(routes: object) -> list[tuple[object, tuple[object, ...]]]:
+            _ = routes
+            return []
+
+        @staticmethod
+        def _status_paths_for_visibility(mapping: object, flat_values: object) -> list[dict[str, object]]:
+            _ = mapping, flat_values
+            return []
+
+        @staticmethod
+        def route_visibility_dependency_keys(route: object, ancestors: object = ()) -> list[str]:
+            _ = route, ancestors
+            return []
+
+        @staticmethod
+        def panel_route_diagnostics_from_menu(*args: object, **kwargs: object) -> list[dict[str, object]]:
+            _ = args, kwargs
+            return []
+
     pybragerone_models_param_resolver_stub.ParamResolver = _ParamResolverStub
     sys.modules["pybragerone.models.param_resolver"] = pybragerone_models_param_resolver_stub
 

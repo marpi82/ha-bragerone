@@ -168,3 +168,6 @@ hass-cloud = { shell = "./scripts/cloud_hass_start.sh" }
 docker-up = { cmd = "docker-compose up -d" }
 docker-down = { cmd = "docker-compose down" }
 docker-logs = { cmd = "docker-compose logs -f homeassistant" }
+
+[tool.uv.sources]
+py-bragerone = { path = "../py-bragerone", editable = true }

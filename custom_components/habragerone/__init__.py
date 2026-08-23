@@ -150,6 +150,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         modules_meta={str(k): dict(v) for k, v in modules_meta.items()} if isinstance(modules_meta, dict) else {},
         language=language,
     )
+    descriptor_sources: list[Any] = list(descriptors) if isinstance(descriptors, list) else []
+    connection_descriptors = entry.data.get(CONF_CONNECTION_DESCRIPTORS)
+    if isinstance(connection_descriptors, list):
+        descriptor_sources.extend(connection_descriptors)
+    runtime.register_route_visibility(descriptor_sources)
     await runtime.start()
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -162,11 +167,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DATA_RUNTIME: runtime,
         CONF_ENTITY_DESCRIPTORS: descriptors,
     }
-
-    descriptor_sources: list[Any] = list(descriptors) if isinstance(descriptors, list) else []
-    connection_descriptors = entry.data.get(CONF_CONNECTION_DESCRIPTORS)
-    if isinstance(connection_descriptors, list):
-        descriptor_sources.extend(connection_descriptors)
 
     await async_register_module_parent_devices(
         hass,
