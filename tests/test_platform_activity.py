@@ -25,6 +25,7 @@ from custom_components.habragerone.event_feeds import (  # noqa: E402
     iter_activity_feed_entities,
 )
 from custom_components.habragerone.runtime import (  # noqa: E402
+    _activity_created_by,
     _activity_row_devid,
     _activity_value_scalar,
     _extract_activity_rows,
@@ -47,14 +48,19 @@ class _ActivityApi(FakeApi):
                 "data": [
                     {
                         "id": 610249,
-                        "devid": "DEV1",
+                        "module": {"devid": "DEV1", "id": 302},
+                        "module_id": 302,
                         "name": "parameters.PARAM_219",
-                        "unit": 12,
+                        "unit": 38,
                         "value": 0,
+                        # Scalar previous value (SPA camelCase). Snake-case
+                        # ``prev_value`` is a nested param snapshot — must not win.
                         "prevValue": 2,
+                        "prev_value": {"P6": {"219": {"v": 2, "u": 38}}},
                         "state": "success",
                         "created_at": "2026-08-19T18:39:24.000+00:00",
-                        "user": "marpi82",
+                        "user": {"name": "marpi82", "id": 861},
+                        "user_id": 861,
                     }
                 ]
             },
@@ -334,6 +340,33 @@ def test_activity_row_devid_and_value_scalar_helpers() -> None:
     assert _activity_row_devid({}, default_devid="DEV1") == "DEV1"
     assert _activity_value_scalar({"value": {"prevValue": 3}}) == 3
     assert _activity_value_scalar({"other": 1}) is None
+    assert _activity_value_scalar({"P6": {"219": {"v": 2, "u": 38}}}) == 2
+    assert _activity_created_by({"name": "marpi82", "id": 861}) == "marpi82"
+    assert _activity_created_by("alice") == "alice"
+    assert _activity_created_by({"id": 1}) is None
+    assert _activity_created_by(None) is None
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_activity_prefers_prevvalue_over_nested_snapshot() -> None:
+    """When both prevValue and nested prev_value exist, use the scalar."""
+    runtime, api = _runtime_with_activity()
+    api.payload["activities"]["data"][0]["prevValue"] = 7
+    api.payload["activities"]["data"][0]["prev_value"] = {"P6": {"219": {"v": 99, "u": 38}}}
+    await runtime.async_refresh_activity("DEV1")
+    row = runtime.activity("DEV1")[0]
+    assert row["prev_value_raw"] == 7
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_activity_falls_back_to_nested_prev_value() -> None:
+    """Without camelCase prevValue, dig the nested param snapshot for ``v``."""
+    runtime, api = _runtime_with_activity()
+    row0 = api.payload["activities"]["data"][0]
+    del row0["prevValue"]
+    row0["prev_value"] = {"P6": {"219": {"v": 5, "u": 38}}}
+    await runtime.async_refresh_activity("DEV1")
+    assert runtime.activity("DEV1")[0]["prev_value_raw"] == 5
 
 
 @pytest.mark.asyncio

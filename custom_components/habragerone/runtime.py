@@ -506,9 +506,12 @@ class BragerRuntime:
 
         unit_code = row.get("unit")
         value_raw = _activity_value_scalar(row.get("value"))
-        prev_raw = row.get("prev_value")
+        # Live SPA rows expose the scalar previous value as camelCase ``prevValue``.
+        # Snake-case ``prev_value`` is a nested param snapshot (``{P*: {n: {v,u}}}``),
+        # not the display scalar — prefer camelCase, then fall back.
+        prev_raw = row.get("prevValue")
         if prev_raw is None:
-            prev_raw = row.get("prevValue")
+            prev_raw = row.get("prev_value")
         prev_value_raw = _activity_value_scalar(prev_raw)
 
         value = await _resolve_activity_display_value(value_raw, unit_code=unit_code, resolver=resolver)
@@ -523,8 +526,7 @@ class BragerRuntime:
                 state_label = mapped.strip()
 
         created_at = row.get("created_at")
-        created_by_raw = row.get("user")
-        created_by = created_by_raw.strip() if isinstance(created_by_raw, str) and created_by_raw.strip() else None
+        created_by = _activity_created_by(row.get("user"))
 
         return {
             "id": activity_id,
@@ -1099,14 +1101,38 @@ def _activity_row_devid(row: Mapping[str, Any], *, default_devid: str) -> str:
 
 
 def _activity_value_scalar(raw: Any) -> Any:
-    """Unwrap nested SPA value maps to a display/raw scalar when possible."""
+    """Unwrap nested SPA value maps to a display/raw scalar when possible.
+
+    Handles:
+    - plain scalars
+    - ``{"value": ...}`` / ``{"prevValue": ...}`` wrappers
+    - nested param snapshots ``{"P6": {"219": {"v": 2, "u": 38}}}``
+    """
     if isinstance(raw, Mapping):
         if "value" in raw:
             return _activity_value_scalar(raw.get("value"))
         if "prevValue" in raw:
             return _activity_value_scalar(raw.get("prevValue"))
+        if "v" in raw:
+            return _activity_value_scalar(raw.get("v"))
+        for nested in raw.values():
+            if isinstance(nested, Mapping):
+                extracted = _activity_value_scalar(nested)
+                if extracted is not None:
+                    return extracted
         return None
     return raw
+
+
+def _activity_created_by(raw: Any) -> str | None:
+    """Extract the activity author label from a string or ``{name, id}`` user object."""
+    if isinstance(raw, str):
+        return raw.strip() or None
+    if isinstance(raw, Mapping):
+        name = raw.get("name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return None
 
 
 async def _resolve_activity_i18n_token(token: str | None, *, resolver: Any) -> str | None:
