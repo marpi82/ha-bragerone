@@ -17,6 +17,7 @@ ignore:
   - "scripts/**/*"
   - "docs/**/*"
   - ".github/**"
+  - "codecov.yml"
   - "pyproject.toml"
   - "uv.lock"
   - "hacs.json"
