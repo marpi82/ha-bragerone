@@ -16,7 +16,7 @@ ignore:
   - "tests/**/*"
   - "scripts/**/*"
   - "docs/**/*"
-  - ".github/**/*"
+  - ".github/**"
   - "pyproject.toml"
   - "uv.lock"
   - "hacs.json"
