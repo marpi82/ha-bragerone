@@ -65,3 +65,22 @@ on **Enforce release channel** in `release.yml` (and `release.sh` on
 
 Re-run Scorecard / Security Checks if those workflows are enabled for this repo
 so BranchProtection re-evaluates.
+
+## BragerOne triage bot
+
+`bragerone-triage.yml` calls the reusable workflow in `py-bragerone` on `main`.
+Set the same `BRAGERONE_*` repository variables as documented in
+`py-bragerone/.github/branch-protection-checklist.md` (section **BragerOne triage
+bot**).
+
+**User-owned projects** cannot link repositories in Manage access — add secret
+**`PROJECTS_TOKEN`** (classic PAT with **`project`** + **`repo`** scopes; fine-grained
+PATs do not work for user Projects v2) in both repos. Status option IDs are opaque
+strings (`f75ad846`, …), not board column numbers; copy from
+`py-bragerone/scripts/github_project_setup.sh marpi82 2`.
+
+Enable Actions **Read and write** workflow permissions.
+
+Path labels: `pull-request-labeler.yml` + `.github/labeler.yml`. Repo label
+`ha-bragerone` is added by triage; type labels on PRs come from linked issues or
+title prefixes (`bug:`, `feat:`, `docs:`).
