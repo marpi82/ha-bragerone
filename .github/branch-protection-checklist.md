@@ -74,8 +74,9 @@ Set the same `BRAGERONE_*` repository variables as documented in
 bot**).
 
 **User-owned projects** cannot link repositories in Manage access — add secret
-**`PROJECTS_TOKEN`** (fine-grained PAT with Projects read/write) in both repos.
-Status option IDs are opaque strings (`PVTSSG_…`), not numbers; copy from
+**`PROJECTS_TOKEN`** (classic PAT with **`project`** + **`repo`** scopes; fine-grained
+PATs do not work for user Projects v2) in both repos. Status option IDs are opaque
+strings (`f75ad846`, …), not board column numbers; copy from
 `py-bragerone/scripts/github_project_setup.sh marpi82 2`.
 
 Enable Actions **Read and write** workflow permissions.
