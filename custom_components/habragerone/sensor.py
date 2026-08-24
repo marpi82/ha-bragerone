@@ -24,6 +24,7 @@ from pybragerone.models.events import ParamUpdate
 
 from .const import DOMAIN
 from .entity_common import (
+    attach_route_visibility_listener,
     descriptor_current_raw_value,
     descriptor_display_name,
     descriptor_enabled_by_default,
@@ -105,11 +106,18 @@ class BragerSymbolSensor(SensorEntity):
 
         self._unsubscribe_listener: Any = None
         self._unsubscribe_connectivity: Any = None
+        self._unsubscribe_route_visibility: Any = None
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to push updates when entity is added to HA."""
         self._unsubscribe_listener = self._runtime.add_listener(self._on_runtime_update)
         self._unsubscribe_connectivity = self._runtime.add_connectivity_listener(self._on_connectivity)
+        self._unsubscribe_route_visibility = attach_route_visibility_listener(
+            self._runtime,
+            devid=self._devid,
+            descriptor=self._descriptor,
+            schedule_update=lambda: self.async_schedule_update_ha_state(True),
+        )
         if self._try_apply_initial_state_sync():
             self.async_write_ha_state()
             return
@@ -125,6 +133,7 @@ class BragerSymbolSensor(SensorEntity):
             self._runtime,
             devid=self._devid,
             has_value=has_value,
+            descriptor=self._descriptor,
         )
         if raw_value is not None:
             mapped_by_unit = self._raw_to_label.get(str(raw_value))
@@ -154,6 +163,9 @@ class BragerSymbolSensor(SensorEntity):
         if callable(self._unsubscribe_connectivity):
             self._unsubscribe_connectivity()
             self._unsubscribe_connectivity = None
+        if callable(self._unsubscribe_route_visibility):
+            self._unsubscribe_route_visibility()
+            self._unsubscribe_route_visibility = None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -171,6 +183,7 @@ class BragerSymbolSensor(SensorEntity):
             self._runtime,
             devid=self._devid,
             has_value=raw_value is not None,
+            descriptor=self._descriptor,
         )
         if raw_value is None:
             return

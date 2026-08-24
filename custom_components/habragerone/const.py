@@ -21,6 +21,10 @@ FILTER_MODE_PERMISSIONS: Final = "permissions"
 FILTER_MODES: Final[tuple[str, str]] = (FILTER_MODE_UI, FILTER_MODE_PERMISSIONS)
 DEFAULT_ENTITY_FILTER_MODE: Final = FILTER_MODE_UI
 CONF_ENABLED_BY_DEFAULT: Final = "enabled_by_default"
+CONF_UI_ROUTE_SYMBOL: Final = "ui_route_symbol"
+CONF_ROUTE_VISIBILITY_DEPS: Final = "route_visibility_deps"
+CONF_ROUTE_VISIBILITY_NAME: Final = "route_visibility_name"
+CONF_ROUTE_VISIBILITY_PATH: Final = "route_visibility_path"
 CONF_DEVICE_GROUPING: Final = "device_grouping"
 DEVICE_GROUPING_FLAT: Final = "flat"
 DEVICE_GROUPING_BY_MENU: Final = "group_by_menu"
@@ -36,7 +40,7 @@ CONF_RAW_TO_LABEL: Final = "raw_to_label"
 CONF_BOOTSTRAP_DEBUG: Final = "bootstrap_debug"
 CONF_BOOTSTRAP_VERSION: Final = "bootstrap_version"
 CONF_UPSTREAM_ASSETS_FINGERPRINT: Final = "upstream_assets_fingerprint"
-BOOTSTRAP_VERSION: Final = 12
+BOOTSTRAP_VERSION: Final = 13
 
 # Stable non-menu source key for module connectivity (SPA ``module.connection.*`` i18n).
 # Kept separate from menu-router paths so HA #165 can place these on a child device.

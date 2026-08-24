@@ -14,6 +14,8 @@ install_pybragerone_stubs()
 from custom_components.habragerone.const import (  # noqa: E402
     CONF_ENTITY_DESCRIPTORS,
     CONF_MODULES,
+    CONF_ROUTE_VISIBILITY_DEPS,
+    CONF_UI_ROUTE_SYMBOL,
     DATA_ENTITY_STATS,
     DATA_RUNTIME,
     DEVICE_GROUPING_BY_MENU,
@@ -26,6 +28,7 @@ from custom_components.habragerone.entity_common import (  # noqa: E402
     _mapping_value_selector_entries,
     _menu_device_display_name,
     async_register_module_parent_devices,
+    attach_route_visibility_listener,
     collect_resolver_warm_symbols,
     descriptor_current_raw_value,
     descriptor_enabled_by_default,
@@ -57,6 +60,38 @@ def test_descriptor_enabled_by_default_respects_false() -> None:
 def test_descriptor_enabled_by_default_coerces_truthy_values() -> None:
     assert descriptor_enabled_by_default({"enabled_by_default": 1}) is True
     assert descriptor_enabled_by_default({"enabled_by_default": 0}) is False
+
+
+def test_attach_route_visibility_listener_ignores_non_ui_route_descriptor() -> None:
+    """Non UI-route entities do not subscribe to route visibility fan-out."""
+    runtime, *_rest = make_runtime()
+    seen: list[tuple[str, str, bool]] = []
+    runtime.add_route_visibility_listener(lambda devid, symbol, visible: seen.append((devid, symbol, visible)))
+    unsub = attach_route_visibility_listener(
+        runtime,
+        devid="dev1",
+        descriptor={"symbol": "PARAM_9", CONF_UI_ROUTE_SYMBOL: False},
+        schedule_update=lambda: seen.append(("schedule", "", False)),
+    )
+    assert unsub is None
+    assert seen == []
+
+
+def test_attach_route_visibility_listener_schedules_matching_symbol() -> None:
+    """UI-route entities refresh when their symbol visibility flips."""
+    runtime, *_rest = make_runtime()
+    scheduled: list[str] = []
+    attach_route_visibility_listener(
+        runtime,
+        devid="dev1",
+        descriptor={"symbol": "PARAM_177", CONF_UI_ROUTE_SYMBOL: True},
+        schedule_update=lambda: scheduled.append("update"),
+    )
+    for callback in tuple(runtime._route_visibility_listeners):
+        callback("dev1", "PARAM_177", False)
+        callback("dev1", "PARAM_219", False)
+        callback("dev2", "PARAM_177", False)
+    assert scheduled == ["update"]
 
 
 def test_descriptor_refresh_keys_direct_address() -> None:
@@ -95,6 +130,17 @@ def test_descriptor_refresh_keys_includes_multi_register_value_channels() -> Non
         },
     }
     assert descriptor_refresh_keys(descriptor) == {"P4.v59", "P4.v60"}
+
+
+def test_descriptor_refresh_keys_includes_route_visibility_deps() -> None:
+    """UI-route availability must refresh when route dependency params change (#192)."""
+    descriptor = {
+        "pool": "P6",
+        "chan": "v",
+        "idx": 219,
+        CONF_ROUTE_VISIBILITY_DEPS: ["P6.v219", " P1.s0 ", 42],
+    }
+    assert descriptor_refresh_keys(descriptor) == {"P6.v219", "P1.s0"}
 
 
 def test_descriptor_refresh_keys_skips_invalid_channel_and_path_entries() -> None:

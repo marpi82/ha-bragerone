@@ -27,6 +27,30 @@ def _container(*tokens: str) -> SimpleNamespace:
     return SimpleNamespace(read=[_param(token) for token in tokens], write=[], status=[], special=[])
 
 
+class _BootstrapResolverRouteStubMixin:
+    """Static ParamResolver hooks used during bootstrap route metadata (#192)."""
+
+    @staticmethod
+    def _iter_routes_with_ancestors(routes: object) -> list[tuple[object, tuple[object, ...]]]:
+        _ = routes
+        return []
+
+    @staticmethod
+    def _status_paths_for_visibility(mapping: object, flat_values: object) -> list[dict[str, object]]:
+        _ = mapping, flat_values
+        return []
+
+    @staticmethod
+    def route_visibility_dependency_keys(route: object, ancestors: object = ()) -> list[str]:
+        _ = route, ancestors
+        return []
+
+    @staticmethod
+    def panel_route_diagnostics_from_menu(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        _ = args, kwargs
+        return []
+
+
 def test_collect_symbols_from_menu_walks_nested_routes() -> None:
     leaf = SimpleNamespace(
         meta=SimpleNamespace(parameters=_container("PARAM_LEAF_A")),
@@ -64,7 +88,7 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 42}
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._current_devid = ""
 
@@ -79,8 +103,9 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = permissions, all_panels, web_ui_only
+            _ = permissions, all_panels, web_ui_only, flat_values
             return {"panel": [f"SYM_{device_menu}"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
@@ -216,7 +241,7 @@ def test_async_build_bootstrap_payload_includes_non_panel_actions_disabled_by_de
                 ]
             }
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._assets = _FakeAssets()
 
@@ -232,8 +257,9 @@ def test_async_build_bootstrap_payload_includes_non_panel_actions_disabled_by_de
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels, web_ui_only
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
             return {"Kocioł": ["SYM_PANEL"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
@@ -356,7 +382,7 @@ def test_async_build_bootstrap_payload_enabled_default_edge_cases(
                 ]
             }
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._assets = _FakeAssets()
             self._describe_calls = 0
@@ -373,8 +399,9 @@ def test_async_build_bootstrap_payload_enabled_default_edge_cases(
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels
+            _ = device_menu, permissions, all_panels, flat_values
             # Full permission set includes installer-only symbols; everyday UI only sees SYM_UI.
             if web_ui_only:
                 return {"Kocioł": ["SYM_UI", "SYM_VIS_FAIL", "SYM_RESOLVE_FAIL"]}
@@ -529,7 +556,7 @@ def test_async_build_bootstrap_payload_skips_extra_write_without_command_rule(
                 ]
             }
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._assets = _FakeAssets()
 
@@ -545,8 +572,9 @@ def test_async_build_bootstrap_payload_skips_extra_write_without_command_rule(
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels, web_ui_only
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
             return {"Kocioł": ["SYM_PANEL"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
@@ -677,7 +705,7 @@ def test_async_build_bootstrap_payload_skips_extra_with_non_action_command_name(
                 ]
             }
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._assets = _FakeAssets()
 
@@ -693,8 +721,9 @@ def test_async_build_bootstrap_payload_skips_extra_with_non_action_command_name(
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels, web_ui_only
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
             return {"Kocioł": ["SYM_PANEL"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
@@ -801,7 +830,7 @@ def test_async_build_bootstrap_payload_accepts_sample_cap(
 
     symbols_all = [f"SYM_{idx}" for idx in range(510)]
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
         def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
             _ = api, store, lang
@@ -814,8 +843,9 @@ def test_async_build_bootstrap_payload_accepts_sample_cap(
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels, web_ui_only
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
             return {"Kocioł": list(symbols_all)}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
