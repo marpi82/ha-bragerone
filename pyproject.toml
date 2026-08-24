@@ -170,4 +170,4 @@ docker-down = { cmd = "docker-compose down" }
 docker-logs = { cmd = "docker-compose logs -f homeassistant" }
 
 [tool.uv.sources]
-py-bragerone = { path = "../py-bragerone", editable = true }
+py-bragerone = { git = "https://github.com/marpi82/py-bragerone", branch = "fix/strefy-czasowe-menu-192" }
