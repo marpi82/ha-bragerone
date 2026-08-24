@@ -1163,7 +1163,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "homeassistant", specifier = ">=2026.3.0" },
-    { name = "py-bragerone", git = "https://github.com/marpi82/py-bragerone?branch=fix%2Fstrefy-czasowe-menu-192" },
+    { name = "py-bragerone", specifier = "==2026.9.0b4" },
 ]
 
 [package.metadata.requires-dev]
@@ -2216,8 +2216,8 @@ wheels = [
 
 [[package]]
 name = "py-bragerone"
-version = "2026.9.0b4.dev3+g29c1e7e7e"
-source = { git = "https://github.com/marpi82/py-bragerone?branch=fix%2Fstrefy-czasowe-menu-192#29c1e7e7e64ba15fd2fe6923be696153cc42e503" }
+version = "2026.9.0b4"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
@@ -2225,6 +2225,10 @@ dependencies = [
     { name = "tree-sitter" },
     { name = "tree-sitter-javascript" },
     { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/12/ed/dbf44c118866acc366f4608d79f697380153d4c38e3a916301d6f5fe2e9e/py_bragerone-2026.9.0b4.tar.gz", hash = "sha256:c20744dcbe107d89a7640aad66f8859020e0d9ca4844368bbf77fc70cc54d814", size = 124460, upload-time = "2026-08-24T18:25:37.647Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bd/65/6bd56ca48f1396ea3402a775545af8ed86c0b632f0e8f4bd19dceb2a2c40/py_bragerone-2026.9.0b4-py3-none-any.whl", hash = "sha256:46b40d7b1519481ff60feff25cf253678b73f20c408a49ef5da7406e9b7b1f39", size = 131093, upload-time = "2026-08-24T18:25:36.096Z" },
 ]
 
 [[package]]

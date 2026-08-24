@@ -21,7 +21,7 @@ keywords = [
 ]
 dependencies = [
     "homeassistant>=2026.3.0",
-    "py-bragerone==2026.9.0b3",
+    "py-bragerone==2026.9.0b4",
 ]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
@@ -168,6 +168,3 @@ hass-cloud = { shell = "./scripts/cloud_hass_start.sh" }
 docker-up = { cmd = "docker-compose up -d" }
 docker-down = { cmd = "docker-compose down" }
 docker-logs = { cmd = "docker-compose logs -f homeassistant" }
-
-[tool.uv.sources]
-py-bragerone = { git = "https://github.com/marpi82/py-bragerone", branch = "fix/strefy-czasowe-menu-192" }
