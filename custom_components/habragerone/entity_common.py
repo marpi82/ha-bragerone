@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -21,6 +21,8 @@ from .const import (
     CONF_OPTIONS,
     CONF_PLATFORM,
     CONF_RAW_TO_LABEL,
+    CONF_ROUTE_VISIBILITY_DEPS,
+    CONF_UI_ROUTE_SYMBOL,
     DATA_ENTITY_STATS,
     DATA_RUNTIME,
     DEFAULT_DEVICE_GROUPING,
@@ -214,7 +216,35 @@ def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
                     if address is not None:
                         keys.add(address)
 
+    route_deps = descriptor.get(CONF_ROUTE_VISIBILITY_DEPS)
+    if isinstance(route_deps, list):
+        for dep in route_deps:
+            if isinstance(dep, str) and dep.strip():
+                keys.add(dep.strip())
+
     return keys
+
+
+def attach_route_visibility_listener(
+    runtime: BragerRuntime,
+    *,
+    devid: str,
+    descriptor: Mapping[str, Any],
+    schedule_update: Callable[[], None],
+) -> Callable[[], None] | None:
+    """Subscribe to SPA route visibility flips for one UI-route entity (#192)."""
+    if not bool(descriptor.get(CONF_UI_ROUTE_SYMBOL)):
+        return None
+    symbol = str(descriptor.get("symbol") or "").strip()
+    if not symbol:
+        return None
+
+    def _on_route_visibility(changed_devid: str, changed_symbol: str, _visible: bool) -> None:
+        if changed_devid != devid or changed_symbol != symbol:
+            return
+        schedule_update()
+
+    return runtime.add_route_visibility_listener(_on_route_visibility)
 
 
 def store_value_for_address(store: ParamStore, address: str) -> Any | None:
@@ -429,8 +459,23 @@ def module_is_reachable(runtime: BragerRuntime, devid: str) -> bool:
     return online
 
 
-def entity_is_available(runtime: BragerRuntime, *, devid: str, has_value: bool) -> bool:
-    """Combine ParamStore value presence with module cloud connectivity."""
+def entity_is_available(
+    runtime: BragerRuntime,
+    *,
+    devid: str,
+    has_value: bool,
+    descriptor: Mapping[str, Any] | None = None,
+    symbol: str | None = None,
+) -> bool:
+    """Combine value presence, module connectivity, and SPA route visibility (#192)."""
+    symbol_name = symbol
+    if descriptor is not None:
+        if bool(descriptor.get(CONF_UI_ROUTE_SYMBOL)):
+            symbol_name = str(descriptor.get("symbol") or symbol_name or "")
+            if symbol_name and not runtime.route_visible_for_symbol(devid, symbol_name):
+                return False
+    elif symbol_name and not runtime.route_visible_for_symbol(devid, symbol_name):
+        return False
     return bool(has_value) and module_is_reachable(runtime, devid)
 
 

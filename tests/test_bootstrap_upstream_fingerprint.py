@@ -43,8 +43,9 @@ class _FakeResolver:
         permissions: list[str] | None,
         all_panels: bool,
         web_ui_only: bool = False,
+        flat_values: object | None = None,
     ) -> dict[str, list[str]]:
-        _ = device_menu, permissions, all_panels, web_ui_only
+        _ = device_menu, permissions, all_panels, web_ui_only, flat_values
         return cast(dict[str, list[str]], self.gated_groups)
 
     async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
@@ -78,6 +79,26 @@ class _FakeResolver:
     ) -> tuple[bool, dict[str, object]]:
         _ = desc, resolved, flat_values
         return True, {}
+
+    @staticmethod
+    def _iter_routes_with_ancestors(routes: object) -> list[tuple[object, tuple[object, ...]]]:
+        _ = routes
+        return []
+
+    @staticmethod
+    def _status_paths_for_visibility(mapping: object, flat_values: object) -> list[dict[str, object]]:
+        _ = mapping, flat_values
+        return []
+
+    @staticmethod
+    def route_visibility_dependency_keys(route: object, ancestors: object = ()) -> list[str]:
+        _ = route, ancestors
+        return []
+
+    @staticmethod
+    def panel_route_diagnostics_from_menu(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        _ = args, kwargs
+        return []
 
 
 class _FakeApi:
