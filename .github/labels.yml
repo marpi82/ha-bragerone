@@ -34,15 +34,24 @@
 - name: good first issue
   description: Good for newcomers
   color: 7057ff
+- name: ha-bragerone
+  description: ha-bragerone repository (BragerOne triage)
+  color: 1d76db
 - name: help wanted
   description: Extra attention is needed
   color: 008672
+- name: homeassistant
+  description: Home Assistant core or integration platform updates
+  color: 5319e7
 - name: invalid
   description: This doesn't seem right
   color: e4e669
 - name: performance
   description: Performance
   color: "016175"
+- name: py-bragerone
+  description: py-bragerone repository (BragerOne triage)
+  color: 1d76db
 - name: python
   description: Pull requests that update Python code
   color: 2b67c6
@@ -55,6 +64,9 @@
 - name: removal
   description: Removals and Deprecations
   color: 9ae7ea
+- name: renovate
+  description: Renovate dependency updates
+  color: 1d76db
 - name: style
   description: Style
   color: c120e5

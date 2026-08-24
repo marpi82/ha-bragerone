@@ -75,6 +75,7 @@ class FakeGateway:
         self._cloud_session_callbacks: list[Any] = []
         self._ws_session_up = False
         self._last_param_update_age_s: float | None = None
+        self._last_live_param_update_age_s: float | None = None
         self._start_error = start_error
         self._start_delay = start_delay
         self.started = False
@@ -120,6 +121,13 @@ class FakeGateway:
     def last_param_update_age_s(self) -> float | None:
         """Return seconds since the last fake ParamUpdate, or ``None``."""
         age = self._last_param_update_age_s
+        if isinstance(age, bool) or not isinstance(age, int | float):
+            return None
+        return float(age)
+
+    def last_live_param_update_age_s(self) -> float | None:
+        """Return seconds since the last fake live WS ParamUpdate, or ``None``."""
+        age = self._last_live_param_update_age_s
         if isinstance(age, bool) or not isinstance(age, int | float):
             return None
         return float(age)
