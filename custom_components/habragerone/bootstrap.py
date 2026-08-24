@@ -1489,23 +1489,25 @@ async def async_build_bootstrap_payload(
             "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
         }
 
+        routes_map = per_module_symbol_routes.get(module.devid, {})
+        panel_paths_map = per_module_panel_paths.get(module.devid, {})
+        panel_menu_keys = _menu_keys_by_panel_path(panel_paths_map, routes_map)
+        route_dep_index = per_module_route_dep_index.get(module.devid, {})
+        module_ui_route_symbols = per_module_ui_route_symbols.get(module.devid, set())
+        module_symbol_kinds = per_module_symbol_kinds.get(module.devid, {})
+
         for symbol in sorted(per_module_symbols.get(module.devid, set())):
             payload = details.get(symbol)
             if payload is None:
                 continue
 
-            routes_map = per_module_symbol_routes.get(module.devid, {})
-            panel_paths_map = per_module_panel_paths.get(module.devid, {})
-            panel_menu_keys = _menu_keys_by_panel_path(panel_paths_map, routes_map)
-            route_dep_index = per_module_route_dep_index.get(module.devid, {})
-            module_ui_route_symbols = per_module_ui_route_symbols.get(module.devid, set())
             symbol_routes = routes_map.get(symbol, [])
 
             mapping = payload.get("mapping") if isinstance(payload.get("mapping"), dict) else None
-            symbol_kinds = per_module_symbol_kinds.get(module.devid, {}).get(symbol, set())
+            symbol_kinds = module_symbol_kinds.get(symbol, set())
             writable = _is_menu_command_action(symbol=symbol, symbol_kinds=symbol_kinds, mapping=mapping)
             label = str(payload.get("label")) if isinstance(payload.get("label"), str) else symbol
-            panel_path = per_module_panel_paths.get(module.devid, {}).get(symbol, "")
+            panel_path = panel_paths_map.get(symbol, "")
             menu_key = _resolve_menu_key_for_symbol(
                 symbol=symbol,
                 panel_path=panel_path,

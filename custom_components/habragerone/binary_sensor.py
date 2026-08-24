@@ -19,6 +19,7 @@ from .const import (
     DOMAIN,
 )
 from .entity_common import (
+    attach_route_visibility_listener,
     descriptor_current_raw_value,
     descriptor_display_name,
     descriptor_enabled_by_default,
@@ -125,6 +126,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         self._refresh_keys = descriptor_refresh_keys(descriptor)
         self._unsubscribe_listener: Any = None
         self._unsubscribe_connectivity: Any = None
+        self._unsubscribe_route_visibility: Any = None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -139,6 +141,12 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         """Attach runtime listeners when entity is added."""
         self._unsubscribe_listener = self._runtime.add_listener(self._on_runtime_update)
         self._unsubscribe_connectivity = self._runtime.add_connectivity_listener(self._on_connectivity)
+        self._unsubscribe_route_visibility = attach_route_visibility_listener(
+            self._runtime,
+            devid=self._devid,
+            descriptor=self._descriptor,
+            schedule_update=lambda: self.async_schedule_update_ha_state(True),
+        )
         raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
         if raw_value is not None and self._try_apply_binary_state_sync(raw_value):
             self._attr_available = entity_is_available(
@@ -201,6 +209,9 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         if callable(self._unsubscribe_connectivity):
             self._unsubscribe_connectivity()
             self._unsubscribe_connectivity = None
+        if callable(self._unsubscribe_route_visibility):
+            self._unsubscribe_route_visibility()
+            self._unsubscribe_route_visibility = None
 
     async def async_update(self) -> None:
         """Refresh state from ParamStore / SPA status resolver."""

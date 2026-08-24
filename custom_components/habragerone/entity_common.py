@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -21,6 +21,7 @@ from .const import (
     CONF_OPTIONS,
     CONF_PLATFORM,
     CONF_RAW_TO_LABEL,
+    CONF_ROUTE_VISIBILITY_DEPS,
     CONF_UI_ROUTE_SYMBOL,
     DATA_ENTITY_STATS,
     DATA_RUNTIME,
@@ -215,7 +216,35 @@ def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
                     if address is not None:
                         keys.add(address)
 
+    route_deps = descriptor.get(CONF_ROUTE_VISIBILITY_DEPS)
+    if isinstance(route_deps, list):
+        for dep in route_deps:
+            if isinstance(dep, str) and dep.strip():
+                keys.add(dep.strip())
+
     return keys
+
+
+def attach_route_visibility_listener(
+    runtime: BragerRuntime,
+    *,
+    devid: str,
+    descriptor: Mapping[str, Any],
+    schedule_update: Callable[[], None],
+) -> Callable[[], None] | None:
+    """Subscribe to SPA route visibility flips for one UI-route entity (#192)."""
+    if not bool(descriptor.get(CONF_UI_ROUTE_SYMBOL)):
+        return None
+    symbol = str(descriptor.get("symbol") or "").strip()
+    if not symbol:
+        return None
+
+    def _on_route_visibility(changed_devid: str, changed_symbol: str, _visible: bool) -> None:
+        if changed_devid != devid or changed_symbol != symbol:
+            return
+        schedule_update()
+
+    return runtime.add_route_visibility_listener(_on_route_visibility)
 
 
 def store_value_for_address(store: ParamStore, address: str) -> Any | None:
