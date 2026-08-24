@@ -16,6 +16,10 @@ ignore:
   - "tests/**/*"
   - "scripts/**/*"
   - "docs/**/*"
+  - ".github/**/*"
+  - "pyproject.toml"
+  - "uv.lock"
+  - "hacs.json"
   - "custom_components/habragerone/manifest.json"
 
 comment:
