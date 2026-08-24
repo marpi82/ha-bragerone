@@ -135,7 +135,12 @@ async def test_diagnostics_includes_module_connectivity(hass: HomeAssistant) -> 
     assert connectivity["DEV1"]["online"] is True
     assert connectivity["DEV1"]["connectedAt"] == 99
     assert "DEV2" in connectivity
-    assert payload["cloud_session"] == {"up": None, "supported": True, "last_param_update_age_s": None}
+    assert payload["cloud_session"] == {
+        "up": None,
+        "supported": True,
+        "last_param_update_age_s": None,
+        "last_live_param_update_age_s": None,
+    }
 
 
 @pytest.mark.asyncio
@@ -145,12 +150,18 @@ async def test_diagnostics_reports_last_param_update_age(hass: HomeAssistant) ->
 
     runtime, _api, gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
     gateway._last_param_update_age_s = 12.34
+    gateway._last_live_param_update_age_s = 45.67
     runtime._cloud_session_up = True
     entry = register_config_entry(hass, runtime=runtime, descriptors=[])
     hass.data[DOMAIN][entry.entry_id][DATA_RUNTIME] = runtime
 
     payload = await async_get_config_entry_diagnostics(hass, entry)
-    assert payload["cloud_session"] == {"up": True, "supported": True, "last_param_update_age_s": 12.3}
+    assert payload["cloud_session"] == {
+        "up": True,
+        "supported": True,
+        "last_param_update_age_s": 12.3,
+        "last_live_param_update_age_s": 45.7,
+    }
 
 
 @pytest.mark.asyncio

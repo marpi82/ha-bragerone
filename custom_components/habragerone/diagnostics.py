@@ -55,10 +55,13 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
                 }
             age_fn = getattr(brager_runtime.gateway, "last_param_update_age_s", None)
             age_s = age_fn() if callable(age_fn) else None
+            live_age_fn = getattr(brager_runtime.gateway, "last_live_param_update_age_s", None)
+            live_age_s = live_age_fn() if callable(live_age_fn) else None
             cloud_session = {
                 "up": brager_runtime.cloud_session_up(),
                 "supported": brager_runtime.supports_cloud_session,
                 "last_param_update_age_s": round(age_s, 1) if isinstance(age_s, (int, float)) else None,
+                "last_live_param_update_age_s": round(live_age_s, 1) if isinstance(live_age_s, (int, float)) else None,
             }
 
     platform_counter: Counter[str] = Counter()
