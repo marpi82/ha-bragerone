@@ -1213,7 +1213,10 @@ async def async_build_bootstrap_payload(
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu)
                 per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu)
                 module_route_dep_index = _route_dep_index_from_menu(menu)
-                routes_i18n = await resolver._i18n.get_namespace("routes")
+                # Must match build_panel_groups titles (menu + string-default overlays),
+                # not bare ``routes`` namespace — otherwise shell enrich misses localized
+                # panel paths like ``Strefy czasowe`` vs ``MAINMENU_STREFY_CZASOWE`` (#192).
+                routes_i18n = await resolver._panel_title_i18n(menu)
                 per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
                     menu,
                     all_panels=True,
@@ -1238,7 +1241,7 @@ async def async_build_bootstrap_payload(
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu_retry)
                 per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu_retry)
                 module_route_dep_index = _route_dep_index_from_menu(menu_retry)
-                routes_i18n = await resolver._i18n.get_namespace("routes")
+                routes_i18n = await resolver._panel_title_i18n(menu_retry)
                 per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
                     menu_retry,
                     all_panels=True,

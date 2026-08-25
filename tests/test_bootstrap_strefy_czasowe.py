@@ -45,11 +45,47 @@ def test_shell_diagnostics_enrich_symbol_routes() -> None:
             "panel_shell": True,
         }
     ]
-    panel_paths = {"PARAM_177": "Strefy czasowe"}
+    panel_paths = {"PARAM_177": "Strefy czasowe", "PARAM_219": "Strefy czasowe"}
     symbol_routes: dict[str, list[dict[str, Any]]] = {}
     _enrich_symbol_routes_from_shell_diagnostics(panel_paths, symbol_routes, diagnostics)
     assert symbol_routes["PARAM_177"][0]["name"] == "MAINMENU_STREFY_CZASOWE"
+    assert symbol_routes["PARAM_219"][0]["path"] == "timezones"
     assert _stable_menu_key_from_route_meta(symbol_routes["PARAM_177"]) == "MAINMENU_STREFY_CZASOWE"
+    assert (
+        _resolve_menu_key_for_symbol(
+            symbol="PARAM_219",
+            panel_path="Strefy czasowe",
+            symbol_routes=symbol_routes,
+            panel_menu_keys={},
+        )
+        == "MAINMENU_STREFY_CZASOWE"
+    )
+
+
+def test_shell_diagnostics_enrich_requires_localized_panel_title() -> None:
+    """Unresolved MAINMENU_* titles must not silently match localized panel paths.
+
+    Live bootstrap used bare ``routes`` i18n for diagnostics while panel groups used
+    ``_panel_title_i18n`` — enrichment then left PARAM_219 without ``menu_key`` and
+    group-by-menu hid the Strefy czasowe child device. Bootstrap must localize both.
+    """
+    diagnostics = [
+        {
+            "title": "MAINMENU_STREFY_CZASOWE",
+            "panel_title": "MAINMENU_STREFY_CZASOWE",
+            "name": "MAINMENU_STREFY_CZASOWE",
+            "path": "timezones",
+            "accepted": True,
+            "panel_shell": True,
+        }
+    ]
+    symbol_routes: dict[str, list[dict[str, Any]]] = {}
+    _enrich_symbol_routes_from_shell_diagnostics(
+        {"PARAM_219": "Strefy czasowe"},
+        symbol_routes,
+        diagnostics,
+    )
+    assert symbol_routes == {}
 
 
 def test_shell_diagnostics_skip_existing_route_meta() -> None:
