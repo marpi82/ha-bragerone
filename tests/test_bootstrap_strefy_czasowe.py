@@ -33,6 +33,89 @@ _FIXTURE = (
 )
 
 
+def test_shell_diagnostics_skips_blank_titles() -> None:
+    """Accepted shell rows without panel/title text are ignored."""
+    diagnostics = [
+        {
+            "title": "",
+            "panel_title": "   ",
+            "name": "MAINMENU_X",
+            "path": "x",
+            "accepted": True,
+            "panel_shell": True,
+        }
+    ]
+    symbol_routes: dict[str, list[dict[str, Any]]] = {}
+    _enrich_symbol_routes_from_shell_diagnostics({"PARAM_1": "Anything"}, symbol_routes, diagnostics)
+    assert symbol_routes == {}
+
+
+def test_shell_diagnostics_indexes_title_when_panel_title_missing() -> None:
+    """Shell rows without panel_title still index under ``title``."""
+    diagnostics = [
+        {
+            "title": "Strefy czasowe",
+            "panel_title": "",
+            "name": "MAINMENU_STREFY_CZASOWE",
+            "path": "timezones",
+            "accepted": True,
+            "panel_shell": True,
+        }
+    ]
+    symbol_routes: dict[str, list[dict[str, Any]]] = {}
+    _enrich_symbol_routes_from_shell_diagnostics({"PARAM_177": "Strefy czasowe"}, symbol_routes, diagnostics)
+    assert symbol_routes["PARAM_177"][0]["path"] == "timezones"
+
+
+def test_route_dep_index_skips_routes_without_name_or_path() -> None:
+    """Routes with blank name and path are omitted from the dep index."""
+    menu = SimpleNamespace(
+        routes=[
+            SimpleNamespace(
+                name="",
+                path="",
+                meta=None,
+                children=[],
+                component=None,
+            )
+        ]
+    )
+    assert _route_dep_index_from_menu(menu) == {}
+
+
+def test_route_visibility_deps_handles_payload_edge_cases() -> None:
+    """Non-mapping payloads and malformed status paths contribute no deps."""
+    routes = [{"name": "MAINMENU_X", "path": "x"}]
+    dep_index: dict[tuple[str, str], list[str]] = {}
+    assert _route_visibility_deps_for_symbol(routes, dep_index, payload=None, flat_values={}) == []
+    assert (
+        _route_visibility_deps_for_symbol(
+            routes,
+            dep_index,
+            payload={"mapping": "bad"},
+            flat_values={},
+        )
+        == []
+    )
+    assert (
+        _route_visibility_deps_for_symbol(
+            routes,
+            dep_index,
+            payload={"mapping": {"paths": {"status": [{"group": "P6", "use": "s", "number": "x"}]}}},
+            flat_values={},
+        )
+        == []
+    )
+
+
+def test_primary_route_identity_skips_blank_entries() -> None:
+    """Blank route entries are skipped until a usable name/path appears."""
+    assert _primary_route_identity([{"name": "", "path": ""}, {"name": "MAINMENU_X", "path": ""}]) == (
+        "MAINMENU_X",
+        "",
+    )
+
+
 def test_shell_diagnostics_skips_non_shell_and_rejected_rows() -> None:
     """Shell enrichment ignores non-shell and rejected diagnostics rows."""
     diagnostics = [

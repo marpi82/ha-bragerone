@@ -26,6 +26,7 @@ from custom_components.habragerone.runtime import (  # noqa: E402
     _activity_value_scalar,
     _alarm_name_helpers,
     _extract_activity_rows,
+    _extract_alarm_rows,
     _fetch_alarms_chunk_source,
     _resolve_activity_display_value,
     _resolve_activity_i18n_token,
@@ -765,3 +766,224 @@ async def test_fetch_alarms_chunk_source_scans_assets_and_rejects_payload_type()
 
     source = await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=_get_bytes))
     assert source is None
+
+
+@pytest.mark.asyncio
+async def test_load_alarm_name_maps_partial_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Alarm name loading covers non-callable/empty/non-mapping branches."""
+    catalog = types.SimpleNamespace(
+        get_i18n="not-callable",
+        _idx=types.SimpleNamespace(find_asset_for_basename=lambda _n: None, assets_by_basename={}),
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog,
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._alarm_name_helpers",
+        lambda: (None, None),
+    )
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.language = "en"
+    await runtime._load_alarm_name_maps()
+    assert runtime._alarm_names == {}
+
+    catalog2 = types.SimpleNamespace(
+        get_i18n=AsyncMock(return_value="not-a-mapping"),
+        _idx=types.SimpleNamespace(find_asset_for_basename=lambda _n: None, assets_by_basename={}),
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog2,
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._alarm_name_helpers",
+        lambda: (lambda _src: "not-dict", None),
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._fetch_alarms_chunk_source",
+        AsyncMock(return_value=b"source"),
+    )
+    runtime2, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime2.language = "en"
+    await runtime2._load_alarm_name_maps()
+    assert runtime2._alarm_names == {}
+
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._fetch_alarms_chunk_source",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._alarm_name_helpers",
+        lambda: (lambda _src: {38: "ERROR_X"}, None),
+    )
+    runtime3, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime3.language = "en"
+    await runtime3._load_alarm_name_maps()
+    assert runtime3._alarm_names == {}
+
+
+@pytest.mark.asyncio
+async def test_load_activity_assets_partial_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Activity chrome loading covers non-mapping / blank / non-string branches."""
+    catalog = types.SimpleNamespace(
+        get_i18n=AsyncMock(
+            side_effect=[
+                "not-a-mapping",
+                "also-not-mapping",
+            ]
+        )
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog,
+    )
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.language = "en"
+    await runtime._load_activity_assets()
+    assert runtime._activity_index_label is None
+    assert runtime._activity_state_i18n == {}
+
+    catalog2 = types.SimpleNamespace(
+        get_i18n=AsyncMock(
+            side_effect=[
+                {"activity": "bad"},
+                {"state": "bad"},
+            ]
+        )
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog2,
+    )
+    runtime2, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime2.language = "en"
+    await runtime2._load_activity_assets()
+    assert runtime2._activity_index_label is None
+
+    catalog3 = types.SimpleNamespace(
+        get_i18n=AsyncMock(
+            side_effect=[
+                {"activity": {"index": "   "}},
+                {"state": {1: "x", "ok": "  ", "good": "Done"}},
+            ]
+        )
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog3,
+    )
+    runtime3, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime3.language = "en"
+    await runtime3._load_activity_assets()
+    assert runtime3._activity_index_label is None
+    assert runtime3._activity_state_i18n == {"good": "Done"}
+
+
+@pytest.mark.asyncio
+async def test_normalize_activity_row_state_label_requires_string() -> None:
+    """Non-string state map values leave ``state`` unset."""
+    runtime, *_rest = make_runtime()
+    runtime._activity_state_i18n = {"ok": 123}  # type: ignore[assignment]
+    row = await runtime._normalize_activity_row(
+        {"id": 1, "state": "ok"},
+        default_devid="DEV1",
+        resolver=None,
+    )
+    assert row["state"] is None
+
+
+def test_extract_activity_and_alarm_rows_nested_non_list_data() -> None:
+    """Nested ``{data: ...}`` payloads require a list data field."""
+    assert _extract_activity_rows((200, {"activities": {"data": "bad"}})) == []
+    assert _extract_alarm_rows((200, {"alarms": {"data": "bad"}})) == []
+
+
+def test_activity_row_devid_rejects_non_string_module_devid() -> None:
+    """Module objects without a string devid fall back to the default."""
+    assert _activity_row_devid({"module": {"devid": 12}}, default_devid="DEV1") == "DEV1"
+
+
+def test_activity_value_scalar_nested_none_continues() -> None:
+    """Nested maps without a scalar keep searching then return None."""
+    assert _activity_value_scalar({"a": {"b": {}}, "c": {"d": None}}) is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_activity_display_value_without_mapping_label_hook() -> None:
+    """Missing ``_unit_mapping_value_label`` falls through to unit table lookup."""
+    resolver = SimpleNamespace(
+        resolve_unit=AsyncMock(return_value={"1": "units.one"}),
+        _resolve_i18n_token=AsyncMock(return_value=None),
+    )
+    assert await _resolve_activity_display_value(1, unit_code=1, resolver=resolver) == "units.one"
+
+
+@pytest.mark.asyncio
+async def test_fetch_alarms_chunk_without_find_basename() -> None:
+    """Chunk fetch can scan assets when ``find_asset_for_basename`` is absent."""
+    asset = types.SimpleNamespace(url="https://example/Alarms-x.js")
+    catalog = types.SimpleNamespace(
+        _idx=types.SimpleNamespace(
+            find_asset_for_basename=None,
+            assets_by_basename={"menu": [], "AlarmsEmpty": [], "AlarmsChunk": [asset]},
+        )
+    )
+
+    async def _get_bytes(_url: str) -> bytes:
+        return b'1:"ERROR_X"'
+
+    source = await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=_get_bytes))
+    assert source == b'1:"ERROR_X"'
+
+
+@pytest.mark.asyncio
+async def test_fetch_alarms_chunk_skips_non_list_alarm_basenames() -> None:
+    """Basename scan ignores alarms keys whose refs are empty or not lists."""
+    catalog = types.SimpleNamespace(
+        _idx=types.SimpleNamespace(
+            find_asset_for_basename=None,
+            assets_by_basename={"AlarmsBroken": "nope", "alarmsEmpty": []},
+        )
+    )
+    assert await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=AsyncMock())) is None
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_alarms_task_ownership_race() -> None:
+    """Finally cleanup skips popping when another task replaced the slot."""
+    from tests.test_platform_alarms import _AlarmsApi
+
+    api = _AlarmsApi()
+    runtime, *_rest = make_runtime(api=api, modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.language = "en"
+    runtime._alarm_names_loaded = True
+
+    original_impl = BragerRuntime._async_refresh_alarms_impl
+
+    async def _hijack(self: BragerRuntime, devid_key: str) -> None:
+        runtime._alarms_refresh_tasks[devid_key] = asyncio.create_task(asyncio.sleep(0))
+        await original_impl(self, devid_key)
+
+    with patch.object(BragerRuntime, "_async_refresh_alarms_impl", _hijack):
+        await runtime.async_refresh_alarms("DEV1")
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_activity_task_ownership_race() -> None:
+    """Activity finally cleanup skips popping when another task owns the slot."""
+    from tests.test_platform_activity import _ActivityApi
+
+    api = _ActivityApi()
+    runtime, *_rest = make_runtime(api=api, modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime._activity_assets_loaded = True
+    runtime._activity_index_label = "Activity"
+
+    original_impl = BragerRuntime._async_refresh_activity_impl
+
+    async def _hijack(self: BragerRuntime, devid_key: str) -> None:
+        runtime._activity_refresh_tasks[devid_key] = asyncio.create_task(asyncio.sleep(0))
+        await original_impl(self, devid_key)
+
+    with patch.object(BragerRuntime, "_async_refresh_activity_impl", _hijack):
+        await runtime.async_refresh_activity("DEV1")

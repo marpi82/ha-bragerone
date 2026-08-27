@@ -213,6 +213,49 @@ async def test_iter_and_setup_create_alarm_sensors(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
+async def test_alarm_sensor_remove_with_none_unsubscribers(hass: HomeAssistant) -> None:
+    """Removal is a no-op when unsubscribe callbacks were never attached."""
+    runtime, _api = _runtime_with_alarms()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerAlarmsCurrentSensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta={"name": "Boiler"},
+        name="Current alarms",
+    )
+    entity.hass = hass
+    entity._unsubscribe_feed = None
+    entity._unsubscribe_connectivity = None
+    await entity.async_will_remove_from_hass()
+    assert entity._unsubscribe_feed is None
+    assert entity._unsubscribe_connectivity is None
+
+
+@pytest.mark.asyncio
+async def test_alarm_sensor_connectivity_skips_refresh_when_offline(hass: HomeAssistant) -> None:
+    """Offline / unchanged connectivity flips must not refresh alarms."""
+    runtime, api = _runtime_with_alarms()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerAlarmsCurrentSensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta={"name": "Boiler"},
+        name="Current alarms",
+    )
+    entity.hass = hass
+    entity.async_write_ha_state = lambda: None  # type: ignore[method-assign]
+    entity.async_schedule_update_ha_state = lambda *a, **k: None  # type: ignore[method-assign]
+    await entity.async_added_to_hass()
+    before = api.current_calls
+    entity._on_connectivity("DEV1", False, True)
+    entity._on_connectivity("DEV1", True, False)
+    await hass.async_block_till_done()
+    assert api.current_calls == before
+
+
+@pytest.mark.asyncio
 async def test_alarm_sensor_connectivity_ignores_other_devid(hass: HomeAssistant) -> None:
     """Connectivity callbacks for other modules do not trigger alarm refresh."""
     runtime, api = _runtime_with_alarms()

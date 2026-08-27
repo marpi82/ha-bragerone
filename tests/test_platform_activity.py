@@ -225,6 +225,48 @@ async def test_activity_sensor_refreshes_when_module_comes_online(hass: HomeAssi
 
 
 @pytest.mark.asyncio
+async def test_activity_sensor_remove_with_none_unsubscribers(hass: HomeAssistant) -> None:
+    """Removal is a no-op when unsubscribe callbacks were never attached."""
+    runtime, _api = _runtime_with_activity()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerActivitySensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta={"name": "Boiler"},
+        name="Activity",
+    )
+    entity.hass = hass
+    entity._unsubscribe_feed = None
+    entity._unsubscribe_connectivity = None
+    await entity.async_will_remove_from_hass()
+    assert entity._unsubscribe_feed is None
+
+
+@pytest.mark.asyncio
+async def test_activity_sensor_connectivity_skips_refresh_when_offline(hass: HomeAssistant) -> None:
+    """Offline / unchanged connectivity flips must not refresh activity."""
+    runtime, api = _runtime_with_activity()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerActivitySensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta={"name": "Boiler"},
+        name="Activity",
+    )
+    entity.hass = hass
+    entity.async_write_ha_state = lambda: None  # type: ignore[method-assign]
+    entity.async_schedule_update_ha_state = lambda *a, **k: None  # type: ignore[method-assign]
+    await entity.async_added_to_hass()
+    before = api.calls
+    entity._on_connectivity("DEV1", False, True)
+    entity._on_connectivity("DEV1", True, False)
+    await hass.async_block_till_done()
+    assert api.calls == before
+
+
+@pytest.mark.asyncio
 async def test_activity_sensor_connectivity_ignores_other_devid(hass: HomeAssistant) -> None:
     """Connectivity callbacks for other modules do not trigger activity refresh."""
     runtime, api = _runtime_with_activity()
