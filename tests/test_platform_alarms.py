@@ -213,6 +213,41 @@ async def test_iter_and_setup_create_alarm_sensors(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
+async def test_alarm_sensor_connectivity_ignores_other_devid(hass: HomeAssistant) -> None:
+    """Connectivity callbacks for other modules do not trigger alarm refresh."""
+    runtime, api = _runtime_with_alarms()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerAlarmsCurrentSensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta={"name": "Boiler"},
+        name="Current alarms",
+    )
+    entity.hass = hass
+    entity.async_write_ha_state = lambda: None  # type: ignore[method-assign]
+    entity.async_schedule_update_ha_state = lambda *a, **k: None  # type: ignore[method-assign]
+    await entity.async_added_to_hass()
+    entity._on_connectivity("OTHER", True, True)
+    await hass.async_block_till_done()
+    assert api.current_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_iter_alarm_feed_entities_fail_closed_without_modules_meta(hass: HomeAssistant) -> None:
+    """No entities when both entry and runtime lack module metadata."""
+    from tests.test_platform_alarms import _AlarmsApi
+
+    api = _AlarmsApi()
+    runtime, *_rest = make_runtime(api=api, modules_meta={})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_MODULES_META: {}})
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    runtime._alarm_chrome_labels = {"currentAlarms": "Current", "historyAlarms": "History"}
+    assert await iter_alarm_feed_entities(hass, entry, runtime) == []
+
+
+@pytest.mark.asyncio
 async def test_alarm_sensor_refreshes_when_module_comes_online(hass: HomeAssistant) -> None:
     runtime, api = _runtime_with_alarms()
     entry = register_config_entry(hass, runtime=runtime, descriptors=[])

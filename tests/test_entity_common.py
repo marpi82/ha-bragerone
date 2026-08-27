@@ -62,6 +62,18 @@ def test_descriptor_enabled_by_default_coerces_truthy_values() -> None:
     assert descriptor_enabled_by_default({"enabled_by_default": 0}) is False
 
 
+def test_attach_route_visibility_listener_requires_symbol() -> None:
+    """UI-route descriptors without a symbol do not subscribe."""
+    runtime, *_rest = make_runtime()
+    unsub = attach_route_visibility_listener(
+        runtime,
+        devid="dev1",
+        descriptor={CONF_UI_ROUTE_SYMBOL: True, "symbol": "   "},
+        schedule_update=lambda: None,
+    )
+    assert unsub is None
+
+
 def test_attach_route_visibility_listener_ignores_non_ui_route_descriptor() -> None:
     """Non UI-route entities do not subscribe to route visibility fan-out."""
     runtime, *_rest = make_runtime()

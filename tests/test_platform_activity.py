@@ -225,6 +225,42 @@ async def test_activity_sensor_refreshes_when_module_comes_online(hass: HomeAssi
 
 
 @pytest.mark.asyncio
+async def test_activity_sensor_connectivity_ignores_other_devid(hass: HomeAssistant) -> None:
+    """Connectivity callbacks for other modules do not trigger activity refresh."""
+    runtime, api = _runtime_with_activity()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerActivitySensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta={"name": "Boiler"},
+        name="Activity",
+    )
+    entity.hass = hass
+    entity.async_write_ha_state = lambda: None  # type: ignore[method-assign]
+    entity.async_schedule_update_ha_state = lambda *a, **k: None  # type: ignore[method-assign]
+    await entity.async_added_to_hass()
+    entity._on_connectivity("OTHER", True, True)
+    await hass.async_block_till_done()
+    assert api.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_iter_activity_feed_entities_fail_closed_without_modules_meta(hass: HomeAssistant) -> None:
+    """No activity entities when both entry and runtime lack module metadata."""
+    from tests.test_platform_activity import _ActivityApi
+
+    api = _ActivityApi()
+    runtime, *_rest = make_runtime(api=api, modules_meta={})
+    runtime._activity_index_label = "Activity"
+    runtime._activity_assets_loaded = True
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_MODULES_META: {}})
+    entry = hass.config_entries.async_get_entry(entry.entry_id) or entry
+    assert await iter_activity_feed_entities(hass, entry, runtime) == []
+
+
+@pytest.mark.asyncio
 async def test_activity_sensor_event_feed_updates_state(hass: HomeAssistant) -> None:
     runtime, _api = _runtime_with_activity()
     entry = register_config_entry(hass, runtime=runtime, descriptors=[])
