@@ -77,7 +77,6 @@ class BragerRuntime:
     _symbol_route_visible: dict[str, bool] = field(default_factory=dict)
     _symbol_route_lookup: dict[str, tuple[str, str, str, str]] = field(default_factory=dict)
     _route_visibility_dep_to_symbols: dict[str, set[str]] = field(default_factory=dict)
-    _route_visibility_symbol_to_devid: dict[str, str] = field(default_factory=dict)
     _menu_cache: dict[str, Any] = field(default_factory=dict)
 
     async def start(self) -> None:
@@ -137,7 +136,6 @@ class BragerRuntime:
         """Index UI-route symbols and their visibility dependency keys (#192)."""
         self._route_visibility_dep_to_symbols.clear()
         self._symbol_route_lookup.clear()
-        self._route_visibility_symbol_to_devid.clear()
         self._symbol_route_visible.clear()
         for item in descriptors:
             if not isinstance(item, Mapping):
@@ -152,7 +150,6 @@ class BragerRuntime:
             route_name = str(item.get(CONF_ROUTE_VISIBILITY_NAME) or "").strip()
             route_path = str(item.get(CONF_ROUTE_VISIBILITY_PATH) or "").strip()
             self._symbol_route_lookup[lookup_key] = (devid, symbol, route_name, route_path)
-            self._route_visibility_symbol_to_devid[symbol] = devid
             deps = item.get(CONF_ROUTE_VISIBILITY_DEPS)
             if isinstance(deps, list):
                 for dep in deps:
@@ -203,14 +200,25 @@ class BragerRuntime:
                 except Exception:
                     LOGGER.exception("Route visibility listener failed for %s/%s", devid, symbol)
 
+    @staticmethod
+    def _parse_device_menu_id(raw: Any) -> int | None:
+        """Coerce stored ``device_menu`` to int (bool excluded; digit strings allowed)."""
+        if isinstance(raw, int) and not isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            stripped = raw.strip()
+            if stripped.isdigit():
+                return int(stripped)
+        return None
+
     async def _menu_for_devid(self, devid: str, resolver: ParamResolver) -> Any | None:
         if devid in self._menu_cache:
             return self._menu_cache[devid]
         meta = self.modules_meta.get(devid)
         if not isinstance(meta, Mapping):
             return None
-        device_menu = meta.get("device_menu")
-        if not isinstance(device_menu, int):
+        device_menu = self._parse_device_menu_id(meta.get("device_menu"))
+        if device_menu is None:
             return None
         perms_raw = meta.get("permissions")
         permissions = [str(perm) for perm in perms_raw] if isinstance(perms_raw, list) else []

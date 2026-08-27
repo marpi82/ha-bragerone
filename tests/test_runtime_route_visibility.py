@@ -163,3 +163,41 @@ async def test_menu_for_devid_uses_cached_permissions() -> None:
 
     assert menu_first is menu_second
     resolver.get_module_menu.assert_awaited_once_with(device_menu=0, permissions=["DISPLAY_PARAMETER_LEVEL_1"])
+
+
+@pytest.mark.asyncio
+async def test_menu_for_devid_coerces_digit_string_device_menu() -> None:
+    """Digit-string device_menu values from stored modules_meta still fetch a menu."""
+    runtime = _runtime_stub()
+    runtime.modules_meta["dev1"] = {"device_menu": "101", "name": "mod", "permissions": ["DISPLAY_PARAMETER_LEVEL_1"]}
+    route = SimpleNamespace(name="MAINMENU_STREFY_CZASOWE", path="timezones", meta=None, children=[])
+    resolver = _attach_menu_resolver(runtime, routes=[route])
+
+    menu = await runtime._menu_for_devid("dev1", resolver)
+
+    assert menu is not None
+    resolver.get_module_menu.assert_awaited_once_with(device_menu=101, permissions=["DISPLAY_PARAMETER_LEVEL_1"])
+
+
+@pytest.mark.asyncio
+async def test_menu_for_devid_coerces_padded_digit_string_device_menu() -> None:
+    """Whitespace-padded digit strings coerce to int for menu lookup."""
+    runtime = _runtime_stub()
+    runtime.modules_meta["dev1"] = {"device_menu": " 0 ", "permissions": []}
+    route = SimpleNamespace(name="MAINMENU_STREFY_CZASOWE", path="timezones", meta=None, children=[])
+    resolver = _attach_menu_resolver(runtime, routes=[route])
+
+    menu = await runtime._menu_for_devid("dev1", resolver)
+
+    assert menu is not None
+    resolver.get_module_menu.assert_awaited_once_with(device_menu=0, permissions=[])
+
+
+def test_parse_device_menu_id_rejects_non_digit_values() -> None:
+    """Non-int, non-digit-string device_menu values are rejected."""
+    assert BragerRuntime._parse_device_menu_id("bad") is None
+    assert BragerRuntime._parse_device_menu_id("M1") is None
+    assert BragerRuntime._parse_device_menu_id(None) is None
+    assert BragerRuntime._parse_device_menu_id(True) is None
+    assert BragerRuntime._parse_device_menu_id(0) == 0
+    assert BragerRuntime._parse_device_menu_id("42") == 42
