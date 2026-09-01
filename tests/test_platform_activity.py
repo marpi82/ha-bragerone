@@ -484,6 +484,19 @@ async def test_async_refresh_activity_marks_unavailable_on_http_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_async_refresh_activity_marks_unavailable_on_app_status_false() -> None:
+    """HTTP 200 with application ``status: false`` must not look like an empty feed."""
+    runtime, api = _runtime_with_activity()
+
+    async def app_false(*_a: object, **_k: object) -> tuple[int, Any]:
+        return 200, {"status": False, "activities": []}
+
+    api.modules_activity = app_false  # type: ignore[method-assign]
+    await runtime.async_refresh_activity("DEV1")
+    assert runtime.activity_feed_ready("DEV1") is False
+
+
+@pytest.mark.asyncio
 async def test_activity_sensor_unavailable_when_feed_not_loaded(hass: HomeAssistant) -> None:
     """Failed REST refresh must not look like a successful empty activity list."""
     runtime, _api = _runtime_with_activity()

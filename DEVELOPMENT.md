@@ -68,7 +68,7 @@ Per-module diagnostic sensors expose SPA **current** and **history** alarms (`al
 
 ### Module activity sensors (#223)
 
-Per-module diagnostic sensors expose the SPA **Activity** feed (`routes.activity.index`) with state = loaded row count (first page, SPA default `limit=20`) and an `activities` attribute list (`id`, `devid`, `parameter`, `parameter_key`, `value`, `value_raw`, `prev_value`, `prev_value_raw`, `state`, `state_key`, `created_at`, `created_by`). Labels come from SPA i18n (`activity.state.*`, parameters/units via `ParamResolver` / catalog) — never hardcoded PL/EN. Lists refresh on platform setup and when a module connectivity flip goes online — no blind polling. Soft-depends on `py-bragerone` `modules_activity` (library PR #338); older pins skip entity creation.
+Per-module diagnostic sensors expose the SPA **Activity** feed (`routes.activity.index`) with state = loaded row count (first page, SPA default `limit=20`) and an `activities` attribute list (`id`, `devid`, `parameter`, `parameter_key`, `value`, `value_raw`, `prev_value`, `prev_value_raw`, `state`, `state_key`, `created_at`, `created_by`). Labels come from SPA i18n (`activity.state.*`, parameters/units via `ParamResolver` / catalog) — never hardcoded PL/EN. Lists refresh on platform setup, when a module connectivity flip goes online, and after successful Home Assistant writes (SPA logs parameter changes) — no blind polling. Soft-depends on `py-bragerone` `modules_activity` (library PR #338); older pins skip entity creation.
 
 
 ### Publishing Releases

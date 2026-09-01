@@ -951,8 +951,11 @@ async def test_fetch_alarms_chunk_skips_non_list_alarm_basenames() -> None:
 
 
 def test_module_events_rest_ok() -> None:
-    """REST tuple guard accepts only 200/204 success tuples."""
+    """REST tuple guard accepts only 200/204 success tuples with app-level status."""
     assert _module_events_rest_ok((200, {"alarms": []})) is True
+    assert _module_events_rest_ok((200, {"status": True, "alarms": []})) is True
+    assert _module_events_rest_ok((200, {"status": False, "alarms": []})) is False
+    assert _module_events_rest_ok((200, {"status": False, "activities": []})) is False
     assert _module_events_rest_ok((204, None)) is True
     assert _module_events_rest_ok((401, {})) is False
     assert _module_events_rest_ok(()) is False

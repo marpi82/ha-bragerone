@@ -1276,7 +1276,13 @@ def _module_events_rest_ok(result: Any) -> bool:
     if not isinstance(result, tuple) or not result:
         return False
     status = result[0]
-    return status in (200, 204)
+    if status not in (200, 204):
+        return False
+    if len(result) >= 2:
+        payload = result[1]
+        if isinstance(payload, Mapping) and payload.get("status") is False:
+            return False
+    return True
 
 
 def _extract_activity_rows(result: Any) -> list[Mapping[str, Any]]:
