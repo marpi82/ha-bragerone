@@ -48,6 +48,27 @@ CI uploads `coverage.xml` to Codecov (skipped for Dependabot/Renovate and fork P
 
 Issue and PR templates live under `.github/ISSUE_TEMPLATE/` and `.github/PULL_REQUEST_TEMPLATE.md`. Optional Copilot code review is configured in the GitHub repo settings (not via a workflow).
 
+### Diagnostics: obfuscated `minValue` / `maxValue` strings
+
+Some SPA factory mappings still emit unevaluated expressions in diagnostics dumps
+(for example `_0x…?.['minValue']||[{group,number,use}]`). Everyday Number/Select
+`min`/`max` already come from ParamStore channels `n`/`x` on the primary register,
+so users usually see correct limits.
+
+Catalog-side extraction of those `||` fallbacks is included in the current
+`py-bragerone==2026.9.0` pin ([py-bragerone#329](https://github.com/marpi82/py-bragerone/issues/329)).
+No Home Assistant code change is required for that parser fix.
+
+### Module alarms sensors (#222)
+
+Per-module diagnostic sensors expose SPA **current** and **history** alarms (`alarm.currentAlarms` / `alarm.historyAlarms`) with state = item count and an `alarms` attribute list (`id`, `name`, `devid`, `created_at`, `finished_at`). Labels come from SPA i18n / `AlarmName` via `pybragerone` (never hardcoded PL/EN). Lists refresh on platform setup and when a module connectivity flip goes online — no blind polling. Requires a `py-bragerone` build that provides `modules_alarms` / `modules_alarms_history` (see library PR #338); older pins skip entity creation.
+
+
+### Module activity sensors (#223)
+
+Per-module diagnostic sensors expose the SPA **Activity** feed (`routes.activity.index`) with state = loaded row count (first page, SPA default `limit=20`) and an `activities` attribute list (`id`, `devid`, `parameter`, `parameter_key`, `value`, `value_raw`, `prev_value`, `prev_value_raw`, `state`, `state_key`, `created_at`, `created_by`). Labels come from SPA i18n (`activity.state.*`, parameters/units via `ParamResolver` / catalog) — never hardcoded PL/EN. Lists refresh on platform setup, when a module connectivity flip goes online, and after successful Home Assistant writes (SPA logs parameter changes) — no blind polling. Soft-depends on `py-bragerone` `modules_activity` (library PR #338); older pins skip entity creation.
+
+
 ### Publishing Releases
 
 Do **not** cut a stable HACS tag until the same version has been smoke-tested as a HACS **pre-release** on a live Home Assistant install. Tooling already supports this (`scripts/release.sh` + `.github/workflows/release.yml`); skipping the beta/rc step is a process failure, not a tooling gap.

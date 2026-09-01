@@ -16,7 +16,7 @@ from custom_components.habragerone.bootstrap import (  # noqa: E402
     _normalize_filter_mode,
     async_build_bootstrap_payload,
 )
-from custom_components.habragerone.const import DEFAULT_ENTITY_FILTER_MODE  # noqa: E402
+from custom_components.habragerone.const import CONF_UI_ROUTE_SYMBOL, DEFAULT_ENTITY_FILTER_MODE  # noqa: E402
 
 
 def _param(token: str) -> SimpleNamespace:
@@ -25,6 +25,30 @@ def _param(token: str) -> SimpleNamespace:
 
 def _container(*tokens: str) -> SimpleNamespace:
     return SimpleNamespace(read=[_param(token) for token in tokens], write=[], status=[], special=[])
+
+
+class _BootstrapResolverRouteStubMixin:
+    """Static ParamResolver hooks used during bootstrap route metadata (#192)."""
+
+    @staticmethod
+    def _iter_routes_with_ancestors(routes: object) -> list[tuple[object, tuple[object, ...]]]:
+        _ = routes
+        return []
+
+    @staticmethod
+    def _status_paths_for_visibility(mapping: object, flat_values: object) -> list[dict[str, object]]:
+        _ = mapping, flat_values
+        return []
+
+    @staticmethod
+    def route_visibility_dependency_keys(route: object, ancestors: object = ()) -> list[str]:
+        _ = route, ancestors
+        return []
+
+    @staticmethod
+    def panel_route_diagnostics_from_menu(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        _ = args, kwargs
+        return []
 
 
 def test_collect_symbols_from_menu_walks_nested_routes() -> None:
@@ -64,7 +88,7 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 42}
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._current_devid = ""
 
@@ -79,8 +103,9 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = permissions, all_panels, web_ui_only
+            _ = permissions, all_panels, web_ui_only, flat_values
             return {"panel": [f"SYM_{device_menu}"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
@@ -216,7 +241,7 @@ def test_async_build_bootstrap_payload_includes_non_panel_actions_disabled_by_de
                 ]
             }
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._assets = _FakeAssets()
 
@@ -232,8 +257,9 @@ def test_async_build_bootstrap_payload_includes_non_panel_actions_disabled_by_de
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels, web_ui_only
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
             return {"Kocioł": ["SYM_PANEL"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
@@ -356,7 +382,7 @@ def test_async_build_bootstrap_payload_enabled_default_edge_cases(
                 ]
             }
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._assets = _FakeAssets()
             self._describe_calls = 0
@@ -373,8 +399,9 @@ def test_async_build_bootstrap_payload_enabled_default_edge_cases(
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels
+            _ = device_menu, permissions, all_panels, flat_values
             # Full permission set includes installer-only symbols; everyday UI only sees SYM_UI.
             if web_ui_only:
                 return {"Kocioł": ["SYM_UI", "SYM_VIS_FAIL", "SYM_RESOLVE_FAIL"]}
@@ -529,7 +556,7 @@ def test_async_build_bootstrap_payload_skips_extra_write_without_command_rule(
                 ]
             }
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._assets = _FakeAssets()
 
@@ -545,8 +572,9 @@ def test_async_build_bootstrap_payload_skips_extra_write_without_command_rule(
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels, web_ui_only
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
             return {"Kocioł": ["SYM_PANEL"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
@@ -677,7 +705,7 @@ def test_async_build_bootstrap_payload_skips_extra_with_non_action_command_name(
                 ]
             }
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._assets = _FakeAssets()
 
@@ -693,8 +721,9 @@ def test_async_build_bootstrap_payload_skips_extra_with_non_action_command_name(
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels, web_ui_only
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
             return {"Kocioł": ["SYM_PANEL"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
@@ -801,7 +830,7 @@ def test_async_build_bootstrap_payload_accepts_sample_cap(
 
     symbols_all = [f"SYM_{idx}" for idx in range(510)]
 
-    class _FakeResolver:
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
         def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
             _ = api, store, lang
@@ -814,8 +843,9 @@ def test_async_build_bootstrap_payload_accepts_sample_cap(
             permissions: list[str] | None,
             all_panels: bool,
             web_ui_only: bool = False,
+            flat_values: object | None = None,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels, web_ui_only
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
             return {"Kocioł": list(symbols_all)}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
@@ -897,3 +927,126 @@ def test_async_build_bootstrap_payload_accepts_sample_cap(
     accepted_debug = module_debug.get("accepted_debug")
     assert isinstance(accepted_debug, list)
     assert len(accepted_debug) == 500
+
+
+def test_ui_route_index_ignores_bootstrap_flat_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    """UI-route indexing stays structural; prime dropdown values only affect enabled_by_default."""
+    structural_calls: list[tuple[bool, bool]] = []
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P6.v219": 0}
+
+    class _FakeAssets:
+        async def get_module_menu(self, *, device_menu: str, permissions: list[str] | None) -> dict[str, object]:
+            _ = device_menu, permissions
+            return {"routes": []}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        def __init__(self) -> None:
+            self._assets = _FakeAssets()
+
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+            use_store_flat_values: bool = True,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, flat_values
+            structural_calls.append((web_ui_only, use_store_flat_values))
+            return {"Panel": ["SYM_DROPDOWN"]} if not use_store_flat_values else {}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                symbol: {
+                    "label": symbol,
+                    "pool": "P6",
+                    "chan": "v",
+                    "idx": 219,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+                for symbol in symbols
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=1, value_label="1")
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return False, {}
+
+        def panel_route_diagnostics_from_menu(self, *args: object, **kwargs: object) -> list[dict[str, object]]:
+            _ = args, kwargs
+            return []
+
+        class _I18n:
+            async def get_namespace(self, _name: str) -> dict[str, object]:
+                return {}
+
+        _i18n = _I18n()
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+
+    descriptor = next(item for item in payload["entity_descriptors"] if item["symbol"] == "SYM_DROPDOWN")
+    assert structural_calls == [(False, False), (True, False)]
+    assert descriptor[CONF_UI_ROUTE_SYMBOL] is True
+    assert descriptor["enabled_by_default"] is False

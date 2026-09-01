@@ -24,6 +24,7 @@ from pybragerone.models.events import ParamUpdate
 
 from .const import DOMAIN
 from .entity_common import (
+    attach_route_visibility_listener,
     descriptor_current_raw_value,
     descriptor_display_name,
     descriptor_enabled_by_default,
@@ -36,6 +37,7 @@ from .entity_common import (
     get_runtime_and_descriptors,
     record_platform_entity_stats,
 )
+from .event_feeds import iter_activity_feed_entities, iter_alarm_feed_entities
 from .runtime import BragerRuntime
 from .status_rules import resolve_rule_display_value
 
@@ -47,13 +49,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         return
     runtime, descriptors = runtime_and_descriptors
 
-    entities = [BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor) for descriptor in descriptors]
+    entities: list[SensorEntity] = [
+        BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor) for descriptor in descriptors
+    ]
+    alarm_entities = await iter_alarm_feed_entities(hass, entry, runtime)
+    activity_entities = await iter_activity_feed_entities(hass, entry, runtime)
+    entities.extend(alarm_entities)
+    entities.extend(activity_entities)
+    supplemental_count = len(alarm_entities) + len(activity_entities)
     record_platform_entity_stats(
         hass,
         entry,
         platform="sensor",
         descriptor_count=len(descriptors),
         created_count=len(entities),
+        supplemental_count=supplemental_count,
     )
     async_add_entities(entities)
 
@@ -98,11 +108,18 @@ class BragerSymbolSensor(SensorEntity):
 
         self._unsubscribe_listener: Any = None
         self._unsubscribe_connectivity: Any = None
+        self._unsubscribe_route_visibility: Any = None
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to push updates when entity is added to HA."""
         self._unsubscribe_listener = self._runtime.add_listener(self._on_runtime_update)
         self._unsubscribe_connectivity = self._runtime.add_connectivity_listener(self._on_connectivity)
+        self._unsubscribe_route_visibility = attach_route_visibility_listener(
+            self._runtime,
+            devid=self._devid,
+            descriptor=self._descriptor,
+            schedule_update=lambda: self.async_schedule_update_ha_state(True),
+        )
         if self._try_apply_initial_state_sync():
             self.async_write_ha_state()
             return
@@ -118,6 +135,7 @@ class BragerSymbolSensor(SensorEntity):
             self._runtime,
             devid=self._devid,
             has_value=has_value,
+            descriptor=self._descriptor,
         )
         if raw_value is not None:
             mapped_by_unit = self._raw_to_label.get(str(raw_value))
@@ -147,6 +165,9 @@ class BragerSymbolSensor(SensorEntity):
         if callable(self._unsubscribe_connectivity):
             self._unsubscribe_connectivity()
             self._unsubscribe_connectivity = None
+        if callable(self._unsubscribe_route_visibility):
+            self._unsubscribe_route_visibility()
+            self._unsubscribe_route_visibility = None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -164,6 +185,7 @@ class BragerSymbolSensor(SensorEntity):
             self._runtime,
             devid=self._devid,
             has_value=raw_value is not None,
+            descriptor=self._descriptor,
         )
         if raw_value is None:
             return

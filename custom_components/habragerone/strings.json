@@ -27,7 +27,7 @@
           "device_grouping": "Device grouping"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module for parameters; connectivity stays on a separate module.connection child (via_device). Group by menu = child devices per stable parent menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Flat = one HA device per internet module (parameters, connectivity, alarms, activity). Group by menu = parameter entities on menu child devices (via_device); connectivity, alarms, and activity stay on the parent module device. Changing remaps device membership (automations/dashboards)."
         }
       }
     },
@@ -57,7 +57,7 @@
           "device_grouping": "Device grouping"
         },
         "data_description": {
-          "device_grouping": "Flat = one HA device per module for parameters; connectivity stays on a separate module.connection child (via_device). Group by menu = child devices per stable parent menu key (via_device). Changing remaps device membership (automations/dashboards)."
+          "device_grouping": "Flat = one HA device per internet module (parameters, connectivity, alarms, activity). Group by menu = parameter entities on menu child devices (via_device); connectivity, alarms, and activity stay on the parent module device. Changing remaps device membership (automations/dashboards)."
         }
       }
     }

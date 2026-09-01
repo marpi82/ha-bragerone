@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import slugify
 from pybragerone.models.param import ParamStore
@@ -21,6 +22,9 @@ from .const import (
     CONF_OPTIONS,
     CONF_PLATFORM,
     CONF_RAW_TO_LABEL,
+    CONF_ROUTE_VISIBILITY_DEPS,
+    CONF_UI_ROUTE_SYMBOL,
+    CONNECTION_MENU_KEY,
     DATA_ENTITY_STATS,
     DATA_RUNTIME,
     DEFAULT_DEVICE_GROUPING,
@@ -214,7 +218,35 @@ def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
                     if address is not None:
                         keys.add(address)
 
+    route_deps = descriptor.get(CONF_ROUTE_VISIBILITY_DEPS)
+    if isinstance(route_deps, list):
+        for dep in route_deps:
+            if isinstance(dep, str) and dep.strip():
+                keys.add(dep.strip())
+
     return keys
+
+
+def attach_route_visibility_listener(
+    runtime: BragerRuntime,
+    *,
+    devid: str,
+    descriptor: Mapping[str, Any],
+    schedule_update: Callable[[], None],
+) -> Callable[[], None] | None:
+    """Subscribe to SPA route visibility flips for one UI-route entity (#192)."""
+    if not bool(descriptor.get(CONF_UI_ROUTE_SYMBOL)):
+        return None
+    symbol = str(descriptor.get("symbol") or "").strip()
+    if not symbol:
+        return None
+
+    def _on_route_visibility(changed_devid: str, changed_symbol: str, _visible: bool) -> None:
+        if changed_devid != devid or changed_symbol != symbol:
+            return
+        schedule_update()
+
+    return runtime.add_route_visibility_listener(_on_route_visibility)
 
 
 def store_value_for_address(store: ParamStore, address: str) -> Any | None:
@@ -380,6 +412,33 @@ async def async_register_module_parent_devices(
         )
 
 
+async def async_remove_legacy_connection_devices(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    *,
+    devids: Iterable[str],
+) -> None:
+    """Remove empty legacy per-connection child devices after connectivity moved to parent."""
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+    for raw_devid in devids:
+        devid = str(raw_devid or "").strip()
+        if not devid:
+            continue
+        legacy_identifiers = {(DOMAIN, f"{devid}:{CONNECTION_MENU_KEY}")}
+        device = device_registry.async_get_device(identifiers=legacy_identifiers)
+        if device is None:
+            continue
+        entities = er.async_entries_for_device(
+            entity_registry,
+            device.id,
+            include_disabled_entities=True,
+        )
+        if entities:
+            continue
+        device_registry.async_remove_device(device.id)
+
+
 def device_info_from_descriptor(
     descriptor: dict[str, Any],
     *,
@@ -429,8 +488,23 @@ def module_is_reachable(runtime: BragerRuntime, devid: str) -> bool:
     return online
 
 
-def entity_is_available(runtime: BragerRuntime, *, devid: str, has_value: bool) -> bool:
-    """Combine ParamStore value presence with module cloud connectivity."""
+def entity_is_available(
+    runtime: BragerRuntime,
+    *,
+    devid: str,
+    has_value: bool,
+    descriptor: Mapping[str, Any] | None = None,
+    symbol: str | None = None,
+) -> bool:
+    """Combine value presence, module connectivity, and SPA route visibility (#192)."""
+    symbol_name = symbol
+    if descriptor is not None:
+        if bool(descriptor.get(CONF_UI_ROUTE_SYMBOL)):
+            symbol_name = str(descriptor.get("symbol") or symbol_name or "")
+            if symbol_name and not runtime.route_visible_for_symbol(devid, symbol_name):
+                return False
+    elif symbol_name and not runtime.route_visible_for_symbol(devid, symbol_name):
+        return False
     return bool(has_value) and module_is_reachable(runtime, devid)
 
 
@@ -519,6 +593,7 @@ def record_platform_entity_stats(
     platform: str,
     descriptor_count: int,
     created_count: int,
+    supplemental_count: int = 0,
 ) -> None:
     """Record per-platform entity setup statistics for diagnostics."""
     entry_data = hass.data[DOMAIN][entry.entry_id]
@@ -527,5 +602,6 @@ def record_platform_entity_stats(
     stats[platform] = {
         "descriptor_count": int(descriptor_count),
         "created_count": int(created_count),
+        "supplemental_count": int(supplemental_count),
     }
     entry_data[DATA_ENTITY_STATS] = stats

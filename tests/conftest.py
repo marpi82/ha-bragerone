@@ -50,6 +50,14 @@ def install_pybragerone_stubs() -> None:
     if getattr(install_pybragerone_stubs, "_installed", False):
         return
 
+    real_param_resolver_cls: type[Any] | None = None
+    try:
+        import pybragerone.models.param_resolver as _real_param_resolver_mod
+
+        real_param_resolver_cls = _real_param_resolver_mod.ParamResolver
+    except ImportError:
+        real_param_resolver_cls = None
+
     for module_name in list(sys.modules):
         if module_name == "pybragerone" or module_name.startswith("pybragerone."):
             del sys.modules[module_name]
@@ -175,6 +183,38 @@ def install_pybragerone_stubs() -> None:
             if float(total).is_integer():
                 return int(total)
             return total
+
+        @staticmethod
+        def panel_route_diagnostics_from_menu(*args: object, **kwargs: object) -> list[dict[str, object]]:
+            _ = args, kwargs
+            return []
+
+        @staticmethod
+        def _iter_routes_with_ancestors(routes: object) -> list[tuple[object, tuple[object, ...]]]:
+            _ = routes
+            return []
+
+        @staticmethod
+        def _status_paths_for_visibility(mapping: object, flat_values: object) -> list[dict[str, object]]:
+            _ = mapping, flat_values
+            return []
+
+        @staticmethod
+        def route_visibility_dependency_keys(route: object, ancestors: object = ()) -> list[str]:
+            _ = route, ancestors
+            return []
+
+        @staticmethod
+        def route_visibility_diagnostics(*args: object, **kwargs: object) -> tuple[bool, str]:
+            _ = args, kwargs
+            return True, "visible:default"
+
+    if real_param_resolver_cls is not None:
+        _ParamResolverStub.route_visibility_diagnostics = real_param_resolver_cls.route_visibility_diagnostics
+        _ParamResolverStub._iter_routes_with_ancestors = real_param_resolver_cls._iter_routes_with_ancestors
+        _ParamResolverStub.route_visibility_dependency_keys = real_param_resolver_cls.route_visibility_dependency_keys
+        _ParamResolverStub.panel_route_diagnostics_from_menu = real_param_resolver_cls.panel_route_diagnostics_from_menu
+        _ParamResolverStub._status_paths_for_visibility = real_param_resolver_cls._status_paths_for_visibility
 
     pybragerone_models_param_resolver_stub.ParamResolver = _ParamResolverStub
     sys.modules["pybragerone.models.param_resolver"] = pybragerone_models_param_resolver_stub

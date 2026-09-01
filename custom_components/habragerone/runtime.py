@@ -18,6 +18,7 @@ from pybragerone.models.param import ParamStore
 from pybragerone.models.param_resolver import ParamResolver
 
 from .command_write import WriteContext, WriteValidationError, prepare_write
+from .const import CONF_ROUTE_VISIBILITY_DEPS, CONF_ROUTE_VISIBILITY_NAME, CONF_ROUTE_VISIBILITY_PATH, CONF_UI_ROUTE_SYMBOL
 from .numeric_display import descriptor_numeric_transform
 
 UpdateCallback = Callable[[ParamUpdate], None]
@@ -25,7 +26,17 @@ UpdateCallback = Callable[[ParamUpdate], None]
 ConnectivityCallback = Callable[[str, bool, bool], None]
 # library↔cloud Socket.IO session: up, changed.
 CloudSessionCallback = Callable[[bool, bool], None]
+# Module event-feed (alarms / activity) refresh completed for one devid.
+EventFeedCallback = Callable[[str], None]
+# Route visibility changed for one symbol on a module (devid, symbol, visible).
+RouteVisibilityCallback = Callable[[str, str, bool], None]
 LOGGER = logging.getLogger(__name__)
+
+_ALARM_CHROME_KEYS = ("currentAlarms", "historyAlarms")
+_ACTIVITY_PAGE = 1
+_ACTIVITY_LIMIT = 20
+_ALARMS_PAGE = 1
+_ALARMS_LIMIT = 20
 
 
 @dataclass(slots=True)
@@ -42,6 +53,7 @@ class BragerRuntime:
     _listeners: set[UpdateCallback] = field(default_factory=set)
     _connectivity_listeners: set[ConnectivityCallback] = field(default_factory=set)
     _cloud_session_listeners: set[CloudSessionCallback] = field(default_factory=set)
+    _event_feed_listeners: set[EventFeedCallback] = field(default_factory=set)
     _module_online: dict[str, bool] = field(default_factory=dict)
     _cloud_session_up: bool | None = None
     _start_monotonic: float | None = None
@@ -49,6 +61,28 @@ class BragerRuntime:
     _status_resolver: ParamResolver | None = None
     _resolver_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _status_label_cache: dict[str, Any] = field(default_factory=dict)
+    _alarms_current: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    _alarms_history: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    _alarm_chrome_labels: dict[str, str] | None = None
+    _alarm_names: dict[int, str] = field(default_factory=dict)
+    _errors_i18n: dict[str, Any] = field(default_factory=dict)
+    _alarm_assets_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _alarm_names_loaded: bool = False
+    _alarms_refresh_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
+    _alarms_feed_loaded: dict[str, bool] = field(default_factory=dict)
+    _activity: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    _activity_index_label: str | None = None
+    _activity_state_i18n: dict[str, str] = field(default_factory=dict)
+    _activity_assets_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _activity_assets_loaded: bool = False
+    _activity_refresh_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
+    _activity_feed_loaded: dict[str, bool] = field(default_factory=dict)
+    _background_tasks: set[asyncio.Task[Any]] = field(default_factory=set)
+    _route_visibility_listeners: set[RouteVisibilityCallback] = field(default_factory=set)
+    _symbol_route_visible: dict[str, bool] = field(default_factory=dict)
+    _symbol_route_lookup: dict[str, tuple[str, str, str, str]] = field(default_factory=dict)
+    _route_visibility_dep_to_symbols: dict[str, set[str]] = field(default_factory=dict)
+    _menu_cache: dict[str, Any] = field(default_factory=dict)
 
     async def start(self) -> None:
         """Start gateway, state store ingestion and update dispatcher."""
@@ -74,6 +108,7 @@ class BragerRuntime:
             raise
         self._seed_module_online_from_gateway()
         self._seed_cloud_session_from_gateway()
+        await self.refresh_route_visibility()
         if self._start_monotonic is not None:
             LOGGER.debug(
                 "Runtime gateway.start completed in %.3fs (modules=%s)",
@@ -89,9 +124,148 @@ class BragerRuntime:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         self._tasks.clear()
+        for task in list(self._background_tasks):
+            task.cancel()
+        for task in list(self._background_tasks):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        self._background_tasks.clear()
+        for task in list(self._alarms_refresh_tasks.values()):
+            task.cancel()
+        for task in list(self._alarms_refresh_tasks.values()):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        self._alarms_refresh_tasks.clear()
+        for task in list(self._activity_refresh_tasks.values()):
+            task.cancel()
+        for task in list(self._activity_refresh_tasks.values()):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        self._activity_refresh_tasks.clear()
         self._status_resolver = None
         await self.gateway.stop()
         await self.api.close()
+
+    def add_route_visibility_listener(self, callback: RouteVisibilityCallback) -> Callable[[], None]:
+        """Register a route-visibility listener and return unsubscribe callable."""
+        self._route_visibility_listeners.add(callback)
+
+        def _unsubscribe() -> None:
+            self._route_visibility_listeners.discard(callback)
+
+        return _unsubscribe
+
+    def register_route_visibility(self, descriptors: Iterable[Any]) -> None:
+        """Index UI-route symbols and their visibility dependency keys (#192)."""
+        self._route_visibility_dep_to_symbols.clear()
+        self._symbol_route_lookup.clear()
+        self._symbol_route_visible.clear()
+        for item in descriptors:
+            if not isinstance(item, Mapping):
+                continue
+            if not bool(item.get(CONF_UI_ROUTE_SYMBOL)):
+                continue
+            devid = str(item.get("devid") or "").strip()
+            symbol = str(item.get("symbol") or "").strip()
+            if not devid or not symbol:
+                continue
+            lookup_key = f"{devid}:{symbol}"
+            route_name = str(item.get(CONF_ROUTE_VISIBILITY_NAME) or "").strip()
+            route_path = str(item.get(CONF_ROUTE_VISIBILITY_PATH) or "").strip()
+            self._symbol_route_lookup[lookup_key] = (devid, symbol, route_name, route_path)
+            deps = item.get(CONF_ROUTE_VISIBILITY_DEPS)
+            if isinstance(deps, list):
+                for dep in deps:
+                    if isinstance(dep, str) and dep.strip():
+                        self._route_visibility_dep_to_symbols.setdefault(dep.strip(), set()).add(symbol)
+
+    def route_visible_for_symbol(self, devid: str, symbol: str) -> bool:
+        """Return whether the everyday-UI route for *symbol* is currently visible."""
+        lookup_key = f"{devid}:{symbol}"
+        if lookup_key not in self._symbol_route_lookup:
+            return True
+        return bool(self._symbol_route_visible.get(lookup_key, True))
+
+    async def refresh_route_visibility(self, symbols: set[str] | None = None) -> None:
+        """Re-evaluate SPA route visibility for indexed UI-route symbols."""
+        if not self._symbol_route_lookup:
+            return
+        resolver = await self._async_get_resolver()
+        if resolver is None:
+            return
+        flat_values = self.store.flatten()
+        changed: list[tuple[str, str, bool]] = []
+        for lookup_key, (devid, symbol, route_name, route_path) in self._symbol_route_lookup.items():
+            if symbols is not None and symbol not in symbols:
+                continue
+            menu = await self._menu_for_devid(devid, resolver)
+            if menu is None:
+                continue
+            route_match = self._find_menu_route(menu, route_name=route_name, route_path=route_path)
+            if route_match is None:
+                continue
+            route, ancestors = route_match
+            visible, _reason = ParamResolver.route_visibility_diagnostics(
+                route,
+                ancestors=ancestors,
+                flat_values=flat_values,
+                all_panels=True,
+                web_ui_only=True,
+            )
+            previous = self._symbol_route_visible.get(lookup_key, True)
+            self._symbol_route_visible[lookup_key] = visible
+            if visible != previous:
+                changed.append((devid, symbol, visible))
+        for devid, symbol, visible in changed:
+            for callback in tuple(self._route_visibility_listeners):
+                try:
+                    callback(devid, symbol, visible)
+                except Exception:
+                    LOGGER.exception("Route visibility listener failed for %s/%s", devid, symbol)
+
+    @staticmethod
+    def _parse_device_menu_id(raw: Any) -> int | None:
+        """Coerce stored ``device_menu`` to int (bool excluded; digit strings allowed)."""
+        if isinstance(raw, int) and not isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            stripped = raw.strip()
+            if stripped.isdigit():
+                return int(stripped)
+        return None
+
+    async def _menu_for_devid(self, devid: str, resolver: ParamResolver) -> Any | None:
+        if devid in self._menu_cache:
+            return self._menu_cache[devid]
+        meta = self.modules_meta.get(devid)
+        if not isinstance(meta, Mapping):
+            return None
+        device_menu = self._parse_device_menu_id(meta.get("device_menu"))
+        if device_menu is None:
+            return None
+        perms_raw = meta.get("permissions")
+        permissions = [str(perm) for perm in perms_raw] if isinstance(perms_raw, list) else []
+        try:
+            menu = await resolver.get_module_menu(device_menu=device_menu, permissions=permissions)
+        except Exception:
+            LOGGER.debug("Menu fetch failed for route visibility devid=%s", devid, exc_info=True)
+            return None
+        self._menu_cache[devid] = menu
+        return menu
+
+    @staticmethod
+    def _find_menu_route(menu: Any, *, route_name: str, route_path: str) -> tuple[Any, tuple[Any, ...]] | None:
+        routes = getattr(menu, "routes", None)
+        if not isinstance(routes, list):
+            return None
+        for route, ancestors in ParamResolver._iter_routes_with_ancestors(routes):
+            name = str(getattr(route, "name", "") or "")
+            path = str(getattr(route, "path", "") or "")
+            if route_name and name == route_name:
+                return route, ancestors
+            if route_path and path == route_path:
+                return route, ancestors
+        return None
 
     def add_listener(self, callback: UpdateCallback) -> Callable[[], None]:
         """Register an entity listener and return unsubscribe callable."""
@@ -120,6 +294,15 @@ class BragerRuntime:
 
         return _remove
 
+    def add_event_feed_listener(self, callback: EventFeedCallback) -> Callable[[], None]:
+        """Register a module alarms/activity event-feed listener and return unsubscribe callable."""
+        self._event_feed_listeners.add(callback)
+
+        def _remove() -> None:
+            self._event_feed_listeners.discard(callback)
+
+        return _remove
+
     def module_online(self, devid: str) -> bool | None:
         """Return cached module online state, or ``None`` if not yet known."""
         return self._module_online.get(devid)
@@ -141,6 +324,402 @@ class BragerRuntime:
         return callable(getattr(self.gateway, "on_cloud_session", None)) and callable(
             getattr(self.gateway, "ws_session_up", None)
         )
+
+    @property
+    def supports_module_alarms(self) -> bool:
+        """Return whether the API client exposes module alarms list helpers (#222)."""
+        return callable(getattr(self.api, "modules_alarms", None)) and callable(getattr(self.api, "modules_alarms_history", None))
+
+    def alarms_current(self, devid: str) -> list[dict[str, Any]]:
+        """Return cached active alarms for *devid* (empty when unknown)."""
+        return list(self._alarms_current.get(devid, ()))
+
+    def alarms_feed_ready(self, devid: str) -> bool:
+        """Return whether alarms REST data loaded successfully for *devid*."""
+        return self._alarms_feed_loaded.get(str(devid or "").strip()) is True
+
+    def alarms_history(self, devid: str) -> list[dict[str, Any]]:
+        """Return cached history alarms for *devid* (empty when unknown)."""
+        return list(self._alarms_history.get(devid, ()))
+
+    async def async_get_alarm_chrome_labels(self) -> dict[str, str] | None:
+        """Return SPA ``alarm.currentAlarms`` / ``alarm.historyAlarms`` labels, or ``None``.
+
+        Fail closed when the catalog/i18n cannot supply both chrome strings so
+        entities are never created with hardcoded language fallbacks.
+        """
+        async with self._alarm_assets_lock:
+            cached = self._alarm_chrome_labels
+            if cached is not None:
+                return cached or None
+            labels = await self._load_alarm_chrome_labels()
+            self._alarm_chrome_labels = labels
+            return labels or None
+
+    async def async_refresh_alarms(self, devid: str) -> None:
+        """Fetch active + history alarms for *devid*, normalize, and notify listeners.
+
+        No-ops when the installed pybragerone build lacks the alarms REST helpers.
+        Concurrent refreshes for the same devid share one in-flight task.
+        """
+        devid_key = str(devid or "").strip()
+        if not devid_key or not self.supports_module_alarms:
+            return
+
+        existing = self._alarms_refresh_tasks.get(devid_key)
+        if existing is not None and not existing.done():
+            await existing
+            return
+
+        task = asyncio.create_task(self._async_refresh_alarms_impl(devid_key), name=f"habragerone-alarms-{devid_key}")
+        self._alarms_refresh_tasks[devid_key] = task
+        try:
+            await task
+        finally:
+            if self._alarms_refresh_tasks.get(devid_key) is task:
+                self._alarms_refresh_tasks.pop(devid_key, None)
+
+    async def _async_refresh_alarms_impl(self, devid_key: str) -> None:
+        current_fn = getattr(self.api, "modules_alarms", None)
+        history_fn = getattr(self.api, "modules_alarms_history", None)
+        if not callable(current_fn) or not callable(history_fn):
+            return
+
+        await self._ensure_alarm_name_maps()
+
+        try:
+            current_result = await current_fn([devid_key], page=_ALARMS_PAGE, limit=_ALARMS_LIMIT, return_data=True)
+            history_result = await history_fn([devid_key], page=_ALARMS_PAGE, limit=_ALARMS_LIMIT, return_data=True)
+        except Exception:
+            LOGGER.exception("Failed to refresh module alarms for devid=%s", devid_key)
+            self._alarms_feed_loaded[devid_key] = False
+            self._notify_event_feed_listeners(devid_key)
+            return
+
+        if not (_module_events_rest_ok(current_result) and _module_events_rest_ok(history_result)):
+            LOGGER.warning("Module alarms REST returned non-success status for devid=%s", devid_key)
+            self._alarms_feed_loaded[devid_key] = False
+            self._notify_event_feed_listeners(devid_key)
+            return
+
+        current_rows = _extract_alarm_rows(current_result)
+        history_rows = _extract_alarm_rows(history_result)
+        self._alarms_current[devid_key] = [self._normalize_alarm_row(row, default_devid=devid_key) for row in current_rows]
+        self._alarms_history[devid_key] = [self._normalize_alarm_row(row, default_devid=devid_key) for row in history_rows]
+        self._alarms_feed_loaded[devid_key] = True
+        self._notify_event_feed_listeners(devid_key)
+
+    def _notify_event_feed_listeners(self, devid: str) -> None:
+        for callback in list(self._event_feed_listeners):
+            try:
+                callback(devid)
+            except Exception:
+                LOGGER.exception("Event feed listener failed for devid=%s", devid)
+
+    def _normalize_alarm_row(self, row: Mapping[str, Any], *, default_devid: str) -> dict[str, Any]:
+        """Normalize one REST alarm row into the HA attributes shape."""
+        raw_id = row.get("id")
+        alarm_id: int | None
+        if isinstance(raw_id, bool):
+            alarm_id = None
+        elif isinstance(raw_id, int):
+            alarm_id = raw_id
+        elif isinstance(raw_id, float) and raw_id.is_integer():
+            alarm_id = int(raw_id)
+        elif isinstance(raw_id, str) and raw_id.strip().isdigit():
+            alarm_id = int(raw_id.strip())
+        else:
+            alarm_id = None
+
+        row_devid = row.get("devid")
+        devid = str(row_devid).strip() if isinstance(row_devid, str) and row_devid.strip() else default_devid
+
+        name: str | None = None
+        if alarm_id is not None:
+            name = _resolve_alarm_row_name(
+                alarm_id,
+                alarm_names=self._alarm_names,
+                errors_i18n=self._errors_i18n,
+            )
+
+        created_at = row.get("created_at")
+        finished_at = row.get("finished_at")
+        return {
+            "id": alarm_id,
+            "name": name,
+            "devid": devid,
+            "created_at": created_at if isinstance(created_at, str) else None,
+            "finished_at": finished_at if isinstance(finished_at, str) else None,
+        }
+
+    async def _load_alarm_chrome_labels(self) -> dict[str, str]:
+        """Load ``alarm.*`` chrome labels from LiveAssetsCatalog (empty on failure)."""
+        catalog = _try_live_assets_catalog(self.api)
+        if catalog is None:
+            return {}
+
+        lang = (self.language or "").strip()
+        if not lang:
+            return {}
+
+        try:
+            # ``get_i18n`` auto-loads the index via ``LiveAssetsCatalog._ensure_index_loaded``.
+            # Do not call ``refresh_index()`` here — it requires an explicit index URL.
+            get_i18n = getattr(catalog, "get_i18n", None)
+            if not callable(get_i18n):
+                return {}
+            alarm_ns = await get_i18n(lang, "alarm")
+        except Exception:
+            LOGGER.debug("Failed to load alarm chrome i18n", exc_info=True)
+            return {}
+
+        if not isinstance(alarm_ns, Mapping):
+            return {}
+        out: dict[str, str] = {}
+        for key in _ALARM_CHROME_KEYS:
+            value = alarm_ns.get(key)
+            if isinstance(value, str) and value.strip():
+                out[key] = value.strip()
+        if all(key in out for key in _ALARM_CHROME_KEYS):
+            return out
+        return {}
+
+    async def _ensure_alarm_name_maps(self) -> None:
+        """Best-effort load of AlarmName enum + ``errors.*`` i18n for row titles."""
+        async with self._alarm_assets_lock:
+            if self._alarm_names_loaded:
+                return
+            await self._load_alarm_name_maps()
+            if self._alarm_names and self._errors_i18n:
+                self._alarm_names_loaded = True
+
+    async def _load_alarm_name_maps(self) -> None:
+        parse_fn, _resolve_fn = _alarm_name_helpers()
+        lang = (self.language or "").strip()
+        catalog = _try_live_assets_catalog(self.api)
+        if catalog is None:
+            return
+
+        try:
+            get_i18n = getattr(catalog, "get_i18n", None)
+            if callable(get_i18n) and lang:
+                errors = await get_i18n(lang, "errors")
+                if isinstance(errors, Mapping):
+                    self._errors_i18n = dict(errors)
+            if callable(parse_fn):
+                source = await _fetch_alarms_chunk_source(catalog, self.api)
+                if source:
+                    parsed = parse_fn(source)
+                    if isinstance(parsed, dict):
+                        self._alarm_names = {
+                            int(key): str(value)
+                            for key, value in parsed.items()
+                            if isinstance(key, int) and isinstance(value, str)
+                        }
+        except Exception:
+            LOGGER.debug("Failed to load AlarmName / errors i18n maps", exc_info=True)
+
+    @property
+    def supports_module_activity(self) -> bool:
+        """Return whether the API client exposes ``modules_activity`` (#223)."""
+        return callable(getattr(self.api, "modules_activity", None))
+
+    def activity(self, devid: str) -> list[dict[str, Any]]:
+        """Return cached activity rows for *devid* (empty when unknown)."""
+        return list(self._activity.get(devid, ()))
+
+    def activity_feed_ready(self, devid: str) -> bool:
+        """Return whether activity REST data loaded successfully for *devid*."""
+        return self._activity_feed_loaded.get(str(devid or "").strip()) is True
+
+    async def async_get_activity_index_label(self) -> str | None:
+        """Return SPA ``routes.activity.index`` entity name, or ``None``.
+
+        Fail closed when catalog/i18n cannot supply the chrome string so the
+        sensor is never created with a hardcoded language fallback.
+        """
+        async with self._activity_assets_lock:
+            if self._activity_assets_loaded:
+                label = self._activity_index_label
+                return label if isinstance(label, str) and label.strip() else None
+            await self._load_activity_assets()
+            self._activity_assets_loaded = True
+            label = self._activity_index_label
+            return label if isinstance(label, str) and label.strip() else None
+
+    async def async_refresh_activity(self, devid: str) -> None:
+        """Fetch first-page activity rows for *devid*, normalize, and notify listeners.
+
+        Uses the SPA default window (``page=1``, ``limit=20``). No-ops when the
+        installed pybragerone build lacks ``modules_activity``. Concurrent
+        refreshes for the same devid share one in-flight task.
+        """
+        devid_key = str(devid or "").strip()
+        if not devid_key or not self.supports_module_activity:
+            return
+
+        existing = self._activity_refresh_tasks.get(devid_key)
+        if existing is not None and not existing.done():
+            await existing
+            return
+
+        task = asyncio.create_task(
+            self._async_refresh_activity_impl(devid_key),
+            name=f"habragerone-activity-{devid_key}",
+        )
+        self._activity_refresh_tasks[devid_key] = task
+        try:
+            await task
+        finally:
+            if self._activity_refresh_tasks.get(devid_key) is task:
+                self._activity_refresh_tasks.pop(devid_key, None)
+
+    async def _async_refresh_activity_impl(self, devid_key: str) -> None:
+        activity_fn = getattr(self.api, "modules_activity", None)
+        if not callable(activity_fn):
+            return
+
+        await self._ensure_activity_assets()
+        resolver = await self._async_get_resolver()
+
+        try:
+            result = await activity_fn(
+                [devid_key],
+                page=_ACTIVITY_PAGE,
+                limit=_ACTIVITY_LIMIT,
+                return_data=True,
+            )
+        except Exception:
+            LOGGER.exception("Failed to refresh module activity for devid=%s", devid_key)
+            self._activity_feed_loaded[devid_key] = False
+            self._notify_event_feed_listeners(devid_key)
+            return
+
+        if not _module_events_rest_ok(result):
+            LOGGER.warning("Module activity REST returned non-success status for devid=%s", devid_key)
+            self._activity_feed_loaded[devid_key] = False
+            self._notify_event_feed_listeners(devid_key)
+            return
+
+        rows = _extract_activity_rows(result)
+        self._activity[devid_key] = [
+            await self._normalize_activity_row(row, default_devid=devid_key, resolver=resolver) for row in rows
+        ]
+        self._activity_feed_loaded[devid_key] = True
+        self._notify_event_feed_listeners(devid_key)
+
+    async def _ensure_activity_assets(self) -> None:
+        """Best-effort load of activity chrome + ``activity.state.*`` i18n."""
+        async with self._activity_assets_lock:
+            if self._activity_assets_loaded:
+                return
+            try:
+                await self._load_activity_assets()
+            finally:
+                self._activity_assets_loaded = True
+
+    async def _load_activity_assets(self) -> None:
+        """Load ``routes.activity.index`` and ``activity.state`` labels from the catalog."""
+        catalog = _try_live_assets_catalog(self.api)
+        lang = (self.language or "").strip()
+        if catalog is None or not lang:
+            self._activity_index_label = None
+            return
+
+        try:
+            get_i18n = getattr(catalog, "get_i18n", None)
+            if not callable(get_i18n):
+                self._activity_index_label = None
+                return
+
+            routes_ns = await get_i18n(lang, "routes")
+            index_label: str | None = None
+            if isinstance(routes_ns, Mapping):
+                activity_routes = routes_ns.get("activity")
+                if isinstance(activity_routes, Mapping):
+                    raw_index = activity_routes.get("index")
+                    if isinstance(raw_index, str) and raw_index.strip():
+                        index_label = raw_index.strip()
+            self._activity_index_label = index_label
+
+            activity_ns = await get_i18n(lang, "activity")
+            state_map: dict[str, str] = {}
+            if isinstance(activity_ns, Mapping):
+                state_ns = activity_ns.get("state")
+                if isinstance(state_ns, Mapping):
+                    for key, value in state_ns.items():
+                        if isinstance(key, str) and isinstance(value, str) and value.strip():
+                            state_map[key.strip()] = value.strip()
+            self._activity_state_i18n = state_map
+        except Exception:
+            LOGGER.debug("Failed to load activity chrome / state i18n", exc_info=True)
+            self._activity_index_label = None
+
+    async def _normalize_activity_row(
+        self,
+        row: Mapping[str, Any],
+        *,
+        default_devid: str,
+        resolver: Any,
+    ) -> dict[str, Any]:
+        """Normalize one REST activity row into the HA attributes shape."""
+        raw_id = row.get("id")
+        activity_id: int | None
+        if isinstance(raw_id, bool):
+            activity_id = None
+        elif isinstance(raw_id, int):
+            activity_id = raw_id
+        elif isinstance(raw_id, float) and raw_id.is_integer():
+            activity_id = int(raw_id)
+        elif isinstance(raw_id, str) and raw_id.strip().isdigit():
+            activity_id = int(raw_id.strip())
+        else:
+            activity_id = None
+
+        devid = _activity_row_devid(row, default_devid=default_devid)
+
+        parameter_key_raw = row.get("name")
+        parameter_key = parameter_key_raw.strip() if isinstance(parameter_key_raw, str) and parameter_key_raw.strip() else None
+        parameter = await _resolve_activity_i18n_token(parameter_key, resolver=resolver)
+
+        unit_code = row.get("unit")
+        value_raw = _activity_value_scalar(row.get("value"))
+        # Live SPA rows expose the scalar previous value as camelCase ``prevValue``.
+        # Snake-case ``prev_value`` is a nested param snapshot (``{P*: {n: {v,u}}}``),
+        # not the display scalar — prefer camelCase, then fall back.
+        prev_raw = row.get("prevValue")
+        if prev_raw is None:
+            prev_raw = row.get("prev_value")
+        prev_value_raw = _activity_value_scalar(prev_raw)
+
+        value = await _resolve_activity_display_value(value_raw, unit_code=unit_code, resolver=resolver)
+        prev_value = await _resolve_activity_display_value(prev_value_raw, unit_code=unit_code, resolver=resolver)
+
+        state_key_raw = row.get("state")
+        state_key = state_key_raw.strip() if isinstance(state_key_raw, str) and state_key_raw.strip() else None
+        state_label: str | None = None
+        if state_key is not None:
+            mapped = self._activity_state_i18n.get(state_key)
+            if isinstance(mapped, str) and mapped.strip():
+                state_label = mapped.strip()
+
+        created_at = row.get("created_at")
+        created_by = _activity_created_by(row.get("user"))
+
+        return {
+            "id": activity_id,
+            "devid": devid,
+            "parameter": parameter,
+            "parameter_key": parameter_key,
+            "value": value,
+            "value_raw": value_raw,
+            "prev_value": prev_value,
+            "prev_value_raw": prev_value_raw,
+            "state": state_label,
+            "state_key": state_key,
+            "created_at": created_at if isinstance(created_at, str) else None,
+            "created_by": created_by,
+        }
 
     def _seed_module_online_from_gateway(self) -> None:
         """Pull initial online bits from the gateway after start."""
@@ -354,6 +933,7 @@ class BragerRuntime:
             )
             if not ok:
                 raise HomeAssistantError(f"Command write failed for '{symbol}' via raw command route")
+            self._schedule_activity_refresh_after_write(devid)
             return
 
         if prepared.route == "parameter_write":
@@ -372,6 +952,7 @@ class BragerRuntime:
             )
             if not ok:
                 raise HomeAssistantError(f"Command write failed for '{symbol}' via parameter route")
+            self._schedule_activity_refresh_after_write(devid)
             return
 
         rule = _select_command_rule(command_rules=typed_command_rules, desired_value=prepared.raw_value)
@@ -386,6 +967,23 @@ class BragerRuntime:
         )
         if not ok:
             raise HomeAssistantError(f"Command write failed for '{symbol}' via raw command route")
+        self._schedule_activity_refresh_after_write(devid)
+
+    def _schedule_activity_refresh_after_write(self, devid: str) -> None:
+        """Refresh activity feed after a successful HA write (SPA logs parameter changes)."""
+        devid_key = str(devid or "").strip()
+        if not devid_key or not self.supports_module_activity:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = asyncio.create_task(
+            self.async_refresh_activity(devid_key),
+            name=f"habragerone-activity-after-write-{devid_key}",
+        )
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def async_warm_status_resolver(self, symbols: Iterable[str] | None = None) -> None:
         """Build ``ParamResolver``, prefetch mappings, and pre-resolve STATUS labels (#204)."""
@@ -509,6 +1107,14 @@ class BragerRuntime:
                     update.idx,
                 )
                 self._first_update_logged = True
+            update_key = f"{update.pool}.{update.chan}{update.idx}"
+            # Store and dispatcher are independent bus subscribers; upsert first so
+            # route visibility sees this delta rather than the previous snapshot.
+            if getattr(update, "value", None) is not None:
+                self.store.upsert(update_key, update.value)
+            affected_symbols = self._route_visibility_dep_to_symbols.get(update_key)
+            if affected_symbols:
+                await self.refresh_route_visibility(set(affected_symbols))
             for callback in tuple(self._listeners):
                 try:
                     callback(update)
@@ -667,3 +1273,232 @@ def _compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
     if op == "notEqualTo":
         return bool(actual != expected)
     return False
+
+
+def _module_events_rest_ok(result: Any) -> bool:
+    """Return whether a ``return_data=True`` module-events REST call succeeded."""
+    if not isinstance(result, tuple) or not result:
+        return False
+    status = result[0]
+    if status not in (200, 204):
+        return False
+    if len(result) >= 2:
+        payload = result[1]
+        if isinstance(payload, Mapping) and payload.get("status") is False:
+            return False
+    return True
+
+
+def _extract_activity_rows(result: Any) -> list[Mapping[str, Any]]:
+    """Pull activity row mappings from a ``modules_activity`` ``return_data`` result."""
+    payload: Any = result
+    if isinstance(result, tuple) and len(result) >= 2:
+        payload = result[1]
+    if not isinstance(payload, Mapping):
+        return []
+    activities = payload.get("activities")
+    if isinstance(activities, list):
+        return [row for row in activities if isinstance(row, Mapping)]
+    if isinstance(activities, Mapping):
+        data = activities.get("data")
+        if isinstance(data, list):
+            return [row for row in data if isinstance(row, Mapping)]
+    return []
+
+
+def _activity_row_devid(row: Mapping[str, Any], *, default_devid: str) -> str:
+    """Resolve devid from a row or nested ``module`` object."""
+    row_devid = row.get("devid")
+    if isinstance(row_devid, str) and row_devid.strip():
+        return row_devid.strip()
+    module = row.get("module")
+    if isinstance(module, Mapping):
+        module_devid = module.get("devid")
+        if isinstance(module_devid, str) and module_devid.strip():
+            return module_devid.strip()
+    return default_devid
+
+
+def _activity_value_scalar(raw: Any) -> Any:
+    """Unwrap nested SPA value maps to a display/raw scalar when possible.
+
+    Handles:
+    - plain scalars
+    - ``{"value": ...}`` / ``{"prevValue": ...}`` wrappers
+    - nested param snapshots ``{"P6": {"219": {"v": 2, "u": 38}}}``
+    """
+    if isinstance(raw, Mapping):
+        if "value" in raw:
+            return _activity_value_scalar(raw.get("value"))
+        if "prevValue" in raw:
+            return _activity_value_scalar(raw.get("prevValue"))
+        if "v" in raw:
+            return _activity_value_scalar(raw.get("v"))
+        for nested in raw.values():
+            if isinstance(nested, Mapping):
+                extracted = _activity_value_scalar(nested)
+                if extracted is not None:
+                    return extracted
+        return None
+    return raw
+
+
+def _activity_created_by(raw: Any) -> str | None:
+    """Extract the activity author label from a string or ``{name, id}`` user object."""
+    if isinstance(raw, str):
+        return raw.strip() or None
+    if isinstance(raw, Mapping):
+        name = raw.get("name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return None
+
+
+async def _resolve_activity_i18n_token(token: str | None, *, resolver: Any) -> str | None:
+    """Best-effort resolve of dotted i18n tokens via ParamResolver."""
+    if not isinstance(token, str) or not token.strip() or resolver is None:
+        return None
+    resolve_token = getattr(resolver, "_resolve_i18n_token", None)
+    if not callable(resolve_token):
+        return None
+    try:
+        label = await resolve_token(token.strip())
+    except Exception:
+        return None
+    return label.strip() if isinstance(label, str) and label.strip() else None
+
+
+async def _resolve_activity_display_value(raw: Any, *, unit_code: Any, resolver: Any) -> Any:
+    """Map a raw activity value through unit enum tables when possible."""
+    if resolver is None or unit_code is None or raw is None:
+        return raw
+    resolve_unit = getattr(resolver, "resolve_unit", None)
+    if not callable(resolve_unit):
+        return raw
+    try:
+        unit = await resolve_unit(unit_code)
+    except Exception:
+        return raw
+    if not isinstance(unit, Mapping):
+        return raw
+
+    mapping_label = getattr(resolver, "_unit_mapping_value_label", None)
+    label: str | None = None
+    if callable(mapping_label):
+        try:
+            mapped = mapping_label(unit, raw)
+        except Exception:
+            mapped = None
+        if isinstance(mapped, str) and mapped.strip():
+            label = mapped.strip()
+    if label is None:
+        for key in (raw, str(raw)):
+            mapped = unit.get(key)
+            if isinstance(mapped, str) and mapped.strip():
+                label = mapped.strip()
+                break
+    if label is None:
+        return raw
+    resolved = await _resolve_activity_i18n_token(label, resolver=resolver)
+    return resolved or label
+
+
+def _extract_alarm_rows(result: Any) -> list[Mapping[str, Any]]:
+    """Pull alarm row mappings from a ``modules_alarms*`` ``return_data`` result."""
+    payload: Any = result
+    if isinstance(result, tuple) and len(result) >= 2:
+        payload = result[1]
+    if not isinstance(payload, Mapping):
+        return []
+    alarms = payload.get("alarms")
+    if isinstance(alarms, list):
+        return [row for row in alarms if isinstance(row, Mapping)]
+    if isinstance(alarms, Mapping):
+        data = alarms.get("data")
+        if isinstance(data, list):
+            return [row for row in data if isinstance(row, Mapping)]
+    return []
+
+
+def _alarm_name_helpers() -> tuple[Any, Any]:
+    """Import AlarmName helpers when present; otherwise return ``(None, None)``."""
+    try:
+        import importlib
+
+        module = importlib.import_module("pybragerone.models.alarm_names")
+    except ImportError:
+        return None, None
+    return getattr(module, "parse_alarm_name_enum", None), getattr(module, "resolve_alarm_label", None)
+
+
+def _try_live_assets_catalog(api: Any) -> Any | None:
+    """Construct ``LiveAssetsCatalog(api)`` when the installed library supports it."""
+    try:
+        from pybragerone.models.catalog import LiveAssetsCatalog as catalog_cls
+    except ImportError:
+        LOGGER.debug("LiveAssetsCatalog unavailable; alarm chrome/name maps skipped")
+        return None
+    try:
+        return catalog_cls(api)
+    except TypeError:
+        # Unit-test stub sets ``LiveAssetsCatalog = object``.
+        return None
+
+
+def _resolve_alarm_row_name(
+    alarm_id: int,
+    *,
+    alarm_names: Mapping[int, str],
+    errors_i18n: Mapping[str, Any],
+) -> str | None:
+    """Resolve ``errors.*`` label for one alarm id; leave null when helpers/maps miss."""
+    _parse_fn, resolve_fn = _alarm_name_helpers()
+    if callable(resolve_fn):
+        try:
+            label = resolve_fn(alarm_id, alarm_names=alarm_names, errors_i18n=errors_i18n)
+        except Exception:
+            return None
+        return label if isinstance(label, str) and label.strip() else None
+    key = alarm_names.get(alarm_id)
+    if not isinstance(key, str) or not key.startswith("ERROR_"):
+        return None
+    value = errors_i18n.get(key)
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+async def _fetch_alarms_chunk_source(catalog: Any, api: Any) -> str | bytes | None:
+    """Best-effort fetch of the SPA Alarms chunk for ``AlarmName`` parsing."""
+    idx = getattr(catalog, "_idx", None)
+    assets = getattr(idx, "assets_by_basename", None)
+    find_basename = getattr(idx, "find_asset_for_basename", None)
+    asset = None
+    if callable(find_basename):
+        for candidate in ("Alarms", "alarms"):
+            asset = find_basename(candidate)
+            if asset is not None:
+                break
+    if asset is None and isinstance(assets, Mapping):
+        for basename, refs in assets.items():
+            if not isinstance(basename, str) or not basename.casefold().startswith("alarms"):
+                continue
+            if isinstance(refs, list) and refs:
+                asset = refs[-1]
+                break
+    if asset is None:
+        return None
+    url = getattr(asset, "url", None)
+    if not isinstance(url, str) or not url.strip():
+        return None
+    get_bytes = getattr(api, "get_bytes", None)
+    if not callable(get_bytes):
+        return None
+    try:
+        payload = await get_bytes(url)
+    except Exception:
+        LOGGER.debug("Failed to fetch Alarms chunk from %s", url, exc_info=True)
+        return None
+    if isinstance(payload, (bytes, str)):
+        return payload
+    if isinstance(payload, bytearray):
+        return bytes(payload)
+    return None

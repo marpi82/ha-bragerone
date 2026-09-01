@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterable
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from homeassistant.exceptions import HomeAssistantError
@@ -14,6 +15,7 @@ from tests.conftest import install_pybragerone_stubs
 install_pybragerone_stubs()
 
 from custom_components.habragerone import runtime as runtime_module  # noqa: E402
+from custom_components.habragerone.runtime import BragerRuntime  # noqa: E402
 from tests.helpers.fakes import FakeParamUpdate, make_runtime  # noqa: E402
 
 
@@ -358,5 +360,44 @@ async def test_runtime_delivers_updates_when_meta_is_not_dict() -> None:
         gateway.bus.push(update)
         await asyncio.wait_for(delivered_event.wait(), timeout=1.0)
         assert received == [update]
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_upserts_store_before_route_visibility() -> None:
+    """Route visibility must see this delta, not a stale ParamStore snapshot."""
+    runtime, _api, gateway, store = make_runtime()
+    seen: list[object] = []
+    refreshed = asyncio.Event()
+
+    async def _refresh(_self: BragerRuntime, symbols: set[str] | None = None) -> None:
+        _ = symbols
+        seen.append(_self.store.flatten().get("P6.v219"))
+        refreshed.set()
+
+    await runtime.start()
+    try:
+        runtime._route_visibility_dep_to_symbols["P6.v219"] = {"PARAM_177"}
+        with patch.object(BragerRuntime, "refresh_route_visibility", _refresh):
+            gateway.bus.push(FakeParamUpdate(pool="P6", chan="v", idx=219, value=7))
+            await asyncio.wait_for(refreshed.wait(), timeout=1.0)
+            assert seen == [7]
+            assert store.flatten()["P6.v219"] == 7
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_skips_store_upsert_when_value_is_none() -> None:
+    """None deltas are ignored, matching ParamStore.run_with_bus."""
+    runtime, _api, gateway, store = make_runtime(flat_values={"P6.v219": 1})
+    delivered = asyncio.Event()
+    runtime.add_listener(lambda _update: delivered.set())
+    await runtime.start()
+    try:
+        gateway.bus.push(FakeParamUpdate(pool="P6", chan="v", idx=219, value=None))
+        await asyncio.wait_for(delivered.wait(), timeout=1.0)
+        assert store.flatten()["P6.v219"] == 1
     finally:
         await runtime.stop()

@@ -14,6 +14,8 @@ install_pybragerone_stubs()
 from custom_components.habragerone.const import (  # noqa: E402
     CONF_ENTITY_DESCRIPTORS,
     CONF_MODULES,
+    CONF_ROUTE_VISIBILITY_DEPS,
+    CONF_UI_ROUTE_SYMBOL,
     DATA_ENTITY_STATS,
     DATA_RUNTIME,
     DEVICE_GROUPING_BY_MENU,
@@ -26,6 +28,8 @@ from custom_components.habragerone.entity_common import (  # noqa: E402
     _mapping_value_selector_entries,
     _menu_device_display_name,
     async_register_module_parent_devices,
+    async_remove_legacy_connection_devices,
+    attach_route_visibility_listener,
     collect_resolver_warm_symbols,
     descriptor_current_raw_value,
     descriptor_enabled_by_default,
@@ -57,6 +61,50 @@ def test_descriptor_enabled_by_default_respects_false() -> None:
 def test_descriptor_enabled_by_default_coerces_truthy_values() -> None:
     assert descriptor_enabled_by_default({"enabled_by_default": 1}) is True
     assert descriptor_enabled_by_default({"enabled_by_default": 0}) is False
+
+
+def test_attach_route_visibility_listener_requires_symbol() -> None:
+    """UI-route descriptors without a symbol do not subscribe."""
+    runtime, *_rest = make_runtime()
+    unsub = attach_route_visibility_listener(
+        runtime,
+        devid="dev1",
+        descriptor={CONF_UI_ROUTE_SYMBOL: True, "symbol": "   "},
+        schedule_update=lambda: None,
+    )
+    assert unsub is None
+
+
+def test_attach_route_visibility_listener_ignores_non_ui_route_descriptor() -> None:
+    """Non UI-route entities do not subscribe to route visibility fan-out."""
+    runtime, *_rest = make_runtime()
+    seen: list[tuple[str, str, bool]] = []
+    runtime.add_route_visibility_listener(lambda devid, symbol, visible: seen.append((devid, symbol, visible)))
+    unsub = attach_route_visibility_listener(
+        runtime,
+        devid="dev1",
+        descriptor={"symbol": "PARAM_9", CONF_UI_ROUTE_SYMBOL: False},
+        schedule_update=lambda: seen.append(("schedule", "", False)),
+    )
+    assert unsub is None
+    assert seen == []
+
+
+def test_attach_route_visibility_listener_schedules_matching_symbol() -> None:
+    """UI-route entities refresh when their symbol visibility flips."""
+    runtime, *_rest = make_runtime()
+    scheduled: list[str] = []
+    attach_route_visibility_listener(
+        runtime,
+        devid="dev1",
+        descriptor={"symbol": "PARAM_177", CONF_UI_ROUTE_SYMBOL: True},
+        schedule_update=lambda: scheduled.append("update"),
+    )
+    for callback in tuple(runtime._route_visibility_listeners):
+        callback("dev1", "PARAM_177", False)
+        callback("dev1", "PARAM_219", False)
+        callback("dev2", "PARAM_177", False)
+    assert scheduled == ["update"]
 
 
 def test_descriptor_refresh_keys_direct_address() -> None:
@@ -95,6 +143,17 @@ def test_descriptor_refresh_keys_includes_multi_register_value_channels() -> Non
         },
     }
     assert descriptor_refresh_keys(descriptor) == {"P4.v59", "P4.v60"}
+
+
+def test_descriptor_refresh_keys_includes_route_visibility_deps() -> None:
+    """UI-route availability must refresh when route dependency params change (#192)."""
+    descriptor = {
+        "pool": "P6",
+        "chan": "v",
+        "idx": 219,
+        CONF_ROUTE_VISIBILITY_DEPS: ["P6.v219", " P1.s0 ", 42],
+    }
+    assert descriptor_refresh_keys(descriptor) == {"P6.v219", "P1.s0"}
 
 
 def test_descriptor_refresh_keys_skips_invalid_channel_and_path_entries() -> None:
@@ -706,7 +765,7 @@ async def test_record_platform_entity_stats_persists_counts(hass: HomeAssistant)
     )
 
     stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]
-    assert stats == {"switch": {"descriptor_count": 3, "created_count": 2}}
+    assert stats == {"switch": {"descriptor_count": 3, "created_count": 2, "supplemental_count": 0}}
 
 
 def test_collect_resolver_warm_symbols_deduplicates_status_and_enum() -> None:
@@ -727,3 +786,84 @@ def test_collect_resolver_warm_symbols_skips_invalid_entries() -> None:
         {"symbol": "PARAM_2", "mapping": {"channels": {"unit": []}}},
     ]
     assert collect_resolver_warm_symbols(items) == []
+
+
+@pytest.mark.asyncio
+async def test_async_remove_legacy_connection_devices_drops_empty_orphans(hass: HomeAssistant) -> None:
+    """Legacy menu child devices with no entities are removed after connectivity moves."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    registry = dr.async_get(hass)
+    legacy = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1:module.connection")},
+        manufacturer="BragerOne",
+        name="Boiler — Connection with module",
+        model="Brager module",
+    )
+    parent = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1")},
+        manufacturer="BragerOne",
+        name="Boiler",
+        model="Brager module",
+    )
+    assert legacy.id != parent.id
+
+    await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
+
+    assert registry.async_get_device(identifiers={(DOMAIN, "DEV1:module.connection")}) is None
+    assert registry.async_get_device(identifiers={(DOMAIN, "DEV1")}) is not None
+
+
+@pytest.mark.asyncio
+async def test_async_remove_legacy_connection_devices_skips_blank_devids(hass: HomeAssistant) -> None:
+    """Blank module ids are ignored when scanning for legacy connection devices."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    registry = dr.async_get(hass)
+    registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1:module.connection")},
+        manufacturer="BragerOne",
+        name="Boiler — Connection with module",
+        model="Brager module",
+    )
+
+    await async_remove_legacy_connection_devices(hass, entry, devids=["", "  ", "DEV1"])
+
+    assert registry.async_get_device(identifiers={(DOMAIN, "DEV1:module.connection")}) is None
+
+
+@pytest.mark.asyncio
+async def test_async_remove_legacy_connection_devices_keeps_populated_legacy_device(hass: HomeAssistant) -> None:
+    """Legacy connection devices that still host entities are not removed."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+    legacy = device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1:module.connection")},
+        manufacturer="BragerOne",
+        name="Boiler — Connection with module",
+        model="Brager module",
+    )
+    entity_registry.async_get_or_create(
+        domain=DOMAIN,
+        platform="binary_sensor",
+        unique_id=f"{entry.entry_id}_legacy_connection_entity",
+        config_entry=entry,
+        device_id=legacy.id,
+    )
+
+    await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
+
+    assert device_registry.async_get_device(identifiers={(DOMAIN, "DEV1:module.connection")}) is not None

@@ -23,9 +23,10 @@ This custom component provides integration between Home Assistant and the Brager
 - Device control via Home Assistant
 - Configurable through Home Assistant UI
 - Support for multiple device types
-- Per-module cloud connectivity diagnostic (SPA `connectedAt` / `module.connection.*` labels) on a **separate** child device (`{devid}:module.connection`, linked with `via_device`); this is intentional in **flat** and group-by-menu alike — parameter entities go unavailable when the module is offline; writes are refused while offline. Module offline is observe-only (wait for the plant to reconnect).
+- Per-module cloud connectivity diagnostic (SPA `connectedAt` / `module.connection.*` labels) on the **internet-module** device together with alarms/activity diagnostics — in **flat** mode all entities share that device; in **group-by-menu** mode parameter entities sit on menu child devices (`via_device`) while connectivity, alarms, and activity stay on the parent module device. Parameter entities go unavailable when the module is offline; writes are refused while offline. Module offline is observe-only (wait for the plant to reconnect).
 - Separate **Cloud API session** diagnostic (library↔cloud Socket.IO) on a config-entry service device — detectable and self-healing; never folded into module `connectedAt`. Config-entry diagnostics include `last_param_update_age_s` (seconds since the last parameter snapshot/delta) to distinguish a live session from a frozen push stream.
 - Optional device grouping by menu (options: flat default vs group-by-menu child devices per **parent** menu route with `via_device`)
+- Everyday-UI menu routes (including static SPA shells such as **Strefy czasowe**) map to panel groups and, in group-by-menu mode, child devices; UI-route entities respect SPA route visibility at runtime (`available`) without changing entity-registry enable state
 
 ## Installation
 
@@ -51,7 +52,9 @@ The integration can be configured through the Home Assistant UI. You will need:
 
 - BragerOne / TiSConnect credentials and backend platform
 - Installation and module selection
-- Device grouping (flat = one HA device per internet module for parameter entities; group by menu = child devices per **parent** menu route, linked via the module — remaps device membership when changed). In **both** modes the connectivity diagnostic stays on a separate `{devid}:module.connection` child (`via_device`), so it is not folded into the module device in flat mode.
+- Device grouping (flat = one HA device per internet module for parameters, connectivity, alarms, and activity; group by menu = parameter entities on child devices per **parent** menu route with `via_device`, while connectivity/alarms/activity stay on the parent module — remaps device membership when changed).
+
+After upgrading to a release that bumps `BOOTSTRAP_VERSION` (currently **14** for static menu routes / #192), reload the integration or re-add it so entity descriptors pick up new menu metadata.
 
 Every permission-gated parameter becomes an entity — there is no separate UI/permissions filtering mode to choose. Entities that are outside the everyday BragerOne web UI (installer-only panels, or panels the SPA itself hides) are still created, but start **disabled** in the entity registry; enable them manually if you need them. Enable/disable state can be changed per-entity at any time from the entity registry.
 

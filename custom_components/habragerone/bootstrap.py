@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 from collections.abc import Mapping
@@ -18,6 +19,10 @@ from .const import (
     CONF_OPTIONS,
     CONF_PLATFORM,
     CONF_RAW_TO_LABEL,
+    CONF_ROUTE_VISIBILITY_DEPS,
+    CONF_ROUTE_VISIBILITY_NAME,
+    CONF_ROUTE_VISIBILITY_PATH,
+    CONF_UI_ROUTE_SYMBOL,
     CONF_UPSTREAM_ASSETS_FINGERPRINT,
     CONNECTION_MENU_KEY,
     DEFAULT_ENTITY_FILTER_MODE,
@@ -65,6 +70,10 @@ class EntityDescriptor(TypedDict, total=False):
     raw_to_label: dict[str, str]
     menu_kinds: list[str]
     enabled_by_default: bool
+    ui_route_symbol: bool
+    route_visibility_deps: list[str]
+    route_visibility_name: str
+    route_visibility_path: str
 
 
 _SWITCHISH_RULE_VALUES = {"0", "1", "true", "false", "on", "off", "enabled", "disabled", "yes", "no"}
@@ -578,6 +587,100 @@ def _stable_menu_key_from_route_meta(routes: list[dict[str, Any]]) -> str | None
     return None
 
 
+def _enrich_symbol_routes_from_shell_diagnostics(
+    panel_paths: dict[str, str],
+    symbol_routes: dict[str, list[dict[str, Any]]],
+    diagnostics: list[dict[str, Any]],
+) -> None:
+    """Attach panel-shell route meta to symbols that only appear via static overlays (#192)."""
+    shell_by_panel: dict[str, dict[str, Any]] = {}
+    for row in diagnostics:
+        if not isinstance(row, dict) or not bool(row.get("panel_shell")):
+            continue
+        if not bool(row.get("accepted")):
+            continue
+        panel_title = str(row.get("panel_title") or row.get("title") or "").strip()
+        if panel_title:
+            shell_by_panel[panel_title] = row
+        title = str(row.get("title") or "").strip()
+        if title:
+            shell_by_panel.setdefault(title, row)
+
+    for symbol, panel_path in panel_paths.items():
+        if symbol_routes.get(symbol):
+            continue
+        normalized = _normalize_panel_path(panel_path)
+        if not normalized:
+            continue
+        shell_row = shell_by_panel.get(normalized)
+        if shell_row is None:
+            continue
+        symbol_routes.setdefault(symbol, []).append(
+            {
+                "name": shell_row.get("name"),
+                "path": shell_row.get("path"),
+                "display_name": shell_row.get("title"),
+                "is_visible_on_side_menu": shell_row.get("is_visible_on_side_menu"),
+                "display_dropdown": shell_row.get("display_dropdown"),
+                "component": shell_row.get("component"),
+                "ancestors": [],
+            }
+        )
+
+
+def _route_dep_index_from_menu(menu: Any) -> dict[tuple[str, str], list[str]]:
+    """Map ``(route name, route path)`` to route-visibility dependency keys."""
+    from pybragerone.models.param_resolver import ParamResolver
+
+    index: dict[tuple[str, str], list[str]] = {}
+    routes = _get_field(menu, "routes") or []
+    for route, ancestors in ParamResolver._iter_routes_with_ancestors(routes):
+        name = str(getattr(route, "name", "") or "")
+        path = str(getattr(route, "path", "") or "")
+        deps = sorted(ParamResolver.route_visibility_dependency_keys(route, ancestors=ancestors))
+        if name or path:
+            index[(name, path)] = deps
+    return index
+
+
+def _route_visibility_deps_for_symbol(
+    routes: list[dict[str, Any]],
+    route_dep_index: Mapping[tuple[str, str], list[str]],
+    *,
+    payload: Mapping[str, Any] | None,
+    flat_values: Mapping[str, Any],
+) -> list[str]:
+    """Collect ParamStore keys that may affect route visibility for *symbol*."""
+    from pybragerone.models.param_resolver import ParamResolver
+
+    deps: set[str] = set()
+    for route in routes:
+        name = str(route.get("name") or "")
+        path = str(route.get("path") or "")
+        for dep in route_dep_index.get((name, path), []):
+            deps.add(dep)
+    if payload is not None:
+        mapping = payload.get("mapping")
+        if isinstance(mapping, Mapping):
+            for entry in ParamResolver._status_paths_for_visibility(mapping, flat_values):
+                group = entry.get("group")
+                use = entry.get("use")
+                number = entry.get("number")
+                if isinstance(group, str) and isinstance(use, str) and isinstance(number, int):
+                    deps.add(f"{group}.{use}{number}")
+    return sorted(deps)
+
+
+def _primary_route_identity(routes: list[dict[str, Any]]) -> tuple[str, str]:
+    """Return the first usable route ``(name, path)`` tuple from route meta."""
+    for route in routes:
+        name = str(route.get("name") or "").strip()
+        path = str(route.get("path") or "").strip()
+        if name or path:
+            return name, path
+    return "", ""
+
+
 def _menu_keys_by_panel_path(
     panel_paths: dict[str, str],
     symbol_routes: dict[str, list[dict[str, Any]]],
@@ -892,6 +995,8 @@ async def _build_permission_gated_panel_groups(
     devid: str,
     web_ui_only: bool = False,
     warn_if_empty: bool = True,
+    flat_values: Mapping[str, Any] | None = None,
+    use_store_flat_values: bool = True,
 ) -> dict[str, list[str]]:
     """Build panel groups for *permissions* only — never retry with ``permissions=None``.
 
@@ -912,19 +1017,48 @@ async def _build_permission_gated_panel_groups(
         warn_if_empty: When True, log a warning if the result is empty. Callers pass
             False for the ``web_ui_only=True`` UI-route probe, where an empty result
             just means the module has no everyday-UI routes (not a discovery failure).
+        flat_values: Optional flattened prime values for runtime-aware route visibility
+            during panel group construction (#192).
+        use_store_flat_values: When ``False``, omit implicit ParamStore flattening so
+            ``displayDropdown`` gates stay unprimed (structural route membership).
 
     Returns:
         Mapping of panel name to symbols (possibly empty).
     """
-    groups = cast(
-        dict[str, list[str]],
-        await resolver.build_panel_groups(
-            device_menu=device_menu,
-            permissions=permissions,
-            all_panels=True,
-            web_ui_only=web_ui_only,
-        ),
-    )
+    build_panel_groups = getattr(resolver, "build_panel_groups", None)
+    if not callable(build_panel_groups):
+        return {}
+    signature = inspect.signature(build_panel_groups)
+    build_kwargs: dict[str, Any] = {
+        "device_menu": device_menu,
+        "permissions": permissions,
+        "all_panels": True,
+        "web_ui_only": web_ui_only,
+    }
+    if flat_values is not None:
+        build_kwargs["flat_values"] = flat_values
+    if not use_store_flat_values:
+        if "use_store_flat_values" in signature.parameters:
+            build_kwargs["use_store_flat_values"] = False
+        elif callable(getattr(resolver, "get_module_menu", None)):
+            from pybragerone.models.param_resolver import ParamResolver
+
+            menu = await resolver.get_module_menu(device_menu=device_menu, permissions=permissions)
+            routes_i18n = await resolver._panel_title_i18n(menu)
+            static_route_symbols = await resolver._static_route_symbols_for_menu(menu)
+            return ParamResolver.build_panel_groups_from_menu(
+                menu,
+                all_panels=True,
+                web_ui_only=web_ui_only,
+                routes_i18n=routes_i18n,
+                flat_values=None,
+                static_route_symbols=static_route_symbols,
+            )
+        else:
+            build_kwargs["flat_values"] = None
+    elif "use_store_flat_values" in signature.parameters:
+        build_kwargs["use_store_flat_values"] = use_store_flat_values
+    groups = cast(dict[str, list[str]], await build_panel_groups(**build_kwargs))
     if warn_if_empty and not _panel_group_symbols(groups):
         LOGGER.warning(
             "Panel-group discovery returned no symbols for module %s with the module permissions; "
@@ -1046,12 +1180,14 @@ async def async_build_bootstrap_payload(
         if st in (200, 204) and isinstance(data, dict):
             store.ingest_prime_payload(data)
 
+    flat_values = store.flatten()
     per_module_candidate_symbols: dict[str, set[str]] = {}
     per_module_panel_paths: dict[str, dict[str, str]] = {}
     per_module_ui_route_symbols: dict[str, set[str]] = {}
     per_module_symbol_kinds: dict[str, dict[str, set[str]]] = {}
     per_module_symbol_routes: dict[str, dict[str, list[dict[str, Any]]]] = {}
     per_module_route_diagnostics: dict[str, list[dict[str, Any]]] = {}
+    per_module_route_dep_index: dict[str, dict[tuple[str, str], list[str]]] = {}
     all_candidate_symbols: set[str] = set()
     bootstrap_debug: dict[str, Any] = {"modules": {}, "limits": {"max_rejections_per_module": 500}}
 
@@ -1067,6 +1203,7 @@ async def async_build_bootstrap_payload(
             permissions=module_permissions,
             devid=str(module.devid),
             web_ui_only=False,
+            use_store_flat_values=False,
         )
         symbols = _panel_group_symbols(groups)
         for panel_name, panel_symbols in groups.items():
@@ -1077,9 +1214,11 @@ async def async_build_bootstrap_payload(
                 if isinstance(symbol, str) and symbol and symbol not in panel_paths:
                     panel_paths[symbol] = panel_title
 
-        # Everyday-UI route set (subset of the above): used only to decide
-        # ``enabled_by_default``, never to reject candidates. An empty result here is
-        # normal (e.g. installer-only modules) and not worth warning about.
+        # Everyday-UI route set: structural side-menu membership for
+        # ``CONF_UI_ROUTE_SYMBOL`` / runtime route-visibility indexing (#192).
+        # Prime-time dropdown values must not drop symbols from this index while a
+        # route is temporarily hidden — ``enabled_by_default`` uses visibility
+        # diagnostics separately in the accept loop below.
         ui_groups = await _build_permission_gated_panel_groups(
             resolver,
             device_menu=module.deviceMenu,
@@ -1087,6 +1226,7 @@ async def async_build_bootstrap_payload(
             devid=str(module.devid),
             web_ui_only=True,
             warn_if_empty=False,
+            use_store_flat_values=False,
         )
         per_module_ui_route_symbols[module.devid] = _panel_group_symbols(ui_groups)
 
@@ -1095,17 +1235,31 @@ async def async_build_bootstrap_payload(
         per_module_symbol_kinds[module.devid] = {}
         per_module_symbol_routes[module.devid] = {}
         per_module_route_diagnostics[module.devid] = []
+        module_route_dep_index: dict[tuple[str, str], list[str]] = {}
         assets = getattr(resolver, "_assets", None)
         if assets is not None and hasattr(assets, "get_module_menu"):
             try:
                 menu = await assets.get_module_menu(device_menu=module.deviceMenu, permissions=module_permissions)
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu)
                 per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu)
+                module_route_dep_index = _route_dep_index_from_menu(menu)
+                # Must match build_panel_groups titles (menu + string-default overlays),
+                # not bare ``routes`` namespace — otherwise shell enrich misses localized
+                # panel paths like ``Strefy czasowe`` vs ``MAINMENU_STREFY_CZASOWE`` (#192).
+                routes_i18n = await resolver._panel_title_i18n(menu)
+                static_route_symbols = await resolver._static_route_symbols_for_menu(menu)
                 per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
                     menu,
                     all_panels=True,
                     web_ui_only=False,
-                    routes_i18n=await resolver._i18n.get_namespace("routes"),
+                    routes_i18n=routes_i18n,
+                    flat_values=flat_values,
+                    static_route_symbols=static_route_symbols,
+                )
+                _enrich_symbol_routes_from_shell_diagnostics(
+                    panel_paths,
+                    per_module_symbol_routes[module.devid],
+                    per_module_route_diagnostics[module.devid],
                 )
             except Exception:
                 LOGGER.debug("Menu kind extraction failed for %s", module.devid, exc_info=True)
@@ -1118,14 +1272,25 @@ async def async_build_bootstrap_payload(
                 )
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu_retry)
                 per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu_retry)
+                module_route_dep_index = _route_dep_index_from_menu(menu_retry)
+                routes_i18n = await resolver._panel_title_i18n(menu_retry)
+                static_route_symbols = await resolver._static_route_symbols_for_menu(menu_retry)
                 per_module_route_diagnostics[module.devid] = resolver.panel_route_diagnostics_from_menu(
                     menu_retry,
                     all_panels=True,
                     web_ui_only=False,
-                    routes_i18n=await resolver._i18n.get_namespace("routes"),
+                    routes_i18n=routes_i18n,
+                    flat_values=flat_values,
+                    static_route_symbols=static_route_symbols,
+                )
+                _enrich_symbol_routes_from_shell_diagnostics(
+                    panel_paths,
+                    per_module_symbol_routes[module.devid],
+                    per_module_route_diagnostics[module.devid],
                 )
             except Exception:
                 LOGGER.debug("Menu kind retry extraction failed for %s", module.devid, exc_info=True)
+        per_module_route_dep_index[module.devid] = module_route_dep_index
         all_candidate_symbols.update(symbols)
 
     details = await resolver.describe_symbols(sorted(all_candidate_symbols))
@@ -1358,18 +1523,28 @@ async def async_build_bootstrap_payload(
             "device_menu": module.deviceMenu,
             "module_interface": module.moduleInterface,
             "module_address": module.moduleAddress,
+            "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
         }
+
+        routes_map = per_module_symbol_routes.get(module.devid, {})
+        panel_paths_map = per_module_panel_paths.get(module.devid, {})
+        panel_menu_keys = _menu_keys_by_panel_path(panel_paths_map, routes_map)
+        route_dep_index = per_module_route_dep_index.get(module.devid, {})
+        module_ui_route_symbols = per_module_ui_route_symbols.get(module.devid, set())
+        module_symbol_kinds = per_module_symbol_kinds.get(module.devid, {})
 
         for symbol in sorted(per_module_symbols.get(module.devid, set())):
             payload = details.get(symbol)
             if payload is None:
                 continue
 
+            symbol_routes = routes_map.get(symbol, [])
+
             mapping = payload.get("mapping") if isinstance(payload.get("mapping"), dict) else None
-            symbol_kinds = per_module_symbol_kinds.get(module.devid, {}).get(symbol, set())
+            symbol_kinds = module_symbol_kinds.get(symbol, set())
             writable = _is_menu_command_action(symbol=symbol, symbol_kinds=symbol_kinds, mapping=mapping)
             label = str(payload.get("label")) if isinstance(payload.get("label"), str) else symbol
-            panel_path = per_module_panel_paths.get(module.devid, {}).get(symbol, "")
+            panel_path = panel_paths_map.get(symbol, "")
             menu_key = _resolve_menu_key_for_symbol(
                 symbol=symbol,
                 panel_path=panel_path,
@@ -1378,6 +1553,14 @@ async def async_build_bootstrap_payload(
             )
             menu_title = _menu_title_from_panel_path(panel_path)
             menu_group_title = _menu_group_title_from_panel_path(panel_path)
+            route_name, route_path = _primary_route_identity(symbol_routes)
+            route_visibility_deps = _route_visibility_deps_for_symbol(
+                symbol_routes,
+                route_dep_index,
+                payload=payload if isinstance(payload, Mapping) else None,
+                flat_values=flat_values,
+            )
+            ui_route_symbol = symbol in module_ui_route_symbols
             unit_value = payload.get("unit")
             if unit_value is None and isinstance(mapping, dict):
                 unit_candidates: list[Any] = []
@@ -1427,7 +1610,13 @@ async def async_build_bootstrap_payload(
                 "writable": writable,
                 "menu_kinds": sorted(symbol_kinds),
                 "enabled_by_default": module_enabled_by_default.get(symbol, False),
+                CONF_UI_ROUTE_SYMBOL: ui_route_symbol,
+                CONF_ROUTE_VISIBILITY_DEPS: route_visibility_deps,
             }
+            if route_name:
+                descriptor[CONF_ROUTE_VISIBILITY_NAME] = route_name
+            if route_path:
+                descriptor[CONF_ROUTE_VISIBILITY_PATH] = route_path
             if menu_key:
                 descriptor["menu_key"] = menu_key
             if menu_title:

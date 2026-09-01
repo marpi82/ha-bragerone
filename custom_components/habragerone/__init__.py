@@ -31,7 +31,11 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
-from .entity_common import async_register_module_parent_devices, collect_resolver_warm_symbols
+from .entity_common import (
+    async_register_module_parent_devices,
+    async_remove_legacy_connection_devices,
+    collect_resolver_warm_symbols,
+)
 from .runtime import BragerRuntime
 
 LOGGER = logging.getLogger(__name__)
@@ -150,6 +154,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         modules_meta={str(k): dict(v) for k, v in modules_meta.items()} if isinstance(modules_meta, dict) else {},
         language=language,
     )
+    descriptor_sources: list[Any] = list(descriptors) if isinstance(descriptors, list) else []
+    connection_descriptors = entry.data.get(CONF_CONNECTION_DESCRIPTORS)
+    if isinstance(connection_descriptors, list):
+        descriptor_sources.extend(connection_descriptors)
+    runtime.register_route_visibility(descriptor_sources)
     await runtime.start()
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -163,11 +172,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_ENTITY_DESCRIPTORS: descriptors,
     }
 
-    descriptor_sources: list[Any] = list(descriptors) if isinstance(descriptors, list) else []
-    connection_descriptors = entry.data.get(CONF_CONNECTION_DESCRIPTORS)
-    if isinstance(connection_descriptors, list):
-        descriptor_sources.extend(connection_descriptors)
-
     await async_register_module_parent_devices(
         hass,
         entry,
@@ -180,6 +184,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await runtime.async_warm_status_resolver(warm_symbols)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    module_devids = [
+        str(module)
+        for module in (entry.options.get(CONF_MODULES, entry.data.get(CONF_MODULES, [])) or [])
+        if str(module or "").strip()
+    ]
+    await async_remove_legacy_connection_devices(hass, entry, devids=module_devids)
 
     return True
 
