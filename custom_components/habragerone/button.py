@@ -12,13 +12,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .entity_common import (
+    attach_route_visibility_listener,
     descriptor_display_name,
     descriptor_enabled_by_default,
     descriptor_suggested_object_id,
     device_grouping_mode,
     device_info_from_descriptor,
+    entity_is_available,
     get_runtime_and_descriptors,
-    module_is_reachable,
     record_platform_entity_stats,
 )
 from .runtime import BragerRuntime
@@ -61,8 +62,14 @@ class BragerActionButton(ButtonEntity):
         self._attr_suggested_object_id = descriptor_suggested_object_id(descriptor)
         self._attr_unique_id = f"{entry.entry_id}_{self._devid}_{self._symbol}_button".lower().replace(" ", "_")
         self._attr_entity_registry_enabled_default = descriptor_enabled_by_default(descriptor)
-        self._attr_available = module_is_reachable(runtime, self._devid)
+        self._attr_available = entity_is_available(
+            runtime,
+            devid=self._devid,
+            has_value=True,
+            descriptor=descriptor,
+        )
         self._unsubscribe_connectivity: Any = None
+        self._unsubscribe_route_visibility: Any = None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -74,19 +81,33 @@ class BragerActionButton(ButtonEntity):
         )
 
     async def async_added_to_hass(self) -> None:
-        """Attach connectivity listener when entity is added."""
+        """Attach connectivity and route-visibility listeners when entity is added."""
         self._unsubscribe_connectivity = self._runtime.add_connectivity_listener(self._on_connectivity)
+        self._unsubscribe_route_visibility = attach_route_visibility_listener(
+            self._runtime,
+            devid=self._devid,
+            descriptor=self._descriptor,
+            schedule_update=lambda: self.async_schedule_update_ha_state(True),
+        )
         self.async_schedule_update_ha_state(True)
 
     async def async_will_remove_from_hass(self) -> None:
-        """Detach connectivity listener before entity removal."""
+        """Detach listeners before entity removal."""
         if callable(self._unsubscribe_connectivity):
             self._unsubscribe_connectivity()
             self._unsubscribe_connectivity = None
+        if callable(self._unsubscribe_route_visibility):
+            self._unsubscribe_route_visibility()
+            self._unsubscribe_route_visibility = None
 
     async def async_update(self) -> None:
-        """Refresh availability from module cloud connectivity."""
-        self._attr_available = module_is_reachable(self._runtime, self._devid)
+        """Refresh availability from connectivity and SPA route visibility."""
+        self._attr_available = entity_is_available(
+            self._runtime,
+            devid=self._devid,
+            has_value=True,
+            descriptor=self._descriptor,
+        )
 
     def _on_connectivity(self, devid: str, _online: bool, online_changed: bool = True) -> None:
         if devid != self._devid or not online_changed:

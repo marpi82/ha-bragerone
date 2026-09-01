@@ -1186,9 +1186,11 @@ async def async_build_bootstrap_payload(
                 if isinstance(symbol, str) and symbol and symbol not in panel_paths:
                     panel_paths[symbol] = panel_title
 
-        # Everyday-UI route set (subset of the above): used only to decide
-        # ``enabled_by_default``, never to reject candidates. An empty result here is
-        # normal (e.g. installer-only modules) and not worth warning about.
+        # Everyday-UI route set: structural side-menu membership for
+        # ``CONF_UI_ROUTE_SYMBOL`` / runtime route-visibility indexing (#192).
+        # Prime-time dropdown values must not drop symbols from this index while a
+        # route is temporarily hidden — ``enabled_by_default`` uses visibility
+        # diagnostics separately in the accept loop below.
         ui_groups = await _build_permission_gated_panel_groups(
             resolver,
             device_menu=module.deviceMenu,
@@ -1196,7 +1198,6 @@ async def async_build_bootstrap_payload(
             devid=str(module.devid),
             web_ui_only=True,
             warn_if_empty=False,
-            flat_values=flat_values,
         )
         per_module_ui_route_symbols[module.devid] = _panel_group_symbols(ui_groups)
 

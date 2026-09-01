@@ -16,7 +16,7 @@ from custom_components.habragerone.bootstrap import (  # noqa: E402
     _normalize_filter_mode,
     async_build_bootstrap_payload,
 )
-from custom_components.habragerone.const import DEFAULT_ENTITY_FILTER_MODE  # noqa: E402
+from custom_components.habragerone.const import CONF_UI_ROUTE_SYMBOL, DEFAULT_ENTITY_FILTER_MODE  # noqa: E402
 
 
 def _param(token: str) -> SimpleNamespace:
@@ -927,3 +927,127 @@ def test_async_build_bootstrap_payload_accepts_sample_cap(
     accepted_debug = module_debug.get("accepted_debug")
     assert isinstance(accepted_debug, list)
     assert len(accepted_debug) == 500
+
+
+def test_ui_route_index_ignores_bootstrap_flat_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    """UI-route indexing stays structural; prime dropdown values only affect enabled_by_default."""
+    ui_probe_flat_values: list[object | None] = []
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P6.v219": 0}
+
+    class _FakeAssets:
+        async def get_module_menu(self, *, device_menu: str, permissions: list[str] | None) -> dict[str, object]:
+            _ = device_menu, permissions
+            return {"routes": []}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        def __init__(self) -> None:
+            self._assets = _FakeAssets()
+
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels
+            if web_ui_only:
+                ui_probe_flat_values.append(flat_values)
+                return {} if flat_values is not None else {"Panel": ["SYM_DROPDOWN"]}
+            return {"Panel": ["SYM_DROPDOWN"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                symbol: {
+                    "label": symbol,
+                    "pool": "P6",
+                    "chan": "v",
+                    "idx": 219,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+                for symbol in symbols
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=1, value_label="1")
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return False, {}
+
+        def panel_route_diagnostics_from_menu(self, *args: object, **kwargs: object) -> list[dict[str, object]]:
+            _ = args, kwargs
+            return []
+
+        class _I18n:
+            async def get_namespace(self, _name: str) -> dict[str, object]:
+                return {}
+
+        _i18n = _I18n()
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+
+    descriptor = next(item for item in payload["entity_descriptors"] if item["symbol"] == "SYM_DROPDOWN")
+    assert ui_probe_flat_values == [None]
+    assert descriptor[CONF_UI_ROUTE_SYMBOL] is True
+    assert descriptor["enabled_by_default"] is False
