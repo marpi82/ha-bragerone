@@ -144,3 +144,32 @@ async def test_button_hides_ui_route_when_spa_route_not_visible(hass: HomeAssist
 
     await entity.async_update()
     assert entity._attr_available is False
+
+
+@pytest.mark.asyncio
+async def test_button_route_visibility_listener_lifecycle(hass: HomeAssistant) -> None:
+    """UI-route buttons subscribe and detach route-visibility listeners (#192)."""
+    from unittest.mock import MagicMock
+
+    runtime, *_rest = make_runtime()
+    descriptor = button_descriptor(symbol="RESET_ALARM")
+    descriptor[CONF_UI_ROUTE_SYMBOL] = True
+    descriptor[CONF_ROUTE_VISIBILITY_NAME] = "MAINMENU_X"
+    descriptor[CONF_ROUTE_VISIBILITY_PATH] = "/x"
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerActionButton(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "button.test_reset"
+    entity.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+
+    await entity.async_added_to_hass()
+    assert callable(entity._unsubscribe_route_visibility)
+
+    entity.async_schedule_update_ha_state.reset_mock()
+    listeners = list(runtime._route_visibility_listeners)
+    assert listeners
+    listeners[0]("DEV1", "RESET_ALARM", True)
+    entity.async_schedule_update_ha_state.assert_called_once_with(True)
+
+    await entity.async_will_remove_from_hass()
+    assert entity._unsubscribe_route_visibility is None
