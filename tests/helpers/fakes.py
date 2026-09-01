@@ -179,6 +179,10 @@ class FakeStore:
     def flatten(self) -> dict[str, object]:
         return dict(self._flat)
 
+    def upsert(self, key: str, value: object) -> None:
+        """Mirror ``ParamStore.upsert`` so dispatch can apply deltas before flatten()."""
+        self._flat[str(key)] = value
+
     def get_family(self, pool: str, idx: int) -> dict[str, object] | None:
         """Return channel map for one ParamStore family (``P<n>.<chan><idx>`` keys)."""
         family: dict[str, object] = {}

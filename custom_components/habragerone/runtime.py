@@ -1108,6 +1108,10 @@ class BragerRuntime:
                 )
                 self._first_update_logged = True
             update_key = f"{update.pool}.{update.chan}{update.idx}"
+            # Store and dispatcher are independent bus subscribers; upsert first so
+            # route visibility sees this delta rather than the previous snapshot.
+            if getattr(update, "value", None) is not None:
+                self.store.upsert(update_key, update.value)
             affected_symbols = self._route_visibility_dep_to_symbols.get(update_key)
             if affected_symbols:
                 await self.refresh_route_visibility(set(affected_symbols))

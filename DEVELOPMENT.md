@@ -55,11 +55,9 @@ Some SPA factory mappings still emit unevaluated expressions in diagnostics dump
 `min`/`max` already come from ParamStore channels `n`/`x` on the primary register,
 so users usually see correct limits.
 
-Catalog-side extraction of those `||` fallbacks is tracked and fixed in
-[py-bragerone#329](https://github.com/marpi82/py-bragerone/issues/329) /
-PR targeting `release/2026.9`. No Home Assistant code change is required for that
-parser fix; bump the `py-bragerone` pin when a matching pre-release from that train
-is published.
+Catalog-side extraction of those `||` fallbacks is included in the current
+`py-bragerone==2026.9.0` pin ([py-bragerone#329](https://github.com/marpi82/py-bragerone/issues/329)).
+No Home Assistant code change is required for that parser fix.
 
 ### Module alarms sensors (#222)
 
