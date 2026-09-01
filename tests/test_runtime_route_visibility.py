@@ -21,7 +21,7 @@ def _runtime_stub(*, route_visible: bool = True) -> BragerRuntime:
     runtime = BragerRuntime(
         api=MagicMock(),
         gateway=MagicMock(modules=[]),
-        store=MagicMock(flatten=MagicMock(return_value={})),
+        store=MagicMock(flatten=MagicMock(return_value={}), flatten_for_devid=MagicMock(return_value={})),
         modules_meta={"dev1": {"device_menu": 0, "name": "mod", "permissions": []}},
         language="pl",
     )
@@ -96,7 +96,7 @@ def test_register_route_visibility_skips_non_ui_descriptors() -> None:
     runtime = BragerRuntime(
         api=MagicMock(),
         gateway=MagicMock(modules=[]),
-        store=MagicMock(flatten=MagicMock(return_value={})),
+        store=MagicMock(flatten=MagicMock(return_value={}), flatten_for_devid=MagicMock(return_value={})),
         modules_meta={},
         language="pl",
     )
@@ -125,7 +125,7 @@ async def test_refresh_route_visibility_updates_symbol_state() -> None:
         children=[],
     )
     _attach_menu_resolver(runtime, routes=[circulation_route])
-    runtime.store.flatten.return_value = {"P6.v219": 0}
+    runtime.store.flatten_for_devid.return_value = {"P6.v219": 0}
 
     await runtime.refresh_route_visibility({"PARAM_219"})
 

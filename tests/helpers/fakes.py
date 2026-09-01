@@ -73,6 +73,7 @@ class FakeGateway:
         self._gateway: dict[str, dict[str, object]] = {}
         self._connectivity_callbacks: list[Any] = []
         self._cloud_session_callbacks: list[Any] = []
+        self._alarm_quantity_callbacks: list[Any] = []
         self._ws_session_up = False
         self._last_param_update_age_s: float | None = None
         self._last_live_param_update_age_s: float | None = None
@@ -100,6 +101,10 @@ class FakeGateway:
     def on_cloud_session(self, callback: Any) -> None:
         """Register a CloudSessionConnectivity callback (mirrors BragerOneGateway)."""
         self._cloud_session_callbacks.append(callback)
+
+    def on_alarm_quantity(self, callback: Any) -> None:
+        """Register an AlarmQuantityChanged callback (mirrors BragerOneGateway)."""
+        self._alarm_quantity_callbacks.append(callback)
 
     def module_online(self, devid: str) -> bool | None:
         """Return cached online flag, or ``None`` when unknown."""
@@ -173,14 +178,24 @@ class FakeStore:
 
     def __init__(self, *, flat_values: dict[str, object] | None = None) -> None:
         self._flat = dict(flat_values or {})
+        self._by_devid: dict[str, dict[str, object]] = {}
         self.run_started = False
         self.run_cancelled = False
 
     def flatten(self) -> dict[str, object]:
         return dict(self._flat)
 
-    def upsert(self, key: str, value: object) -> None:
+    def flatten_for_devid(self, devid: str) -> dict[str, object]:
+        bucket = self._by_devid.get(devid)
+        if bucket is None:
+            return {}
+        return dict(bucket)
+
+    def upsert(self, key: str, value: object, *, devid: str | None = None) -> None:
         """Mirror ``ParamStore.upsert`` so dispatch can apply deltas before flatten()."""
+        if devid is not None:
+            bucket = self._by_devid.setdefault(devid, {})
+            bucket[str(key)] = value
         self._flat[str(key)] = value
 
     def get_family(self, pool: str, idx: int) -> dict[str, object] | None:

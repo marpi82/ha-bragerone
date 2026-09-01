@@ -28,7 +28,6 @@ from custom_components.habragerone.runtime import (  # noqa: E402
     _alarm_name_helpers,
     _extract_activity_rows,
     _extract_alarm_rows,
-    _fetch_alarms_chunk_source,
     _module_events_rest_ok,
     _resolve_activity_display_value,
     _resolve_activity_i18n_token,
@@ -210,6 +209,11 @@ async def test_resolve_activity_i18n_and_display_value() -> None:
     )
     assert await _resolve_activity_i18n_token("units.one", resolver=resolver) == "Resolved"
     assert await _resolve_activity_display_value(1, unit_code=38, resolver=resolver) == "Resolved"
+
+    display_resolver = SimpleNamespace(
+        resolve_raw_display_value=AsyncMock(return_value=5.3),
+    )
+    assert await _resolve_activity_display_value(53, unit_code=49, resolver=display_resolver) == 5.3
 
     broken = SimpleNamespace(
         resolve_unit=AsyncMock(side_effect=RuntimeError("boom")),
@@ -467,24 +471,6 @@ def test_alarm_helper_and_catalog_edge_paths(monkeypatch: pytest.MonkeyPatch) ->
         __import__("sys").modules, "pybragerone.models.catalog", types.SimpleNamespace(LiveAssetsCatalog=_broken_catalog)
     )
     assert _try_live_assets_catalog(object()) is None
-
-
-@pytest.mark.asyncio
-async def test_fetch_alarms_chunk_source_asset_scan_and_failures() -> None:
-    """Alarm chunk fetch scans basename map and tolerates network errors."""
-    asset = types.SimpleNamespace(url="https://example/Alarms-x.js")
-    catalog = types.SimpleNamespace(
-        _idx=types.SimpleNamespace(
-            find_asset_for_basename=lambda _n: None,
-            assets_by_basename={"AlarmsChunk": [asset]},
-        )
-    )
-    assert await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=None)) is None
-
-    async def _get_bytes(_url: str) -> bytes:
-        raise OSError("offline")
-
-    assert await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=_get_bytes)) is None
 
 
 @pytest.mark.asyncio
@@ -751,25 +737,6 @@ def test_resolve_alarm_row_name_swallows_helper_errors(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
-async def test_fetch_alarms_chunk_source_scans_assets_and_rejects_payload_type() -> None:
-    """Alarm chunk fetch scans basename maps and rejects unknown payload types."""
-    asset = types.SimpleNamespace(url="https://example/Alarms-x.js")
-    other = types.SimpleNamespace(url="https://example/menu.js")
-    catalog = types.SimpleNamespace(
-        _idx=types.SimpleNamespace(
-            find_asset_for_basename=lambda _n: None,
-            assets_by_basename={"menu.js": [other], "AlarmsChunk": [asset]},
-        )
-    )
-
-    async def _get_bytes(_url: str) -> object:
-        return 42
-
-    source = await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=_get_bytes))
-    assert source is None
-
-
-@pytest.mark.asyncio
 async def test_load_alarm_name_maps_partial_branches(monkeypatch: pytest.MonkeyPatch) -> None:
     """Alarm name loading covers non-callable/empty/non-mapping branches."""
     catalog = types.SimpleNamespace(
@@ -791,7 +758,7 @@ async def test_load_alarm_name_maps_partial_branches(monkeypatch: pytest.MonkeyP
 
     catalog2 = types.SimpleNamespace(
         get_i18n=AsyncMock(return_value="not-a-mapping"),
-        _idx=types.SimpleNamespace(find_asset_for_basename=lambda _n: None, assets_by_basename={}),
+        fetch_alarm_name_source=AsyncMock(return_value=b"source"),
     )
     monkeypatch.setattr(
         "custom_components.habragerone.runtime._try_live_assets_catalog",
@@ -801,18 +768,18 @@ async def test_load_alarm_name_maps_partial_branches(monkeypatch: pytest.MonkeyP
         "custom_components.habragerone.runtime._alarm_name_helpers",
         lambda: (lambda _src: "not-dict", None),
     )
-    monkeypatch.setattr(
-        "custom_components.habragerone.runtime._fetch_alarms_chunk_source",
-        AsyncMock(return_value=b"source"),
-    )
     runtime2, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
     runtime2.language = "en"
     await runtime2._load_alarm_name_maps()
     assert runtime2._alarm_names == {}
 
+    catalog3 = types.SimpleNamespace(
+        get_i18n=AsyncMock(return_value={"ERROR_X": "Fuel"}),
+        fetch_alarm_name_source=AsyncMock(return_value=None),
+    )
     monkeypatch.setattr(
-        "custom_components.habragerone.runtime._fetch_alarms_chunk_source",
-        AsyncMock(return_value=None),
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog3,
     )
     monkeypatch.setattr(
         "custom_components.habragerone.runtime._alarm_name_helpers",
@@ -920,36 +887,6 @@ async def test_resolve_activity_display_value_without_mapping_label_hook() -> No
     assert await _resolve_activity_display_value(1, unit_code=1, resolver=resolver) == "units.one"
 
 
-@pytest.mark.asyncio
-async def test_fetch_alarms_chunk_without_find_basename() -> None:
-    """Chunk fetch can scan assets when ``find_asset_for_basename`` is absent."""
-    asset = types.SimpleNamespace(url="https://example/Alarms-x.js")
-    catalog = types.SimpleNamespace(
-        _idx=types.SimpleNamespace(
-            find_asset_for_basename=None,
-            assets_by_basename={"menu": [], "AlarmsEmpty": [], "AlarmsChunk": [asset]},
-        )
-    )
-
-    async def _get_bytes(_url: str) -> bytes:
-        return b'1:"ERROR_X"'
-
-    source = await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=_get_bytes))
-    assert source == b'1:"ERROR_X"'
-
-
-@pytest.mark.asyncio
-async def test_fetch_alarms_chunk_skips_non_list_alarm_basenames() -> None:
-    """Basename scan ignores alarms keys whose refs are empty or not lists."""
-    catalog = types.SimpleNamespace(
-        _idx=types.SimpleNamespace(
-            find_asset_for_basename=None,
-            assets_by_basename={"AlarmsBroken": "nope", "alarmsEmpty": []},
-        )
-    )
-    assert await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=AsyncMock())) is None
-
-
 def test_module_events_rest_ok() -> None:
     """REST tuple guard accepts only 200/204 success tuples with app-level status."""
     assert _module_events_rest_ok((200, {"alarms": []})) is True
@@ -1055,3 +992,23 @@ async def test_async_refresh_activity_task_ownership_race() -> None:
 
     with patch.object(BragerRuntime, "_async_refresh_activity_impl", _hijack):
         await runtime.async_refresh_activity("DEV1")
+
+
+@pytest.mark.asyncio
+async def test_on_gateway_alarm_quantity_schedules_refresh() -> None:
+    """Alarm quantity push events schedule async_refresh_alarms for the devid."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    scheduled: list[str] = []
+
+    async def _refresh(_self: BragerRuntime, devid: str) -> None:
+        scheduled.append(devid)
+
+    with patch.object(BragerRuntime, "async_refresh_alarms", _refresh):
+        runtime._on_gateway_alarm_quantity(types.SimpleNamespace(devid="DEV1", changed=True))
+        await asyncio.sleep(0)
+        assert scheduled == ["DEV1"]
+
+        scheduled.clear()
+        runtime._on_gateway_alarm_quantity(types.SimpleNamespace(devid="DEV1", changed=False))
+        await asyncio.sleep(0)
+        assert scheduled == []
