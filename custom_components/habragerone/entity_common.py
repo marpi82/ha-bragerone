@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import slugify
 from pybragerone.models.param import ParamStore
@@ -23,6 +24,7 @@ from .const import (
     CONF_RAW_TO_LABEL,
     CONF_ROUTE_VISIBILITY_DEPS,
     CONF_UI_ROUTE_SYMBOL,
+    CONNECTION_MENU_KEY,
     DATA_ENTITY_STATS,
     DATA_RUNTIME,
     DEFAULT_DEVICE_GROUPING,
@@ -410,6 +412,33 @@ async def async_register_module_parent_devices(
         )
 
 
+async def async_remove_legacy_connection_devices(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    *,
+    devids: Iterable[str],
+) -> None:
+    """Remove empty legacy per-connection child devices after connectivity moved to parent."""
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+    for raw_devid in devids:
+        devid = str(raw_devid or "").strip()
+        if not devid:
+            continue
+        legacy_identifiers = {(DOMAIN, f"{devid}:{CONNECTION_MENU_KEY}")}
+        device = device_registry.async_get_device(identifiers=legacy_identifiers)
+        if device is None:
+            continue
+        entities = er.async_entries_for_device(
+            entity_registry,
+            device.id,
+            include_disabled_entities=True,
+        )
+        if entities:
+            continue
+        device_registry.async_remove_device(device.id)
+
+
 def device_info_from_descriptor(
     descriptor: dict[str, Any],
     *,
@@ -564,6 +593,7 @@ def record_platform_entity_stats(
     platform: str,
     descriptor_count: int,
     created_count: int,
+    supplemental_count: int = 0,
 ) -> None:
     """Record per-platform entity setup statistics for diagnostics."""
     entry_data = hass.data[DOMAIN][entry.entry_id]
@@ -572,5 +602,6 @@ def record_platform_entity_stats(
     stats[platform] = {
         "descriptor_count": int(descriptor_count),
         "created_count": int(created_count),
+        "supplemental_count": int(supplemental_count),
     }
     entry_data[DATA_ENTITY_STATS] = stats

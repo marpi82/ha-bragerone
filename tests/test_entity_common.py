@@ -28,6 +28,7 @@ from custom_components.habragerone.entity_common import (  # noqa: E402
     _mapping_value_selector_entries,
     _menu_device_display_name,
     async_register_module_parent_devices,
+    async_remove_legacy_connection_devices,
     attach_route_visibility_listener,
     collect_resolver_warm_symbols,
     descriptor_current_raw_value,
@@ -764,7 +765,7 @@ async def test_record_platform_entity_stats_persists_counts(hass: HomeAssistant)
     )
 
     stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]
-    assert stats == {"switch": {"descriptor_count": 3, "created_count": 2}}
+    assert stats == {"switch": {"descriptor_count": 3, "created_count": 2, "supplemental_count": 0}}
 
 
 def test_collect_resolver_warm_symbols_deduplicates_status_and_enum() -> None:
@@ -785,3 +786,33 @@ def test_collect_resolver_warm_symbols_skips_invalid_entries() -> None:
         {"symbol": "PARAM_2", "mapping": {"channels": {"unit": []}}},
     ]
     assert collect_resolver_warm_symbols(items) == []
+
+
+@pytest.mark.asyncio
+async def test_async_remove_legacy_connection_devices_drops_empty_orphans(hass: HomeAssistant) -> None:
+    """Legacy menu child devices with no entities are removed after connectivity moves."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    registry = dr.async_get(hass)
+    legacy = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1:module.connection")},
+        manufacturer="BragerOne",
+        name="Boiler — Connection with module",
+        model="Brager module",
+    )
+    parent = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1")},
+        manufacturer="BragerOne",
+        name="Boiler",
+        model="Brager module",
+    )
+    assert legacy.id != parent.id
+
+    await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
+
+    assert registry.async_get_device(identifiers={(DOMAIN, "DEV1:module.connection")}) is None
+    assert registry.async_get_device(identifiers={(DOMAIN, "DEV1")}) is not None

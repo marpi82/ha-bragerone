@@ -31,7 +31,11 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
-from .entity_common import async_register_module_parent_devices, collect_resolver_warm_symbols
+from .entity_common import (
+    async_register_module_parent_devices,
+    async_remove_legacy_connection_devices,
+    collect_resolver_warm_symbols,
+)
 from .runtime import BragerRuntime
 
 LOGGER = logging.getLogger(__name__)
@@ -180,6 +184,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await runtime.async_warm_status_resolver(warm_symbols)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    module_devids = [
+        str(module)
+        for module in (entry.options.get(CONF_MODULES, entry.data.get(CONF_MODULES, [])) or [])
+        if str(module or "").strip()
+    ]
+    await async_remove_legacy_connection_devices(hass, entry, devids=module_devids)
 
     return True
 

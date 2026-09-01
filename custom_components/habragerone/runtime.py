@@ -77,6 +77,7 @@ class BragerRuntime:
     _activity_assets_loaded: bool = False
     _activity_refresh_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
     _activity_feed_loaded: dict[str, bool] = field(default_factory=dict)
+    _background_tasks: set[asyncio.Task[Any]] = field(default_factory=set)
     _route_visibility_listeners: set[RouteVisibilityCallback] = field(default_factory=set)
     _symbol_route_visible: dict[str, bool] = field(default_factory=dict)
     _symbol_route_lookup: dict[str, tuple[str, str, str, str]] = field(default_factory=dict)
@@ -123,6 +124,24 @@ class BragerRuntime:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         self._tasks.clear()
+        for task in list(self._background_tasks):
+            task.cancel()
+        for task in list(self._background_tasks):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        self._background_tasks.clear()
+        for task in list(self._alarms_refresh_tasks.values()):
+            task.cancel()
+        for task in list(self._alarms_refresh_tasks.values()):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        self._alarms_refresh_tasks.clear()
+        for task in list(self._activity_refresh_tasks.values()):
+            task.cancel()
+        for task in list(self._activity_refresh_tasks.values()):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        self._activity_refresh_tasks.clear()
         self._status_resolver = None
         await self.gateway.stop()
         await self.api.close()
@@ -963,7 +982,8 @@ class BragerRuntime:
             self.async_refresh_activity(devid_key),
             name=f"habragerone-activity-after-write-{devid_key}",
         )
-        del task
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def async_warm_status_resolver(self, symbols: Iterable[str] | None = None) -> None:
         """Build ``ParamResolver``, prefetch mappings, and pre-resolve STATUS labels (#204)."""

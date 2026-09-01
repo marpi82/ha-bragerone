@@ -182,7 +182,8 @@ async def test_iter_and_setup_create_activity_sensor(hass: HomeAssistant) -> Non
     stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]["sensor"]
     # 1 descriptor sensor + 1 activity (alarms skipped: no modules_alarms on API)
     assert stats["created_count"] == 2
-    assert stats["descriptor_count"] == 2
+    assert stats["descriptor_count"] == 1
+    assert stats["supplemental_count"] == 1
 
 
 @pytest.mark.asyncio

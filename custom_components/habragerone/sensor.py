@@ -56,12 +56,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     activity_entities = await iter_activity_feed_entities(hass, entry, runtime)
     entities.extend(alarm_entities)
     entities.extend(activity_entities)
+    supplemental_count = len(alarm_entities) + len(activity_entities)
     record_platform_entity_stats(
         hass,
         entry,
         platform="sensor",
-        descriptor_count=len(descriptors) + len(alarm_entities) + len(activity_entities),
+        descriptor_count=len(descriptors),
         created_count=len(entities),
+        supplemental_count=supplemental_count,
     )
     async_add_entities(entities)
 

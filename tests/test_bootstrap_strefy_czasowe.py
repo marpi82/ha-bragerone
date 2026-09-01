@@ -391,8 +391,12 @@ def test_async_build_bootstrap_payload_enriches_shell_routes_and_route_path(
             _ = menu
             return {"MAINMENU_STREFY_CZASOWE": "Strefy czasowe"}
 
+        async def _static_route_symbols_for_menu(self, menu: object) -> dict[str, set[str]]:
+            _ = menu
+            return {"MAINMENU_STREFY_CZASOWE": {"PARAM_177"}}
+
         def panel_route_diagnostics_from_menu(self, *args: object, **kwargs: object) -> list[dict[str, object]]:
-            _ = args, kwargs
+            assert kwargs.get("static_route_symbols") == {"MAINMENU_STREFY_CZASOWE": {"PARAM_177"}}
             return [
                 {
                     "title": "Strefy czasowe",

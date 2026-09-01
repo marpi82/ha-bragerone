@@ -29,7 +29,7 @@ async def test_async_setup_entry_registers_entities_and_stats(hass: HomeAssistan
     assert len(added) == 2
     assert {entity._symbol for entity in added} == {"SEL1", "SEL2"}
     stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]["select"]
-    assert stats == {"descriptor_count": 2, "created_count": 2}
+    assert stats == {"descriptor_count": 2, "created_count": 2, "supplemental_count": 0}
 
 
 @pytest.mark.asyncio

@@ -118,6 +118,21 @@ async def test_diagnostics_reports_unknown_platforms(hass: HomeAssistant) -> Non
 
 
 @pytest.mark.asyncio
+async def test_diagnostics_allows_supplemental_feed_entities(hass: HomeAssistant) -> None:
+    """Alarm/activity feed sensors are tracked separately from cached descriptors."""
+    runtime = object()
+    descriptors = [{"platform": "sensor", "symbol": "TEMP"}]
+    stats = {"sensor": {"descriptor_count": 1, "created_count": 3, "supplemental_count": 2}}
+    entry = register_config_entry(hass, runtime=runtime, descriptors=descriptors, entity_stats=stats)
+
+    payload = await async_get_config_entry_diagnostics(hass, entry)
+    summary = payload["descriptor_summary"]
+
+    assert summary["health_status"] == "ok"
+    assert summary["descriptor_vs_created_mismatch"] is False
+
+
+@pytest.mark.asyncio
 async def test_diagnostics_includes_module_connectivity(hass: HomeAssistant) -> None:
     from custom_components.habragerone.const import DATA_RUNTIME
     from tests.helpers.fakes import make_runtime

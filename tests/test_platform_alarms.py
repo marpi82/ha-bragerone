@@ -209,7 +209,8 @@ async def test_iter_and_setup_create_alarm_sensors(hass: HomeAssistant) -> None:
 
     stats = hass.data[DOMAIN][entry.entry_id][DATA_ENTITY_STATS]["sensor"]
     assert stats["created_count"] == 3
-    assert stats["descriptor_count"] == 3
+    assert stats["descriptor_count"] == 1
+    assert stats["supplemental_count"] == 2
 
 
 @pytest.mark.asyncio

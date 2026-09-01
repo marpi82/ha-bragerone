@@ -103,6 +103,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
     runtime_stats = runtime_stats_raw if isinstance(runtime_stats_raw, dict) else {}
     created_total = 0
     runtime_descriptor_total = 0
+    supplemental_total = 0
     for stats in runtime_stats.values():
         if not isinstance(stats, dict):
             continue
@@ -112,22 +113,30 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
         descriptor_count = stats.get("descriptor_count")
         if isinstance(descriptor_count, int):
             runtime_descriptor_total += descriptor_count
+        supplemental_count = stats.get("supplemental_count")
+        if isinstance(supplemental_count, int):
+            supplemental_total += supplemental_count
 
+    expected_entity_total = len(descriptors) + supplemental_total
     all_platforms = set(PLATFORMS) | set(platform_breakdown.keys()) | set(runtime_stats.keys()) | set(unknown_platforms.keys())
     platform_creation_deltas: dict[str, int] = {}
     for platform in sorted(all_platforms):
         expected = platform_breakdown.get(platform, 0)
         platform_stats = runtime_stats.get(platform)
         created = 0
+        supplemental = 0
         if isinstance(platform_stats, dict):
             maybe_created = platform_stats.get("created_count")
             if isinstance(maybe_created, int):
                 created = maybe_created
-        platform_creation_deltas[platform] = expected - created
+            maybe_supplemental = platform_stats.get("supplemental_count")
+            if isinstance(maybe_supplemental, int):
+                supplemental = maybe_supplemental
+        platform_creation_deltas[platform] = (expected + supplemental) - created
 
     descriptor_vs_created_mismatch = (
         runtime_descriptor_total != len(descriptors)
-        or created_total != len(descriptors)
+        or created_total != expected_entity_total
         or any(delta != 0 for delta in platform_creation_deltas.values())
     )
 

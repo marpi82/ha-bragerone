@@ -982,6 +982,20 @@ async def test_ensure_alarm_name_maps_retries_until_both_maps_loaded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stop_cancels_background_refresh_tasks() -> None:
+    """Background refresh tasks are cancelled during runtime shutdown."""
+    runtime, *_rest = make_runtime()
+    task = asyncio.create_task(asyncio.sleep(3600), name="habragerone-activity-after-write-DEV1")
+    runtime._background_tasks.add(task)
+    task.add_done_callback(runtime._background_tasks.discard)
+
+    await runtime.stop()
+
+    assert task.cancelled()
+    assert not runtime._background_tasks
+
+
+@pytest.mark.asyncio
 async def test_async_refresh_alarms_task_ownership_race() -> None:
     """Finally cleanup skips popping when another task replaced the slot."""
     from tests.test_platform_alarms import _AlarmsApi
