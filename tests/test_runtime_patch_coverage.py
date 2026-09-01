@@ -956,6 +956,8 @@ def test_module_events_rest_ok() -> None:
     assert _module_events_rest_ok((200, {"status": True, "alarms": []})) is True
     assert _module_events_rest_ok((200, {"status": False, "alarms": []})) is False
     assert _module_events_rest_ok((200, {"status": False, "activities": []})) is False
+    assert _module_events_rest_ok((200,)) is True
+    assert _module_events_rest_ok((204,)) is True
     assert _module_events_rest_ok((204, None)) is True
     assert _module_events_rest_ok((401, {})) is False
     assert _module_events_rest_ok(()) is False
