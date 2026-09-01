@@ -797,6 +797,33 @@ async def test_load_alarm_name_maps_partial_branches(monkeypatch: pytest.MonkeyP
     await runtime3._load_alarm_name_maps()
     assert runtime3._alarm_names == {}
 
+    catalog4 = types.SimpleNamespace(get_i18n=AsyncMock(return_value={}))
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog4,
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._alarm_name_helpers",
+        lambda: (lambda _src: {38: "ERROR_X"}, None),
+    )
+    runtime4, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime4.language = "en"
+    await runtime4._load_alarm_name_maps()
+    assert runtime4._alarm_names == {}
+
+    catalog5 = types.SimpleNamespace(
+        get_i18n=AsyncMock(return_value={}),
+        fetch_alarm_name_source=AsyncMock(return_value=b"alarms-chunk"),
+    )
+    monkeypatch.setattr(
+        "custom_components.habragerone.runtime._try_live_assets_catalog",
+        lambda _api: catalog5,
+    )
+    runtime5, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime5.language = "en"
+    await runtime5._load_alarm_name_maps()
+    assert runtime5._alarm_names == {38: "ERROR_X"}
+
 
 @pytest.mark.asyncio
 async def test_load_activity_assets_partial_branches(monkeypatch: pytest.MonkeyPatch) -> None:
