@@ -158,7 +158,7 @@ class _BragerAlarmsFeedSensor(SensorEntity):
     def _apply_from_cache(self) -> None:
         alarms = self._alarms()
         self._attr_native_value = len(alarms)
-        self._attr_available = module_is_reachable(self._runtime, self._devid)
+        self._attr_available = module_is_reachable(self._runtime, self._devid) and self._runtime.alarms_feed_ready(self._devid)
 
     def _on_event_feed(self, devid: str) -> None:
         if devid != self._devid:
@@ -308,7 +308,7 @@ class BragerActivitySensor(SensorEntity):
     def _apply_from_cache(self) -> None:
         activities = self._activities()
         self._attr_native_value = len(activities)
-        self._attr_available = module_is_reachable(self._runtime, self._devid)
+        self._attr_available = module_is_reachable(self._runtime, self._devid) and self._runtime.activity_feed_ready(self._devid)
 
     def _on_event_feed(self, devid: str) -> None:
         if devid != self._devid:

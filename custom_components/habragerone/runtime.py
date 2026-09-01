@@ -67,12 +67,14 @@ class BragerRuntime:
     _alarm_assets_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _alarm_names_loaded: bool = False
     _alarms_refresh_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
+    _alarms_feed_loaded: dict[str, bool] = field(default_factory=dict)
     _activity: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _activity_index_label: str | None = None
     _activity_state_i18n: dict[str, str] = field(default_factory=dict)
     _activity_assets_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _activity_assets_loaded: bool = False
     _activity_refresh_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
+    _activity_feed_loaded: dict[str, bool] = field(default_factory=dict)
     _route_visibility_listeners: set[RouteVisibilityCallback] = field(default_factory=set)
     _symbol_route_visible: dict[str, bool] = field(default_factory=dict)
     _symbol_route_lookup: dict[str, tuple[str, str, str, str]] = field(default_factory=dict)
@@ -311,6 +313,10 @@ class BragerRuntime:
         """Return cached active alarms for *devid* (empty when unknown)."""
         return list(self._alarms_current.get(devid, ()))
 
+    def alarms_feed_ready(self, devid: str) -> bool:
+        """Return whether alarms REST data loaded successfully for *devid*."""
+        return self._alarms_feed_loaded.get(str(devid or "").strip()) is True
+
     def alarms_history(self, devid: str) -> list[dict[str, Any]]:
         """Return cached history alarms for *devid* (empty when unknown)."""
         return list(self._alarms_history.get(devid, ()))
@@ -365,12 +371,15 @@ class BragerRuntime:
             history_result = await history_fn([devid_key], page=1, limit=20, return_data=True)
         except Exception:
             LOGGER.exception("Failed to refresh module alarms for devid=%s", devid_key)
+            self._alarms_feed_loaded[devid_key] = False
+            self._notify_event_feed_listeners(devid_key)
             return
 
         current_rows = _extract_alarm_rows(current_result)
         history_rows = _extract_alarm_rows(history_result)
         self._alarms_current[devid_key] = [self._normalize_alarm_row(row, default_devid=devid_key) for row in current_rows]
         self._alarms_history[devid_key] = [self._normalize_alarm_row(row, default_devid=devid_key) for row in history_rows]
+        self._alarms_feed_loaded[devid_key] = True
         self._notify_event_feed_listeners(devid_key)
 
     def _notify_event_feed_listeners(self, devid: str) -> None:
@@ -493,6 +502,10 @@ class BragerRuntime:
         """Return cached activity rows for *devid* (empty when unknown)."""
         return list(self._activity.get(devid, ()))
 
+    def activity_feed_ready(self, devid: str) -> bool:
+        """Return whether activity REST data loaded successfully for *devid*."""
+        return self._activity_feed_loaded.get(str(devid or "").strip()) is True
+
     async def async_get_activity_index_label(self) -> str | None:
         """Return SPA ``routes.activity.index`` entity name, or ``None``.
 
@@ -552,12 +565,15 @@ class BragerRuntime:
             )
         except Exception:
             LOGGER.exception("Failed to refresh module activity for devid=%s", devid_key)
+            self._activity_feed_loaded[devid_key] = False
+            self._notify_event_feed_listeners(devid_key)
             return
 
         rows = _extract_activity_rows(result)
         self._activity[devid_key] = [
             await self._normalize_activity_row(row, default_devid=devid_key, resolver=resolver) for row in rows
         ]
+        self._activity_feed_loaded[devid_key] = True
         self._notify_event_feed_listeners(devid_key)
 
     async def _ensure_activity_assets(self) -> None:
@@ -885,6 +901,7 @@ class BragerRuntime:
             )
             if not ok:
                 raise HomeAssistantError(f"Command write failed for '{symbol}' via raw command route")
+            self._schedule_activity_refresh_after_write(devid)
             return
 
         if prepared.route == "parameter_write":
@@ -903,6 +920,7 @@ class BragerRuntime:
             )
             if not ok:
                 raise HomeAssistantError(f"Command write failed for '{symbol}' via parameter route")
+            self._schedule_activity_refresh_after_write(devid)
             return
 
         rule = _select_command_rule(command_rules=typed_command_rules, desired_value=prepared.raw_value)
@@ -917,6 +935,22 @@ class BragerRuntime:
         )
         if not ok:
             raise HomeAssistantError(f"Command write failed for '{symbol}' via raw command route")
+        self._schedule_activity_refresh_after_write(devid)
+
+    def _schedule_activity_refresh_after_write(self, devid: str) -> None:
+        """Refresh activity feed after a successful HA write (SPA logs parameter changes)."""
+        devid_key = str(devid or "").strip()
+        if not devid_key or not self.supports_module_activity:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = asyncio.create_task(
+            self.async_refresh_activity(devid_key),
+            name=f"habragerone-activity-after-write-{devid_key}",
+        )
+        del task
 
     async def async_warm_status_resolver(self, symbols: Iterable[str] | None = None) -> None:
         """Build ``ParamResolver``, prefetch mappings, and pre-resolve STATUS labels (#204)."""

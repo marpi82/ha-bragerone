@@ -466,6 +466,30 @@ async def test_async_refresh_activity_logs_api_failures() -> None:
     api.modules_activity = boom  # type: ignore[method-assign]
     await runtime.async_refresh_activity("DEV1")
     assert runtime.activity("DEV1") == []
+    assert runtime.activity_feed_ready("DEV1") is False
+
+
+@pytest.mark.asyncio
+async def test_activity_sensor_unavailable_when_feed_not_loaded(hass: HomeAssistant) -> None:
+    """Failed REST refresh must not look like a successful empty activity list."""
+    runtime, _api = _runtime_with_activity()
+    runtime._module_online["DEV1"] = True
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    from custom_components.habragerone.event_feeds import BragerActivitySensor
+
+    entity = BragerActivitySensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta={"name": "Boiler"},
+        name="Activity",
+    )
+    entity.hass = hass
+    entity.async_write_ha_state = lambda: None  # type: ignore[method-assign]
+    await entity.async_added_to_hass()
+    entity._apply_from_cache()
+    assert entity._attr_native_value == 0
+    assert entity._attr_available is False
 
 
 @pytest.mark.asyncio

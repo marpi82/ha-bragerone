@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from homeassistant.exceptions import HomeAssistantError
 
@@ -10,6 +13,7 @@ from tests.conftest import install_pybragerone_stubs
 install_pybragerone_stubs()
 
 from custom_components.habragerone.runtime import (  # noqa: E402
+    BragerRuntime,
     _compare_condition,
     _read_target_actual,
     _rule_command_name,
@@ -71,6 +75,20 @@ async def test_async_write_applies_inverse_numeric_transform() -> None:
     descriptor.update({"transform_scale": 0.1, "transform_offset": 0.0})
     await runtime.async_write(descriptor=descriptor, input_display_value=33.3)
     assert api.calls[0]["value"] == 333
+
+
+@pytest.mark.asyncio
+async def test_async_write_schedules_activity_refresh() -> None:
+    """Successful writes refresh the activity feed (SPA logs parameter changes)."""
+    api = FakeApi()
+    api.modules_activity = AsyncMock(return_value=(200, {"activities": []}))  # type: ignore[attr-defined]
+    runtime, *_rest = make_runtime(api=api)
+    refresh = AsyncMock()
+    with patch.object(BragerRuntime, "async_refresh_activity", refresh):
+        descriptor = writable_parameter_descriptor()
+        await runtime.async_write(descriptor=descriptor, input_display_value=42)
+        await asyncio.sleep(0)
+        refresh.assert_awaited_once_with("DEV1")
 
 
 def test_read_target_actual_accepts_integer_floats() -> None:

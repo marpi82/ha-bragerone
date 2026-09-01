@@ -405,6 +405,28 @@ async def test_async_refresh_alarms_logs_api_failures() -> None:
     api.modules_alarms = boom  # type: ignore[method-assign]
     await runtime.async_refresh_alarms("DEV1")
     assert runtime.alarms_current("DEV1") == []
+    assert runtime.alarms_feed_ready("DEV1") is False
+
+
+@pytest.mark.asyncio
+async def test_alarm_sensor_unavailable_when_feed_not_loaded(hass: HomeAssistant) -> None:
+    """Failed REST refresh must not look like a successful empty alarm list."""
+    runtime, _api = _runtime_with_alarms()
+    runtime._module_online["DEV1"] = True
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerAlarmsCurrentSensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta={"name": "Boiler"},
+        name="Current alarms",
+    )
+    entity.hass = hass
+    entity.async_write_ha_state = lambda: None  # type: ignore[method-assign]
+    await entity.async_added_to_hass()
+    entity._apply_from_cache()
+    assert entity._attr_native_value == 0
+    assert entity._attr_available is False
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import types
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -708,15 +709,14 @@ def test_try_live_assets_catalog_import_error(monkeypatch: pytest.MonkeyPatch) -
     assert _try_live_assets_catalog(object()) is None
 
 
-def test_alarm_name_helpers_returns_imported_symbols() -> None:
+def test_alarm_name_helpers_returns_imported_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
     """Helper import returns parse/resolve callables when the module is present."""
-    import sys
     import types
 
     fake = types.ModuleType("pybragerone.models.alarm_names")
     fake.parse_alarm_name_enum = lambda _source: {38: "ERROR_X"}
     fake.resolve_alarm_label = lambda alarm_id, *, alarm_names, errors_i18n: "Fuel"
-    sys.modules["pybragerone.models.alarm_names"] = fake
+    monkeypatch.setitem(sys.modules, "pybragerone.models.alarm_names", fake)
     parse_fn, resolve_fn = _alarm_name_helpers()
     assert callable(parse_fn)
     assert callable(resolve_fn)
