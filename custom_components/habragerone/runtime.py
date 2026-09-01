@@ -197,10 +197,13 @@ class BragerRuntime:
         if resolver is None:
             return
         changed: list[tuple[str, str, bool]] = []
+        flat_by_devid: dict[str, dict[str, Any]] = {}
         for lookup_key, (devid, symbol, route_name, route_path) in self._symbol_route_lookup.items():
             if symbols is not None and symbol not in symbols:
                 continue
-            flat_values = self.store.flatten_for_devid(devid)
+            if devid not in flat_by_devid:
+                flat_by_devid[devid] = self.store.flatten_for_devid(devid)
+            flat_values = flat_by_devid[devid]
             menu = await self._menu_for_devid(devid, resolver)
             if menu is None:
                 continue
@@ -1407,7 +1410,6 @@ async def _resolve_activity_display_value(raw: Any, *, unit_code: Any, resolver:
             return await resolve_display(raw, unit_code=unit_code)
         except Exception:
             LOGGER.debug("resolve_raw_display_value failed", exc_info=True)
-            return raw
     resolve_unit = getattr(resolver, "resolve_unit", None)
     if not callable(resolve_unit):
         return raw

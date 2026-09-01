@@ -223,8 +223,10 @@ async def test_resolve_activity_i18n_and_display_value() -> None:
 
     failing_display = SimpleNamespace(
         resolve_raw_display_value=AsyncMock(side_effect=RuntimeError("display boom")),
+        resolve_unit=AsyncMock(return_value={"1": "units.one"}),
+        _unit_mapping_value_label=lambda _unit, _raw: "legacy.mapped",
     )
-    assert await _resolve_activity_display_value(53, unit_code=49, resolver=failing_display) == 53
+    assert await _resolve_activity_display_value(53, unit_code=49, resolver=failing_display) == "legacy.mapped"
 
 
 @pytest.mark.asyncio
