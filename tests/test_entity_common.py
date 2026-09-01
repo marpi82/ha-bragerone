@@ -816,3 +816,54 @@ async def test_async_remove_legacy_connection_devices_drops_empty_orphans(hass: 
 
     assert registry.async_get_device(identifiers={(DOMAIN, "DEV1:module.connection")}) is None
     assert registry.async_get_device(identifiers={(DOMAIN, "DEV1")}) is not None
+
+
+@pytest.mark.asyncio
+async def test_async_remove_legacy_connection_devices_skips_blank_devids(hass: HomeAssistant) -> None:
+    """Blank module ids are ignored when scanning for legacy connection devices."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    registry = dr.async_get(hass)
+    registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1:module.connection")},
+        manufacturer="BragerOne",
+        name="Boiler — Connection with module",
+        model="Brager module",
+    )
+
+    await async_remove_legacy_connection_devices(hass, entry, devids=["", "  ", "DEV1"])
+
+    assert registry.async_get_device(identifiers={(DOMAIN, "DEV1:module.connection")}) is None
+
+
+@pytest.mark.asyncio
+async def test_async_remove_legacy_connection_devices_keeps_populated_legacy_device(hass: HomeAssistant) -> None:
+    """Legacy connection devices that still host entities are not removed."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+    legacy = device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1:module.connection")},
+        manufacturer="BragerOne",
+        name="Boiler — Connection with module",
+        model="Brager module",
+    )
+    entity_registry.async_get_or_create(
+        domain=DOMAIN,
+        platform="binary_sensor",
+        unique_id=f"{entry.entry_id}_legacy_connection_entity",
+        config_entry=entry,
+        device_id=legacy.id,
+    )
+
+    await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
+
+    assert device_registry.async_get_device(identifiers={(DOMAIN, "DEV1:module.connection")}) is not None

@@ -996,6 +996,23 @@ async def test_stop_cancels_background_refresh_tasks() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stop_cancels_inflight_alarm_and_activity_refresh_tasks() -> None:
+    """In-flight alarm/activity refresh tasks are cancelled during shutdown."""
+    runtime, *_rest = make_runtime()
+    alarm_task = asyncio.create_task(asyncio.sleep(3600), name="habragerone-alarms-DEV1")
+    activity_task = asyncio.create_task(asyncio.sleep(3600), name="habragerone-activity-DEV1")
+    runtime._alarms_refresh_tasks["DEV1"] = alarm_task
+    runtime._activity_refresh_tasks["DEV1"] = activity_task
+
+    await runtime.stop()
+
+    assert alarm_task.cancelled()
+    assert activity_task.cancelled()
+    assert not runtime._alarms_refresh_tasks
+    assert not runtime._activity_refresh_tasks
+
+
+@pytest.mark.asyncio
 async def test_async_refresh_alarms_task_ownership_race() -> None:
     """Finally cleanup skips popping when another task replaced the slot."""
     from tests.test_platform_alarms import _AlarmsApi
