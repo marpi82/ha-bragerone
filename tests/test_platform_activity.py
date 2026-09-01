@@ -493,6 +493,28 @@ async def test_activity_sensor_unavailable_when_feed_not_loaded(hass: HomeAssist
 
 
 @pytest.mark.asyncio
+async def test_activity_sensor_available_when_feed_loaded(hass: HomeAssistant) -> None:
+    """Successful REST load makes the sensor available when the module is online."""
+    runtime, _api = _runtime_with_activity()
+    runtime._module_online["DEV1"] = True
+    runtime._activity_feed_loaded["DEV1"] = True
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    from custom_components.habragerone.event_feeds import BragerActivitySensor
+
+    entity = BragerActivitySensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta={"name": "Boiler"},
+        name="Activity",
+    )
+    entity.hass = hass
+    entity.async_write_ha_state = lambda: None  # type: ignore[method-assign]
+    entity._apply_from_cache()
+    assert entity._attr_available is True
+
+
+@pytest.mark.asyncio
 async def test_load_activity_assets_fail_closed_without_language(monkeypatch: pytest.MonkeyPatch) -> None:
     """Missing language prevents activity chrome from loading."""
     catalog = types.SimpleNamespace(refresh_index=AsyncMock(), get_i18n=AsyncMock())

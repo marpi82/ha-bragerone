@@ -430,6 +430,26 @@ async def test_alarm_sensor_unavailable_when_feed_not_loaded(hass: HomeAssistant
 
 
 @pytest.mark.asyncio
+async def test_alarm_sensor_available_when_feed_loaded(hass: HomeAssistant) -> None:
+    """Successful REST load makes the sensor available when the module is online."""
+    runtime, _api = _runtime_with_alarms()
+    runtime._module_online["DEV1"] = True
+    runtime._alarms_feed_loaded["DEV1"] = True
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerAlarmsCurrentSensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta={"name": "Boiler"},
+        name="Current alarms",
+    )
+    entity.hass = hass
+    entity.async_write_ha_state = lambda: None  # type: ignore[method-assign]
+    entity._apply_from_cache()
+    assert entity._attr_available is True
+
+
+@pytest.mark.asyncio
 async def test_event_feed_listener_exceptions_do_not_break_dispatch() -> None:
     """Listener failures are isolated so other subscribers still run."""
     runtime, _api = _runtime_with_alarms()

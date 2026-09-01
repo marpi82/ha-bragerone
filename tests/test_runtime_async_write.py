@@ -91,6 +91,37 @@ async def test_async_write_schedules_activity_refresh() -> None:
         refresh.assert_awaited_once_with("DEV1")
 
 
+@pytest.mark.asyncio
+async def test_async_write_fallback_raw_command_route_schedules_activity_refresh() -> None:
+    """Cover the final raw-command branch (after parameter/intent routes are skipped)."""
+    api = FakeApi()
+    api.modules_activity = AsyncMock(return_value=(200, {"activities": []}))  # type: ignore[attr-defined]
+    runtime, *_rest = make_runtime(api=api)
+    refresh = AsyncMock()
+    descriptor = {
+        "symbol": "SYNC",
+        "devid": "DEV1",
+        "mapping": {
+            "command_rules": [
+                {"command": "void 0", "value": "MISS"},
+                {"command": "DO_SYNC", "value": "GO"},
+            ]
+        },
+    }
+    with patch.object(BragerRuntime, "async_refresh_activity", refresh):
+        await runtime.async_write(descriptor=descriptor, input_display_value="GO")
+        await asyncio.sleep(0)
+        refresh.assert_awaited_once_with("DEV1")
+
+
+def test_schedule_activity_refresh_without_running_loop() -> None:
+    """No running loop must not raise when scheduling post-write activity refresh."""
+    api = FakeApi()
+    api.modules_activity = AsyncMock(return_value=(200, {"activities": []}))  # type: ignore[attr-defined]
+    runtime, *_rest = make_runtime(api=api)
+    runtime._schedule_activity_refresh_after_write("DEV1")
+
+
 def test_read_target_actual_accepts_integer_floats() -> None:
     assert (
         _read_target_actual(
