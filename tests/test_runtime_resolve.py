@@ -373,7 +373,7 @@ async def test_dispatch_upserts_store_before_route_visibility() -> None:
 
     async def _refresh(_self: BragerRuntime, symbols: set[str] | None = None) -> None:
         _ = symbols
-        seen.append(_self.store.flatten().get("P6.v219"))
+        seen.append(_self.store.flatten_for_devid("DEV1").get("P6.v219"))
         refreshed.set()
 
     await runtime.start()

@@ -96,6 +96,9 @@ class BragerRuntime:
         register_session = getattr(self.gateway, "on_cloud_session", None)
         if self.supports_cloud_session and callable(register_session):
             register_session(self._on_gateway_cloud_session)
+        register_alarm_qty = getattr(self.gateway, "on_alarm_quantity", None)
+        if self.supports_alarm_quantity and callable(register_alarm_qty):
+            register_alarm_qty(self._on_gateway_alarm_quantity)
         try:
             await self.gateway.start()
         except Exception:
@@ -193,11 +196,14 @@ class BragerRuntime:
         resolver = await self._async_get_resolver()
         if resolver is None:
             return
-        flat_values = self.store.flatten()
         changed: list[tuple[str, str, bool]] = []
+        flat_by_devid: dict[str, dict[str, Any]] = {}
         for lookup_key, (devid, symbol, route_name, route_path) in self._symbol_route_lookup.items():
             if symbols is not None and symbol not in symbols:
                 continue
+            if devid not in flat_by_devid:
+                flat_by_devid[devid] = self.store.flatten_for_devid(devid)
+            flat_values = flat_by_devid[devid]
             menu = await self._menu_for_devid(devid, resolver)
             if menu is None:
                 continue
@@ -324,6 +330,11 @@ class BragerRuntime:
         return callable(getattr(self.gateway, "on_cloud_session", None)) and callable(
             getattr(self.gateway, "ws_session_up", None)
         )
+
+    @property
+    def supports_alarm_quantity(self) -> bool:
+        """Return whether the gateway exposes alarm-quantity push callbacks (#254)."""
+        return callable(getattr(self.gateway, "on_alarm_quantity", None))
 
     @property
     def supports_module_alarms(self) -> bool:
@@ -507,7 +518,10 @@ class BragerRuntime:
                 if isinstance(errors, Mapping):
                     self._errors_i18n = dict(errors)
             if callable(parse_fn):
-                source = await _fetch_alarms_chunk_source(catalog, self.api)
+                fetch_source = getattr(catalog, "fetch_alarm_name_source", None)
+                source: str | bytes | None = None
+                if callable(fetch_source):
+                    source = await fetch_source()
                 if source:
                     parsed = parse_fn(source)
                     if isinstance(parsed, dict):
@@ -781,6 +795,24 @@ class BragerRuntime:
         if not isinstance(up, bool):
             return
         self._apply_cloud_session(up)
+
+    def _on_gateway_alarm_quantity(self, event: Any) -> None:
+        """Refresh alarm feed when SPA alarm count changes for a subscribed module."""
+        if not getattr(event, "changed", True):
+            return
+        devid = str(getattr(event, "devid", "") or "").strip()
+        if not devid:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = asyncio.create_task(
+            self.async_refresh_alarms(devid),
+            name=f"habragerone-alarms-qty-{devid}",
+        )
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     def _apply_module_online(
         self,
@@ -1111,7 +1143,7 @@ class BragerRuntime:
             # Store and dispatcher are independent bus subscribers; upsert first so
             # route visibility sees this delta rather than the previous snapshot.
             if getattr(update, "value", None) is not None:
-                self.store.upsert(update_key, update.value)
+                self.store.upsert(update_key, update.value, devid=update.devid)
             affected_symbols = self._route_visibility_dep_to_symbols.get(update_key)
             if affected_symbols:
                 await self.refresh_route_visibility(set(affected_symbols))
@@ -1369,9 +1401,15 @@ async def _resolve_activity_i18n_token(token: str | None, *, resolver: Any) -> s
 
 
 async def _resolve_activity_display_value(raw: Any, *, unit_code: Any, resolver: Any) -> Any:
-    """Map a raw activity value through unit enum tables when possible."""
+    """Map a raw activity value through unit enum tables and numeric transforms."""
     if resolver is None or unit_code is None or raw is None:
         return raw
+    resolve_display = getattr(resolver, "resolve_raw_display_value", None)
+    if callable(resolve_display):
+        try:
+            return await resolve_display(raw, unit_code=unit_code)
+        except Exception:
+            LOGGER.debug("resolve_raw_display_value failed", exc_info=True)
     resolve_unit = getattr(resolver, "resolve_unit", None)
     if not callable(resolve_unit):
         return raw
@@ -1464,41 +1502,3 @@ def _resolve_alarm_row_name(
         return None
     value = errors_i18n.get(key)
     return value.strip() if isinstance(value, str) and value.strip() else None
-
-
-async def _fetch_alarms_chunk_source(catalog: Any, api: Any) -> str | bytes | None:
-    """Best-effort fetch of the SPA Alarms chunk for ``AlarmName`` parsing."""
-    idx = getattr(catalog, "_idx", None)
-    assets = getattr(idx, "assets_by_basename", None)
-    find_basename = getattr(idx, "find_asset_for_basename", None)
-    asset = None
-    if callable(find_basename):
-        for candidate in ("Alarms", "alarms"):
-            asset = find_basename(candidate)
-            if asset is not None:
-                break
-    if asset is None and isinstance(assets, Mapping):
-        for basename, refs in assets.items():
-            if not isinstance(basename, str) or not basename.casefold().startswith("alarms"):
-                continue
-            if isinstance(refs, list) and refs:
-                asset = refs[-1]
-                break
-    if asset is None:
-        return None
-    url = getattr(asset, "url", None)
-    if not isinstance(url, str) or not url.strip():
-        return None
-    get_bytes = getattr(api, "get_bytes", None)
-    if not callable(get_bytes):
-        return None
-    try:
-        payload = await get_bytes(url)
-    except Exception:
-        LOGGER.debug("Failed to fetch Alarms chunk from %s", url, exc_info=True)
-        return None
-    if isinstance(payload, (bytes, str)):
-        return payload
-    if isinstance(payload, bytearray):
-        return bytes(payload)
-    return None

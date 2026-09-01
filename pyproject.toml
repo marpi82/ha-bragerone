@@ -21,7 +21,7 @@ keywords = [
 ]
 dependencies = [
     "homeassistant>=2026.3.0",
-    "py-bragerone==2026.9.0",
+    "py-bragerone==2026.9.1",
 ]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
@@ -77,6 +77,7 @@ test = [
   "aioresponses>=0.7.8,<0.8.0",
   "packaging>=24.1,<27.0.0",
   "pytest-homeassistant-custom-component>=0.13.205",
+  "diff-cover>=10.5.1,<10.6.0",
 ]
 
 # ---------------- Ruff (formatter + linter) ----------------
@@ -159,6 +160,7 @@ validate = ["fmt", "lint", "typecheck", "security", "test"]
 # Tests
 test = { cmd = "pytest -q" }
 cov = { cmd = "pytest -q --cov=custom_components.habragerone --cov-report=term-missing" }
+patch-cov = { shell = "scripts/check_patch_coverage.sh" }
 # HA Development
 hass = { shell = "python -m homeassistant --config config --debug" }
 hass-restart = { shell = "pkill -f homeassistant || true && python -m homeassistant --config config --debug" }

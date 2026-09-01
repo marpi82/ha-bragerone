@@ -21,7 +21,7 @@ def _runtime_stub(*, route_visible: bool = True) -> BragerRuntime:
     runtime = BragerRuntime(
         api=MagicMock(),
         gateway=MagicMock(modules=[]),
-        store=MagicMock(flatten=MagicMock(return_value={})),
+        store=MagicMock(flatten=MagicMock(return_value={}), flatten_for_devid=MagicMock(return_value={})),
         modules_meta={"dev1": {"device_menu": 0, "name": "mod", "permissions": []}},
         language="pl",
     )
@@ -96,7 +96,7 @@ def test_register_route_visibility_skips_non_ui_descriptors() -> None:
     runtime = BragerRuntime(
         api=MagicMock(),
         gateway=MagicMock(modules=[]),
-        store=MagicMock(flatten=MagicMock(return_value={})),
+        store=MagicMock(flatten=MagicMock(return_value={}), flatten_for_devid=MagicMock(return_value={})),
         modules_meta={},
         language="pl",
     )
@@ -125,11 +125,36 @@ async def test_refresh_route_visibility_updates_symbol_state() -> None:
         children=[],
     )
     _attach_menu_resolver(runtime, routes=[circulation_route])
-    runtime.store.flatten.return_value = {"P6.v219": 0}
+    runtime.store.flatten_for_devid.return_value = {"P6.v219": 0}
 
     await runtime.refresh_route_visibility({"PARAM_219"})
 
     assert runtime.route_visible_for_symbol("dev1", "PARAM_219") is False
+    runtime.store.flatten_for_devid.assert_called_once_with("dev1")
+
+
+@pytest.mark.asyncio
+async def test_refresh_route_visibility_caches_flat_values_per_devid() -> None:
+    """Per-module flatten snapshots are computed once per refresh pass."""
+    runtime = _runtime_stub(route_visible=True)
+    route_a = SimpleNamespace(
+        name="modules.menu.circulation",
+        path="circulation",
+        meta=SimpleNamespace(display_dropdown="P6.v219"),
+        children=[],
+    )
+    route_b = SimpleNamespace(
+        name="MAINMENU_STREFY_CZASOWE",
+        path="timezones",
+        meta=SimpleNamespace(display_dropdown="![]"),
+        children=[],
+    )
+    _attach_menu_resolver(runtime, routes=[route_a, route_b])
+
+    await runtime.refresh_route_visibility(None)
+
+    assert runtime.store.flatten_for_devid.call_count == 1
+    runtime.store.flatten_for_devid.assert_called_with("dev1")
 
 
 @pytest.mark.asyncio

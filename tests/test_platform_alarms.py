@@ -27,7 +27,6 @@ from custom_components.habragerone.event_feeds import (  # noqa: E402
 )
 from custom_components.habragerone.runtime import (  # noqa: E402
     _extract_alarm_rows,
-    _fetch_alarms_chunk_source,
     _resolve_alarm_row_name,
 )
 from custom_components.habragerone.sensor import async_setup_entry  # noqa: E402
@@ -511,25 +510,6 @@ async def test_async_get_alarm_chrome_labels_caches_results() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_alarms_chunk_source_reads_bytes_payload() -> None:
-    """Alarms chunk fetch accepts bytes/str/bytearray API payloads."""
-    catalog = types.SimpleNamespace(
-        _idx=types.SimpleNamespace(
-            find_asset_for_basename=lambda _name: types.SimpleNamespace(url="https://example/alarms.js"),
-            assets_by_basename={},
-        )
-    )
-
-    async def _get_bytes(_url: str) -> bytes:
-        return b'38:"ERROR_BYTES"'
-
-    api = types.SimpleNamespace(get_bytes=_get_bytes)
-
-    source = await _fetch_alarms_chunk_source(catalog, api)
-    assert source == b'38:"ERROR_BYTES"'
-
-
-@pytest.mark.asyncio
 async def test_iter_alarm_feed_entities_fail_closed_without_api(hass: HomeAssistant) -> None:
     """No entities when the API client lacks alarms helpers."""
     runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
@@ -592,10 +572,7 @@ async def test_async_refresh_alarms_loads_name_maps_from_catalog(monkeypatch: py
     catalog = types.SimpleNamespace(
         refresh_index_minimal=AsyncMock(),
         get_i18n=AsyncMock(return_value={"ERROR_FOO": "Foo alarm"}),
-        _idx=types.SimpleNamespace(
-            find_asset_for_basename=lambda _name: types.SimpleNamespace(url="https://example/alarms.js"),
-            assets_by_basename={},
-        ),
+        fetch_alarm_name_source=AsyncMock(return_value=b'9:"ERROR_FOO"'),
     )
     monkeypatch.setattr(
         "custom_components.habragerone.runtime._try_live_assets_catalog",
@@ -617,11 +594,6 @@ async def test_async_refresh_alarms_loads_name_maps_from_catalog(monkeypatch: py
     }
     runtime, *_rest = make_runtime(api=api, modules_meta={"DEV1": {"name": "Boiler"}})
     runtime.language = "en"
-
-    async def _get_bytes(_url: str) -> bytes:
-        return b'9:"ERROR_FOO"'
-
-    api.get_bytes = _get_bytes  # type: ignore[attr-defined]
 
     await runtime.async_refresh_alarms("DEV1")
     current = runtime.alarms_current("DEV1")
@@ -640,10 +612,7 @@ async def test_async_refresh_alarms_resolves_names_without_refresh_index(monkeyp
     catalog = types.SimpleNamespace(
         refresh_index=_broken_refresh_index,
         get_i18n=get_i18n,
-        _idx=types.SimpleNamespace(
-            find_asset_for_basename=lambda _name: types.SimpleNamespace(url="https://example/alarms.js"),
-            assets_by_basename={},
-        ),
+        fetch_alarm_name_source=AsyncMock(return_value=b'9:"ERROR_FOO"'),
     )
     monkeypatch.setattr(
         "custom_components.habragerone.runtime._try_live_assets_catalog",
@@ -665,11 +634,6 @@ async def test_async_refresh_alarms_resolves_names_without_refresh_index(monkeyp
     }
     runtime, *_rest = make_runtime(api=api, modules_meta={"DEV1": {"name": "Boiler"}})
     runtime.language = "en"
-
-    async def _get_bytes(_url: str) -> bytes:
-        return b'9:"ERROR_FOO"'
-
-    api.get_bytes = _get_bytes  # type: ignore[attr-defined]
 
     await runtime.async_refresh_alarms("DEV1")
     assert runtime.alarms_current("DEV1")[0]["name"] == "Foo alarm"
@@ -707,60 +671,6 @@ def test_resolve_alarm_row_name_swallows_resolver_errors(monkeypatch: pytest.Mon
 
     monkeypatch.setattr("custom_components.habragerone.runtime._alarm_name_helpers", lambda: (None, _boom))
     assert _resolve_alarm_row_name(1, alarm_names={1: "ERROR_X"}, errors_i18n={}) is None
-
-
-@pytest.mark.asyncio
-async def test_fetch_alarms_chunk_source_uses_assets_by_basename_fallback() -> None:
-    """When find_asset_for_basename misses, scan assets_by_basename for alarms*.js."""
-    asset = types.SimpleNamespace(url="https://example/Alarms-abc.js")
-    catalog = types.SimpleNamespace(
-        _idx=types.SimpleNamespace(
-            find_asset_for_basename=lambda _name: None,
-            assets_by_basename={"Alarms-abc.js": [asset]},
-        )
-    )
-
-    async def _get_bytes(_url: str) -> str:
-        return '1:"ERROR_ONE"'
-
-    source = await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=_get_bytes))
-    assert source == '1:"ERROR_ONE"'
-
-
-@pytest.mark.asyncio
-async def test_fetch_alarms_chunk_source_returns_none_on_failures() -> None:
-    """Missing URL/get_bytes or transport errors yield None."""
-    catalog = types.SimpleNamespace(_idx=types.SimpleNamespace(find_asset_for_basename=lambda _n: None, assets_by_basename={}))
-    assert await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace()) is None
-
-    bad_asset = types.SimpleNamespace(url="")
-    catalog2 = types.SimpleNamespace(
-        _idx=types.SimpleNamespace(find_asset_for_basename=lambda _n: bad_asset, assets_by_basename={})
-    )
-    assert await _fetch_alarms_chunk_source(catalog2, types.SimpleNamespace(get_bytes=AsyncMock())) is None
-
-    good_asset = types.SimpleNamespace(url="https://example/a.js")
-
-    async def _boom(_url: str) -> bytes:
-        raise OSError("network")
-
-    catalog3 = types.SimpleNamespace(
-        _idx=types.SimpleNamespace(find_asset_for_basename=lambda _n: good_asset, assets_by_basename={})
-    )
-    assert await _fetch_alarms_chunk_source(catalog3, types.SimpleNamespace(get_bytes=_boom)) is None
-
-
-@pytest.mark.asyncio
-async def test_fetch_alarms_chunk_source_accepts_bytearray_payload() -> None:
-    """Bytearray payloads are normalized to bytes."""
-    asset = types.SimpleNamespace(url="https://example/a.js")
-    catalog = types.SimpleNamespace(_idx=types.SimpleNamespace(find_asset_for_basename=lambda _n: asset, assets_by_basename={}))
-
-    async def _get_bytes(_url: str) -> bytearray:
-        return bytearray(b'2:"ERROR_TWO"')
-
-    source = await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=_get_bytes))
-    assert source == b'2:"ERROR_TWO"'
 
 
 @pytest.mark.asyncio
