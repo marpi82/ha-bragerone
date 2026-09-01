@@ -221,6 +221,11 @@ async def test_resolve_activity_i18n_and_display_value() -> None:
     )
     assert await _resolve_activity_display_value(5, unit_code=1, resolver=broken) == 5
 
+    failing_display = SimpleNamespace(
+        resolve_raw_display_value=AsyncMock(side_effect=RuntimeError("display boom")),
+    )
+    assert await _resolve_activity_display_value(53, unit_code=49, resolver=failing_display) == 53
+
 
 @pytest.mark.asyncio
 async def test_normalize_activity_row_coerces_scalar_ids() -> None:
@@ -1012,3 +1017,24 @@ async def test_on_gateway_alarm_quantity_schedules_refresh() -> None:
         runtime._on_gateway_alarm_quantity(types.SimpleNamespace(devid="DEV1", changed=False))
         await asyncio.sleep(0)
         assert scheduled == []
+
+
+def test_on_gateway_alarm_quantity_ignores_blank_devid() -> None:
+    """Blank devid must not schedule alarm refresh work."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+
+    with patch.object(BragerRuntime, "async_refresh_alarms", AsyncMock()) as refresh:
+        runtime._on_gateway_alarm_quantity(types.SimpleNamespace(devid="   ", changed=True))
+        refresh.assert_not_called()
+
+
+def test_on_gateway_alarm_quantity_requires_running_loop() -> None:
+    """Without a running event loop the callback must not spawn background work."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+
+    with (
+        patch.object(asyncio, "get_running_loop", side_effect=RuntimeError),
+        patch.object(BragerRuntime, "async_refresh_alarms", AsyncMock()) as refresh,
+    ):
+        runtime._on_gateway_alarm_quantity(types.SimpleNamespace(devid="DEV1", changed=True))
+        refresh.assert_not_called()

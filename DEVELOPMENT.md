@@ -16,7 +16,7 @@ uv sync --group dev --group test
 # Install pre-commit hooks (commit-stage checks)
 uv run pre-commit install
 
-# Install pre-push hook (80% coverage gate on git push)
+# Install pre-push hook (80% project + 100% patch coverage vs origin/main)
 uv run pre-commit install --hook-type pre-push
 
 # Start development environment
@@ -44,7 +44,7 @@ uv run pytest
 uv run pytest --cov=custom_components.habragerone --cov-report=term-missing
 ```
 
-CI uploads `coverage.xml` to Codecov (skipped for Dependabot/Renovate and fork PRs). Pull requests get a `codecov-commenter` report. Patch coverage target is 100%; overall project coverage is informational (the 80% floor is the pre-push hook — see setup commands above).
+CI uploads `coverage.xml` to Codecov (skipped for Dependabot/Renovate and fork PRs). Pull requests get a `codecov-commenter` report. Patch coverage target is 100%; overall project coverage is informational. **Pre-push** enforces 80% project coverage and 100% patch vs `merge-base origin/main` via `scripts/check_patch_coverage.sh` (`uv run poe patch-cov` — same diff basis as Codecov PR patch).
 
 Issue and PR templates live under `.github/ISSUE_TEMPLATE/` and `.github/PULL_REQUEST_TEMPLATE.md`. Optional Copilot code review is configured in the GitHub repo settings (not via a workflow).
 

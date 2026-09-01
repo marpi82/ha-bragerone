@@ -19,10 +19,11 @@ uv run poe lint                  # ruff check --fix
 uv run poe typecheck             # mypy --strict (python_version 3.14, pydantic plugin)
 uv run poe test                  # pytest (pytest-homeassistant-custom-component)
 uv run poe cov                   # coverage report (the 80% threshold is enforced only by the pre-push hook)
+uv run poe patch-cov             # pre-push parity: 80% project + 100% patch vs merge-base origin/main
 uv run poe validate              # fmt + lint + typecheck + security + test
 ```
 
-CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2026.3.0` (declared minimum — bump together with `hacs.json`/`pyproject.toml`) / `latest` / `dev`. Each workflow ends in an aggregate **gate job** (`CI`, `HA Integration Tests`, `HACS Validation`) that fails if any required job fails; the `protect-main` ruleset requires only these gates, so renaming jobs or matrix legs never requires ruleset changes — keep the gate job names stable. CI uploads `coverage.xml` to Codecov (`codecov-commenter` on PRs; skip Dependabot/Renovate and forks). Patch coverage target is 100% on pull requests only (`only_pulls` in `codecov.yml` — avoids false failures on main merge commits with a bad compare base); project coverage is informational — the 80% floor stays on pre-push. `manifest.json` is ignored so release version bumps do not affect patch.
+CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2026.3.0` (declared minimum — bump together with `hacs.json`/`pyproject.toml`) / `latest` / `dev`. Each workflow ends in an aggregate **gate job** (`CI`, `HA Integration Tests`, `HACS Validation`) that fails if any required job fails; the `protect-main` ruleset requires only these gates, so renaming jobs or matrix legs never requires ruleset changes — keep the gate job names stable. CI uploads `coverage.xml` to Codecov (`codecov-commenter` on PRs; skip Dependabot/Renovate and forks). Patch coverage target is 100% on pull requests only (`only_pulls` in `codecov.yml` — avoids false failures on main merge commits with a bad compare base); project coverage is informational — the 80% floor stays on pre-push via `scripts/check_patch_coverage.sh` (`diff-cover` vs `merge-base origin/main`, same diff basis as Codecov PR patch). `manifest.json` is ignored so release version bumps do not affect patch.
 
 ## Architecture in one paragraph
 
