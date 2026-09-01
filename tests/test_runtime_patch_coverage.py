@@ -29,6 +29,7 @@ from custom_components.habragerone.runtime import (  # noqa: E402
     _extract_activity_rows,
     _extract_alarm_rows,
     _fetch_alarms_chunk_source,
+    _module_events_rest_ok,
     _resolve_activity_display_value,
     _resolve_activity_i18n_token,
     _resolve_alarm_row_name,
@@ -947,6 +948,37 @@ async def test_fetch_alarms_chunk_skips_non_list_alarm_basenames() -> None:
         )
     )
     assert await _fetch_alarms_chunk_source(catalog, types.SimpleNamespace(get_bytes=AsyncMock())) is None
+
+
+def test_module_events_rest_ok() -> None:
+    """REST tuple guard accepts only 200/204 success tuples."""
+    assert _module_events_rest_ok((200, {"alarms": []})) is True
+    assert _module_events_rest_ok((204, None)) is True
+    assert _module_events_rest_ok((401, {})) is False
+    assert _module_events_rest_ok(()) is False
+    assert _module_events_rest_ok("not-a-tuple") is False
+
+
+@pytest.mark.asyncio
+async def test_ensure_alarm_name_maps_retries_until_both_maps_loaded() -> None:
+    """Alarm name assets stay reloadable until both enum and errors maps populate."""
+    runtime, *_rest = make_runtime()
+    runtime.language = "en"
+    calls = 0
+
+    async def _load(_self: BragerRuntime) -> None:
+        nonlocal calls
+        calls += 1
+        _self._errors_i18n = {"ERROR_X": "Fuel"}
+        _self._alarm_names = {38: "ERROR_X"} if calls > 1 else {}
+
+    with patch.object(BragerRuntime, "_load_alarm_name_maps", _load):
+        await runtime._ensure_alarm_name_maps()
+        assert calls == 1
+        assert runtime._alarm_names_loaded is False
+        await runtime._ensure_alarm_name_maps()
+        assert calls == 2
+        assert runtime._alarm_names_loaded is True
 
 
 @pytest.mark.asyncio

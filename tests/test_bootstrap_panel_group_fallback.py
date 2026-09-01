@@ -5,6 +5,7 @@ import logging
 import sys
 from types import SimpleNamespace
 from typing import Any, ClassVar, cast
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -603,3 +604,150 @@ def test_ui_mode_rejects_symbols_without_display_value(monkeypatch: pytest.Monke
             "menu_kinds": [],
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_build_permission_gated_panel_groups_returns_empty_without_builder() -> None:
+    """Missing ``build_panel_groups`` helper returns an empty mapping."""
+    groups = await _build_permission_gated_panel_groups(
+        SimpleNamespace(),
+        device_menu=1,
+        permissions=[],
+        devid="M1",
+    )
+    assert groups == {}
+
+
+@pytest.mark.asyncio
+async def test_build_permission_gated_panel_groups_structural_from_menu_fallback() -> None:
+    """Structural discovery falls back to ``build_panel_groups_from_menu`` on older py-bragerone."""
+    import pybragerone.models.param_resolver as param_resolver_mod
+
+    menu = SimpleNamespace(routes=[])
+    recorded: list[object] = []
+
+    def _from_menu(
+        menu_arg: object,
+        *,
+        all_panels: bool,
+        web_ui_only: bool,
+        routes_i18n: object,
+        flat_values: object,
+        static_route_symbols: object,
+    ) -> dict[str, list[str]]:
+        _ = all_panels, web_ui_only, routes_i18n, static_route_symbols
+        recorded.append(flat_values)
+        assert menu_arg is menu
+        return {"Panel": ["SYM_STRUCT"]}
+
+    async def _unexpected(**_kwargs: object) -> dict[str, list[str]]:
+        raise AssertionError("build_panel_groups must not run in from_menu fallback")
+
+    resolver = SimpleNamespace(
+        get_module_menu=AsyncMock(return_value=menu),
+        _panel_title_i18n=AsyncMock(return_value={}),
+        _static_route_symbols_for_menu=AsyncMock(return_value={}),
+        build_panel_groups=_unexpected,
+    )
+
+    with patch.object(
+        param_resolver_mod.ParamResolver,
+        "build_panel_groups_from_menu",
+        _from_menu,
+        create=True,
+    ):
+        groups = await _build_permission_gated_panel_groups(
+            resolver,
+            device_menu=1,
+            permissions=["perm"],
+            devid="M1",
+            web_ui_only=True,
+            use_store_flat_values=False,
+        )
+    assert groups == {"Panel": ["SYM_STRUCT"]}
+    assert recorded == [None]
+
+
+@pytest.mark.asyncio
+async def test_build_permission_gated_panel_groups_forwards_use_store_flag() -> None:
+    """Explicit ``use_store_flat_values=True`` is forwarded when the helper supports it."""
+    recorded: list[bool] = []
+
+    async def build_panel_groups(*, use_store_flat_values: bool = True, **_kwargs: object) -> dict[str, list[str]]:
+        recorded.append(use_store_flat_values)
+        return {"A": ["S"]}
+
+    resolver = SimpleNamespace(build_panel_groups=build_panel_groups)
+    groups = await _build_permission_gated_panel_groups(
+        resolver,
+        device_menu=1,
+        permissions=[],
+        devid="M1",
+        use_store_flat_values=True,
+    )
+    assert groups == {"A": ["S"]}
+    assert recorded == [True]
+
+
+@pytest.mark.asyncio
+async def test_build_permission_gated_panel_groups_structural_via_kwarg() -> None:
+    """Structural mode forwards ``use_store_flat_values=False`` when py-bragerone supports it."""
+    recorded: list[bool] = []
+
+    async def build_panel_groups(*, use_store_flat_values: bool = True, **_kwargs: object) -> dict[str, list[str]]:
+        recorded.append(use_store_flat_values)
+        return {"Panel": ["SYM_KW"]}
+
+    resolver = SimpleNamespace(build_panel_groups=build_panel_groups)
+    groups = await _build_permission_gated_panel_groups(
+        resolver,
+        device_menu=1,
+        permissions=[],
+        devid="M1",
+        use_store_flat_values=False,
+    )
+    assert groups == {"Panel": ["SYM_KW"]}
+    assert recorded == [False]
+
+
+@pytest.mark.asyncio
+async def test_build_permission_gated_panel_groups_structural_clears_flat_values() -> None:
+    """Without menu fallback, structural mode passes ``flat_values=None`` explicitly."""
+    recorded: list[object] = []
+
+    async def build_panel_groups(**kwargs: object) -> dict[str, list[str]]:
+        recorded.append(kwargs.get("flat_values"))
+        return {"A": ["S"]}
+
+    resolver = SimpleNamespace(build_panel_groups=build_panel_groups)
+    groups = await _build_permission_gated_panel_groups(
+        resolver,
+        device_menu=1,
+        permissions=[],
+        devid="M1",
+        use_store_flat_values=False,
+    )
+    assert groups == {"A": ["S"]}
+    assert recorded == [None]
+
+
+@pytest.mark.asyncio
+async def test_build_permission_gated_panel_groups_forwards_flat_values() -> None:
+    """Explicit ``flat_values`` prime map is forwarded to the resolver helper."""
+    recorded: list[object] = []
+    prime = {"P1.v1": 42}
+
+    async def build_panel_groups(**kwargs: object) -> dict[str, list[str]]:
+        recorded.append(kwargs.get("flat_values"))
+        return {"A": ["S"]}
+
+    resolver = SimpleNamespace(build_panel_groups=build_panel_groups)
+    groups = await _build_permission_gated_panel_groups(
+        resolver,
+        device_menu=1,
+        permissions=[],
+        devid="M1",
+        flat_values=prime,
+    )
+    assert groups == {"A": ["S"]}
+    assert recorded == [prime]
