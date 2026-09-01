@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 from collections.abc import Mapping
@@ -995,6 +996,7 @@ async def _build_permission_gated_panel_groups(
     web_ui_only: bool = False,
     warn_if_empty: bool = True,
     flat_values: Mapping[str, Any] | None = None,
+    use_store_flat_values: bool = True,
 ) -> dict[str, list[str]]:
     """Build panel groups for *permissions* only — never retry with ``permissions=None``.
 
@@ -1017,20 +1019,46 @@ async def _build_permission_gated_panel_groups(
             just means the module has no everyday-UI routes (not a discovery failure).
         flat_values: Optional flattened prime values for runtime-aware route visibility
             during panel group construction (#192).
+        use_store_flat_values: When ``False``, omit implicit ParamStore flattening so
+            ``displayDropdown`` gates stay unprimed (structural route membership).
 
     Returns:
         Mapping of panel name to symbols (possibly empty).
     """
-    groups = cast(
-        dict[str, list[str]],
-        await resolver.build_panel_groups(
-            device_menu=device_menu,
-            permissions=permissions,
-            all_panels=True,
-            web_ui_only=web_ui_only,
-            flat_values=flat_values,
-        ),
-    )
+    build_panel_groups = getattr(resolver, "build_panel_groups", None)
+    if not callable(build_panel_groups):
+        return {}
+    signature = inspect.signature(build_panel_groups)
+    build_kwargs: dict[str, Any] = {
+        "device_menu": device_menu,
+        "permissions": permissions,
+        "all_panels": True,
+        "web_ui_only": web_ui_only,
+    }
+    if flat_values is not None:
+        build_kwargs["flat_values"] = flat_values
+    if not use_store_flat_values:
+        if "use_store_flat_values" in signature.parameters:
+            build_kwargs["use_store_flat_values"] = False
+        elif callable(getattr(resolver, "get_module_menu", None)):
+            from pybragerone.models.param_resolver import ParamResolver
+
+            menu = await resolver.get_module_menu(device_menu=device_menu, permissions=permissions)
+            routes_i18n = await resolver._panel_title_i18n(menu)
+            static_route_symbols = await resolver._static_route_symbols_for_menu(menu)
+            return ParamResolver.build_panel_groups_from_menu(
+                menu,
+                all_panels=True,
+                web_ui_only=web_ui_only,
+                routes_i18n=routes_i18n,
+                flat_values=None,
+                static_route_symbols=static_route_symbols,
+            )
+        else:
+            build_kwargs["flat_values"] = None
+    elif "use_store_flat_values" in signature.parameters:
+        build_kwargs["use_store_flat_values"] = use_store_flat_values
+    groups = cast(dict[str, list[str]], await build_panel_groups(**build_kwargs))
     if warn_if_empty and not _panel_group_symbols(groups):
         LOGGER.warning(
             "Panel-group discovery returned no symbols for module %s with the module permissions; "
@@ -1175,7 +1203,7 @@ async def async_build_bootstrap_payload(
             permissions=module_permissions,
             devid=str(module.devid),
             web_ui_only=False,
-            flat_values=flat_values,
+            use_store_flat_values=False,
         )
         symbols = _panel_group_symbols(groups)
         for panel_name, panel_symbols in groups.items():
@@ -1198,6 +1226,7 @@ async def async_build_bootstrap_payload(
             devid=str(module.devid),
             web_ui_only=True,
             warn_if_empty=False,
+            use_store_flat_values=False,
         )
         per_module_ui_route_symbols[module.devid] = _panel_group_symbols(ui_groups)
 

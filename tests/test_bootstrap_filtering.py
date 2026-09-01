@@ -931,7 +931,7 @@ def test_async_build_bootstrap_payload_accepts_sample_cap(
 
 def test_ui_route_index_ignores_bootstrap_flat_values(monkeypatch: pytest.MonkeyPatch) -> None:
     """UI-route indexing stays structural; prime dropdown values only affect enabled_by_default."""
-    ui_probe_flat_values: list[object | None] = []
+    structural_calls: list[tuple[bool, bool]] = []
 
     class _FakeParamStore:
         def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
@@ -962,12 +962,11 @@ def test_ui_route_index_ignores_bootstrap_flat_values(monkeypatch: pytest.Monkey
             all_panels: bool,
             web_ui_only: bool = False,
             flat_values: object | None = None,
+            use_store_flat_values: bool = True,
         ) -> dict[str, list[str]]:
-            _ = device_menu, permissions, all_panels
-            if web_ui_only:
-                ui_probe_flat_values.append(flat_values)
-                return {} if flat_values is not None else {"Panel": ["SYM_DROPDOWN"]}
-            return {"Panel": ["SYM_DROPDOWN"]}
+            _ = device_menu, permissions, all_panels, flat_values
+            structural_calls.append((web_ui_only, use_store_flat_values))
+            return {"Panel": ["SYM_DROPDOWN"]} if not use_store_flat_values else {}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
             return {
@@ -1048,6 +1047,6 @@ def test_ui_route_index_ignores_bootstrap_flat_values(monkeypatch: pytest.Monkey
     )
 
     descriptor = next(item for item in payload["entity_descriptors"] if item["symbol"] == "SYM_DROPDOWN")
-    assert ui_probe_flat_values == [None]
+    assert structural_calls == [(False, False), (True, False)]
     assert descriptor[CONF_UI_ROUTE_SYMBOL] is True
     assert descriptor["enabled_by_default"] is False

@@ -35,6 +35,8 @@ LOGGER = logging.getLogger(__name__)
 _ALARM_CHROME_KEYS = ("currentAlarms", "historyAlarms")
 _ACTIVITY_PAGE = 1
 _ACTIVITY_LIMIT = 20
+_ALARMS_PAGE = 1
+_ALARMS_LIMIT = 20
 
 
 @dataclass(slots=True)
@@ -367,10 +369,16 @@ class BragerRuntime:
         await self._ensure_alarm_name_maps()
 
         try:
-            current_result = await current_fn([devid_key], page=1, limit=20, return_data=True)
-            history_result = await history_fn([devid_key], page=1, limit=20, return_data=True)
+            current_result = await current_fn([devid_key], page=_ALARMS_PAGE, limit=_ALARMS_LIMIT, return_data=True)
+            history_result = await history_fn([devid_key], page=_ALARMS_PAGE, limit=_ALARMS_LIMIT, return_data=True)
         except Exception:
             LOGGER.exception("Failed to refresh module alarms for devid=%s", devid_key)
+            self._alarms_feed_loaded[devid_key] = False
+            self._notify_event_feed_listeners(devid_key)
+            return
+
+        if not (_module_events_rest_ok(current_result) and _module_events_rest_ok(history_result)):
+            LOGGER.warning("Module alarms REST returned non-success status for devid=%s", devid_key)
             self._alarms_feed_loaded[devid_key] = False
             self._notify_event_feed_listeners(devid_key)
             return
@@ -462,9 +470,8 @@ class BragerRuntime:
         async with self._alarm_assets_lock:
             if self._alarm_names_loaded:
                 return
-            try:
-                await self._load_alarm_name_maps()
-            finally:
+            await self._load_alarm_name_maps()
+            if self._alarm_names and self._errors_i18n:
                 self._alarm_names_loaded = True
 
     async def _load_alarm_name_maps(self) -> None:
@@ -565,6 +572,12 @@ class BragerRuntime:
             )
         except Exception:
             LOGGER.exception("Failed to refresh module activity for devid=%s", devid_key)
+            self._activity_feed_loaded[devid_key] = False
+            self._notify_event_feed_listeners(devid_key)
+            return
+
+        if not _module_events_rest_ok(result):
+            LOGGER.warning("Module activity REST returned non-success status for devid=%s", devid_key)
             self._activity_feed_loaded[devid_key] = False
             self._notify_event_feed_listeners(devid_key)
             return
@@ -1236,6 +1249,14 @@ def _compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
     if op == "notEqualTo":
         return bool(actual != expected)
     return False
+
+
+def _module_events_rest_ok(result: Any) -> bool:
+    """Return whether a ``return_data=True`` module-events REST call succeeded."""
+    if not isinstance(result, tuple) or not result:
+        return False
+    status = result[0]
+    return status in (200, 204)
 
 
 def _extract_activity_rows(result: Any) -> list[Mapping[str, Any]]:

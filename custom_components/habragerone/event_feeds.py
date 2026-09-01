@@ -83,7 +83,11 @@ async def iter_alarm_feed_entities(
 
 
 class _BragerAlarmsFeedSensor(SensorEntity):
-    """Shared base for current/history module alarm count sensors."""
+    """Shared base for current/history module alarm count sensors.
+
+    State is the number of rows returned on the SPA first page (``page=1``,
+    ``limit=20``), not the total alarm count across all pages.
+    """
 
     _attr_has_entity_name = True
     _attr_should_poll = False
