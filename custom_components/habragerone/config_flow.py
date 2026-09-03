@@ -113,7 +113,7 @@ def _device_grouping_values(*, ui_language: str | None = None) -> dict[str, str]
     if lang.startswith("pl"):
         return {
             DEVICE_GROUPING_FLAT: "Płasko — jedno urządzenie HA na moduł internetowy",
-            DEVICE_GROUPING_BY_MENU: "Grupuj po menu — urządzenia potomne (via_device)",
+            DEVICE_GROUPING_BY_MENU: "Grupuj po menu — urządzenia potomne (powiązane z modułem nadrzędnym)",
         }
     return {
         DEVICE_GROUPING_FLAT: "Flat — one HA device per internet module",

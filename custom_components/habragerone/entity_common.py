@@ -339,7 +339,7 @@ def module_parent_device_info(
     modules_meta: Mapping[str, Any] | None = None,
     sample_descriptor: Mapping[str, Any] | None = None,
 ) -> DeviceInfo:
-    """Build flat module ``DeviceInfo`` for ``via_device`` parents."""
+    """Build flat module ``DeviceInfo`` for menu-child ``via_device_id`` parents."""
     meta = modules_meta.get(devid, {}) if isinstance(modules_meta, Mapping) else {}
     if not isinstance(meta, dict):
         meta = {}
@@ -363,7 +363,7 @@ async def async_register_module_parent_devices(
     descriptors: Iterable[Any],
     modules_meta: Mapping[str, Any] | None = None,
 ) -> None:
-    """Pre-register internet-module devices before menu child ``via_device`` links (#203)."""
+    """Pre-register internet-module devices before menu child ``via_device_id`` links (#203)."""
     if device_grouping_mode(entry) != DEVICE_GROUPING_BY_MENU:
         return
 
@@ -425,8 +425,13 @@ async def async_remove_legacy_connection_devices(
         devid = str(raw_devid or "").strip()
         if not devid:
             continue
-        legacy_identifiers = {(DOMAIN, f"{devid}:{CONNECTION_MENU_KEY}")}
-        device = device_registry.async_get_device(identifiers=legacy_identifiers)
+        legacy_identifier = (DOMAIN, f"{devid}:{CONNECTION_MENU_KEY}")
+        get_by_identifier = getattr(device_registry, "async_get_device_by_identifier", None)
+        if callable(get_by_identifier):
+            device = get_by_identifier(legacy_identifier, entry.entry_id)
+        else:
+            # HA < 2026.7 — identifiers were globally unique; remove with the next train.
+            device = device_registry.async_get_device(identifiers={legacy_identifier})
         if device is None:
             continue
         entities = er.async_entries_for_device(
@@ -444,13 +449,18 @@ def device_info_from_descriptor(
     *,
     domain: str,
     grouping: str = DEFAULT_DEVICE_GROUPING,
+    hass: HomeAssistant | None = None,
+    config_entry_id: str | None = None,
 ) -> DeviceInfo:
     """Build DeviceInfo object from cached descriptor fields.
 
     Flat mode (default) keeps one device per internet module ``devid``.
     Group-by-menu mode attaches entities with a stable ``menu_key`` to a child
-    device ``{devid}:{menu_key}`` linked via ``via_device`` to the module.
+    device ``{devid}:{menu_key}`` linked via ``via_device_id`` to the module.
     Entities without a resolvable ``menu_key`` stay on the parent module device.
+
+    Pass ``hass`` and ``config_entry_id`` so menu children can resolve the parent
+    device id (HA 2026.7+). Older cores fall back to deprecated ``via_device``.
     """
     devid = str(descriptor.get("devid") or "")
     module_name = str(descriptor.get("module_name") or devid)
@@ -459,14 +469,21 @@ def device_info_from_descriptor(
     mode = str(grouping or "").strip().lower()
     menu_key = str(descriptor.get("menu_key") or "").strip()
     if mode == DEVICE_GROUPING_BY_MENU and menu_key:
-        return DeviceInfo(
+        info = DeviceInfo(
             identifiers={(domain, f"{devid}:{menu_key}")},
             manufacturer="BragerOne",
             name=_menu_device_display_name(descriptor),
             model=module_model,
             sw_version=module_version or None,
-            via_device=(domain, devid),
         )
+        _attach_menu_via_device(
+            info,
+            hass=hass,
+            config_entry_id=config_entry_id,
+            domain=domain,
+            devid=devid,
+        )
+        return info
     return DeviceInfo(
         identifiers={(domain, devid)},
         manufacturer="BragerOne",
@@ -474,6 +491,33 @@ def device_info_from_descriptor(
         model=module_model,
         sw_version=module_version or None,
     )
+
+
+def _attach_menu_via_device(
+    info: DeviceInfo,
+    *,
+    hass: HomeAssistant | None,
+    config_entry_id: str | None,
+    domain: str,
+    devid: str,
+) -> None:
+    """Link a menu child device to its internet-module parent.
+
+    Prefers ``via_device_id`` (HA 2026.7+) when ``hass``/entry are available and the
+    parent was pre-registered. Falls back to deprecated ``via_device`` on older cores.
+    """
+    parent_identifier = (domain, devid)
+    if hass is not None and config_entry_id is not None:
+        resolve_id = getattr(dr, "async_get_device_id_by_identifier", None)
+        if callable(resolve_id):
+            info["via_device_id"] = resolve_id(
+                hass,
+                parent_identifier,
+                config_entry_id=config_entry_id,
+            )
+            return
+    # HA < 2026.7 or callers without hass (pure unit tests of naming/identifiers).
+    info["via_device"] = parent_identifier
 
 
 def module_is_reachable(runtime: BragerRuntime, devid: str) -> bool:

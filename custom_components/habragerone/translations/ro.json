@@ -15,7 +15,7 @@
           "device_grouping": "Gruparea dispozitivelor"
         },
         "data_description": {
-          "device_grouping": "Plat = un dispozitiv HA per modul. Grupare după meniu = dispozitive copil pe cheie stabilă de meniu (via_device). Schimbarea remapă apartenența dispozitivelor (automatizări/panouri)."
+          "device_grouping": "Plat = un dispozitiv HA per modul. Grupare după meniu = dispozitive copil pe cheie stabilă de meniu. Schimbarea remapă apartenența dispozitivelor (automatizări/panouri)."
         }
       }
     }
@@ -29,7 +29,7 @@
           "device_grouping": "Gruparea dispozitivelor"
         },
         "data_description": {
-          "device_grouping": "Plat = un dispozitiv HA per modul. Grupare după meniu = dispozitive copil pe cheie stabilă de meniu (via_device). Schimbarea remapă apartenența dispozitivelor (automatizări/panouri)."
+          "device_grouping": "Plat = un dispozitiv HA per modul. Grupare după meniu = dispozitive copil pe cheie stabilă de meniu. Schimbarea remapă apartenența dispozitivelor (automatizări/panouri)."
         }
       }
     }

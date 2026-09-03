@@ -176,6 +176,8 @@ class BragerSymbolSensor(SensorEntity):
             self._descriptor,
             domain=DOMAIN,
             grouping=device_grouping_mode(self._entry),
+            hass=self.hass,
+            config_entry_id=self._entry.entry_id,
         )
 
     async def async_update(self) -> None:

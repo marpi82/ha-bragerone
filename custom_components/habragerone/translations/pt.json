@@ -15,7 +15,7 @@
           "device_grouping": "Agrupamento de dispositivos"
         },
         "data_description": {
-          "device_grouping": "Plano = um dispositivo HA por módulo. Agrupar por menu = dispositivos filhos por chave de menu estável (via_device). A alteração remapeia a associação de dispositivos (automações/painéis)."
+          "device_grouping": "Plano = um dispositivo HA por módulo. Agrupar por menu = dispositivos filhos por chave de menu estável. A alteração remapeia a associação de dispositivos (automações/painéis)."
         }
       }
     }
@@ -29,7 +29,7 @@
           "device_grouping": "Agrupamento de dispositivos"
         },
         "data_description": {
-          "device_grouping": "Plano = um dispositivo HA por módulo. Agrupar por menu = dispositivos filhos por chave de menu estável (via_device). A alteração remapeia a associação de dispositivos (automações/painéis)."
+          "device_grouping": "Plano = um dispositivo HA por módulo. Agrupar por menu = dispositivos filhos por chave de menu estável. A alteração remapeia a associação de dispositivos (automações/painéis)."
         }
       }
     }

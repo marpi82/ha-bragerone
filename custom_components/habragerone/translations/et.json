@@ -15,7 +15,7 @@
           "device_grouping": "Seadmete rühmitamine"
         },
         "data_description": {
-          "device_grouping": "Lame = üks HA seade mooduli kohta. Rühmita menüü järgi = alamseadmed stabiilse menüüvõtme järgi (via_device). Muutus ümberkaardistab seadmete kuuluvuse (automaatikad/armatuurlauad)."
+          "device_grouping": "Lame = üks HA seade mooduli kohta. Rühmita menüü järgi = alamseadmed stabiilse menüüvõtme järgi. Muutus ümberkaardistab seadmete kuuluvuse (automaatikad/armatuurlauad)."
         }
       }
     }
@@ -29,7 +29,7 @@
           "device_grouping": "Seadmete rühmitamine"
         },
         "data_description": {
-          "device_grouping": "Lame = üks HA seade mooduli kohta. Rühmita menüü järgi = alamseadmed stabiilse menüüvõtme järgi (via_device). Muutus ümberkaardistab seadmete kuuluvuse (automaatikad/armatuurlauad)."
+          "device_grouping": "Lame = üks HA seade mooduli kohta. Rühmita menüü järgi = alamseadmed stabiilse menüüvõtme järgi. Muutus ümberkaardistab seadmete kuuluvuse (automaatikad/armatuurlauad)."
         }
       }
     }

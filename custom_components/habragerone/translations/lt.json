@@ -15,7 +15,7 @@
           "device_grouping": "Įrenginių grupavimas"
         },
         "data_description": {
-          "device_grouping": "Plokščias = vienas HA įrenginys moduliui. Grupuoti pagal meniu = antriniai įrenginiai pagal stabilų meniu raktą (via_device). Pakeitimas perskirsto įrenginių priklausomybę (automatizacijos/skydeliai)."
+          "device_grouping": "Plokščias = vienas HA įrenginys moduliui. Grupuoti pagal meniu = antriniai įrenginiai pagal stabilų meniu raktą. Pakeitimas perskirsto įrenginių priklausomybę (automatizacijos/skydeliai)."
         }
       }
     }
@@ -29,7 +29,7 @@
           "device_grouping": "Įrenginių grupavimas"
         },
         "data_description": {
-          "device_grouping": "Plokščias = vienas HA įrenginys moduliui. Grupuoti pagal meniu = antriniai įrenginiai pagal stabilų meniu raktą (via_device). Pakeitimas perskirsto įrenginių priklausomybę (automatizacijos/skydeliai)."
+          "device_grouping": "Plokščias = vienas HA įrenginys moduliui. Grupuoti pagal meniu = antriniai įrenginiai pagal stabilų meniu raktą. Pakeitimas perskirsto įrenginių priklausomybę (automatizacijos/skydeliai)."
         }
       }
     }
