@@ -891,7 +891,7 @@ async def test_device_info_falls_back_when_via_device_id_helper_missing(
     descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
     descriptor.update({"menu_key": "modules.menu.thermostats", "menu_group_title": "Menu"})
     entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
-    monkeypatch.setattr(dr, "async_get_device_id_by_identifier", None)
+    monkeypatch.setattr(dr, "async_get_device_id_by_identifier", None, raising=False)
 
     info = device_info_from_descriptor(
         descriptor,
