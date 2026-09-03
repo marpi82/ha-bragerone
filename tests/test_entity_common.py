@@ -872,7 +872,7 @@ async def test_async_remove_legacy_connection_devices_falls_back_without_scoped_
         name="Boiler — Connection with module",
         model="Brager module",
     )
-    monkeypatch.setattr(registry, "async_get_device_by_identifier", None)
+    monkeypatch.setattr(registry, "async_get_device_by_identifier", None, raising=False)
 
     await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
 
