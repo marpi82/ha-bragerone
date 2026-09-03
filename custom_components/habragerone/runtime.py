@@ -21,6 +21,15 @@ from .command_write import WriteContext, WriteValidationError, prepare_write
 from .const import CONF_ROUTE_VISIBILITY_DEPS, CONF_ROUTE_VISIBILITY_NAME, CONF_ROUTE_VISIBILITY_PATH, CONF_UI_ROUTE_SYMBOL
 from .numeric_display import descriptor_numeric_transform
 
+_parse_alarm_name_enum: Any | None
+_resolve_alarm_label: Any | None
+try:
+    from pybragerone.models.alarm_names import parse_alarm_name_enum as _parse_alarm_name_enum
+    from pybragerone.models.alarm_names import resolve_alarm_label as _resolve_alarm_label
+except ImportError:  # Older py-bragerone wheels omit AlarmName helpers.
+    _parse_alarm_name_enum = None
+    _resolve_alarm_label = None
+
 UpdateCallback = Callable[[ParamUpdate], None]
 # devid, online, online_changed — metadata-only updates set online_changed=False.
 ConnectivityCallback = Callable[[str, bool, bool], None]
@@ -1459,14 +1468,8 @@ def _extract_alarm_rows(result: Any) -> list[Mapping[str, Any]]:
 
 
 def _alarm_name_helpers() -> tuple[Any, Any]:
-    """Import AlarmName helpers when present; otherwise return ``(None, None)``."""
-    try:
-        import importlib
-
-        module = importlib.import_module("pybragerone.models.alarm_names")
-    except ImportError:
-        return None, None
-    return getattr(module, "parse_alarm_name_enum", None), getattr(module, "resolve_alarm_label", None)
+    """Return AlarmName helpers when the installed library exposes them."""
+    return _parse_alarm_name_enum, _resolve_alarm_label
 
 
 def _try_live_assets_catalog(api: Any) -> Any | None:

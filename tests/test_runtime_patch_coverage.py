@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import types
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -669,23 +668,11 @@ async def test_resolve_activity_display_value_more_branches() -> None:
     assert await _resolve_activity_display_value(1, unit_code=1, resolver=resolver4) == 1
 
 
-def test_alarm_name_helpers_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Missing AlarmName helpers import as ``(None, None)``."""
-    import importlib
-    import sys
-
-    monkeypatch.delitem(sys.modules, "pybragerone.models.alarm_names", raising=False)
-    real_import_module = importlib.import_module
-
-    def _broken_import_module(name: str, *args: object, **kwargs: object) -> object:
-        if name == "pybragerone.models.alarm_names":
-            raise ImportError("missing")
-        return real_import_module(name, *args, **kwargs)
-
-    monkeypatch.setattr(importlib, "import_module", _broken_import_module)
-    from custom_components.habragerone.runtime import _alarm_name_helpers as reload_helpers
-
-    assert reload_helpers() == (None, None)
+def test_alarm_name_helpers_missing_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing AlarmName helpers surface as ``(None, None)``."""
+    monkeypatch.setattr("custom_components.habragerone.runtime._parse_alarm_name_enum", None)
+    monkeypatch.setattr("custom_components.habragerone.runtime._resolve_alarm_label", None)
+    assert _alarm_name_helpers() == (None, None)
 
 
 def test_try_live_assets_catalog_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -704,13 +691,16 @@ def test_try_live_assets_catalog_import_error(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_alarm_name_helpers_returns_imported_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Helper import returns parse/resolve callables when the module is present."""
-    import types
+    """Helper accessor returns parse/resolve callables when bound at import time."""
 
-    fake = types.ModuleType("pybragerone.models.alarm_names")
-    fake.parse_alarm_name_enum = lambda _source: {38: "ERROR_X"}
-    fake.resolve_alarm_label = lambda alarm_id, *, alarm_names, errors_i18n: "Fuel"
-    monkeypatch.setitem(sys.modules, "pybragerone.models.alarm_names", fake)
+    def _parse(_source: object) -> dict[int, str]:
+        return {38: "ERROR_X"}
+
+    def _resolve(_alarm_id: int, *, alarm_names: object, errors_i18n: object) -> str:
+        return "Fuel"
+
+    monkeypatch.setattr("custom_components.habragerone.runtime._parse_alarm_name_enum", _parse)
+    monkeypatch.setattr("custom_components.habragerone.runtime._resolve_alarm_label", _resolve)
     parse_fn, resolve_fn = _alarm_name_helpers()
     assert callable(parse_fn)
     assert callable(resolve_fn)
