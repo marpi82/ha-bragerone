@@ -855,6 +855,56 @@ async def test_async_remove_legacy_connection_devices_drops_empty_orphans(hass: 
 
 
 @pytest.mark.asyncio
+async def test_async_remove_legacy_connection_devices_falls_back_without_scoped_lookup(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HA < 2026.7 path uses deprecated async_get_device when scoped lookup is absent."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    registry = dr.async_get(hass)
+    registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1:module.connection")},
+        manufacturer="BragerOne",
+        name="Boiler — Connection with module",
+        model="Brager module",
+    )
+    monkeypatch.setattr(registry, "async_get_device_by_identifier", None)
+
+    await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
+
+    assert registry.async_get_device(identifiers={(DOMAIN, "DEV1:module.connection")}) is None
+
+
+@pytest.mark.asyncio
+async def test_device_info_falls_back_when_via_device_id_helper_missing(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When async_get_device_id_by_identifier is unavailable, keep via_device."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update({"menu_key": "modules.menu.thermostats", "menu_group_title": "Menu"})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    monkeypatch.setattr(dr, "async_get_device_id_by_identifier", None)
+
+    info = device_info_from_descriptor(
+        descriptor,
+        domain=DOMAIN,
+        grouping=DEVICE_GROUPING_BY_MENU,
+        hass=hass,
+        config_entry_id=entry.entry_id,
+    )
+    assert info["via_device"] == (DOMAIN, "DEV9")
+    assert "via_device_id" not in info
+
+
+@pytest.mark.asyncio
 async def test_async_remove_legacy_connection_devices_skips_blank_devids(hass: HomeAssistant) -> None:
     """Blank module ids are ignored when scanning for legacy connection devices."""
     from homeassistant.helpers import device_registry as dr
