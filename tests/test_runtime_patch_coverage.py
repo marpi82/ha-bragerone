@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import types
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -27,6 +28,7 @@ from custom_components.habragerone.runtime import (  # noqa: E402
     _alarm_name_helpers,
     _extract_activity_rows,
     _extract_alarm_rows,
+    _import_alarm_name_helpers,
     _module_events_rest_ok,
     _resolve_activity_display_value,
     _resolve_activity_i18n_token,
@@ -673,6 +675,42 @@ def test_alarm_name_helpers_missing_symbols(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr("custom_components.habragerone.runtime._parse_alarm_name_enum", None)
     monkeypatch.setattr("custom_components.habragerone.runtime._resolve_alarm_label", None)
     assert _alarm_name_helpers() == (None, None)
+
+
+def test_import_alarm_name_helpers_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ImportError from older wheels yields ``(None, None)`` without raising."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _mock_import(name: str, globals: object = None, locals: object = None, fromlist: object = (), level: int = 0) -> object:
+        if name == "pybragerone.models.alarm_names":
+            raise ImportError("missing")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _mock_import)
+    assert _import_alarm_name_helpers() == (None, None)
+
+
+def test_import_alarm_name_helpers_returns_callables(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Successful import binds parse/resolve callables used by the runtime."""
+    import types
+
+    fake = types.ModuleType("pybragerone.models.alarm_names")
+
+    def _parse(_source: object) -> dict[int, str]:
+        return {38: "ERROR_X"}
+
+    def _resolve(_alarm_id: int, *, alarm_names: object, errors_i18n: object) -> str:
+        return "Fuel"
+
+    fake.parse_alarm_name_enum = _parse  # type: ignore[attr-defined]
+    fake.resolve_alarm_label = _resolve  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "pybragerone.models.alarm_names", fake)
+
+    parse_fn, resolve_fn = _import_alarm_name_helpers()
+    assert parse_fn is _parse
+    assert resolve_fn is _resolve
 
 
 def test_try_live_assets_catalog_import_error(monkeypatch: pytest.MonkeyPatch) -> None:

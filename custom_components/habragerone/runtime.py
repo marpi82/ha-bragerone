@@ -21,14 +21,21 @@ from .command_write import WriteContext, WriteValidationError, prepare_write
 from .const import CONF_ROUTE_VISIBILITY_DEPS, CONF_ROUTE_VISIBILITY_NAME, CONF_ROUTE_VISIBILITY_PATH, CONF_UI_ROUTE_SYMBOL
 from .numeric_display import descriptor_numeric_transform
 
-_parse_alarm_name_enum: Any | None
-_resolve_alarm_label: Any | None
-try:
-    from pybragerone.models.alarm_names import parse_alarm_name_enum as _parse_alarm_name_enum
-    from pybragerone.models.alarm_names import resolve_alarm_label as _resolve_alarm_label
-except ImportError:  # Older py-bragerone wheels omit AlarmName helpers.
-    _parse_alarm_name_enum = None
-    _resolve_alarm_label = None
+
+def _import_alarm_name_helpers() -> tuple[Any, Any]:
+    """Import AlarmName helpers; return ``(None, None)`` when unavailable.
+
+    Runs at module load (and in unit tests) so async alarm refresh never calls
+    ``importlib.import_module`` on the event loop.
+    """
+    try:
+        from pybragerone.models.alarm_names import parse_alarm_name_enum, resolve_alarm_label
+    except ImportError:  # Older py-bragerone wheels omit AlarmName helpers.
+        return None, None
+    return parse_alarm_name_enum, resolve_alarm_label
+
+
+_parse_alarm_name_enum, _resolve_alarm_label = _import_alarm_name_helpers()
 
 UpdateCallback = Callable[[ParamUpdate], None]
 # devid, online, online_changed — metadata-only updates set online_changed=False.
