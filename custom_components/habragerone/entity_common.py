@@ -504,17 +504,22 @@ def _attach_menu_via_device(
     """Link a menu child device to its internet-module parent.
 
     Prefers ``via_device_id`` (HA 2026.7+) when ``hass``/entry are available and the
-    parent was pre-registered. Falls back to deprecated ``via_device`` on older cores.
+    parent was pre-registered. Falls back to deprecated ``via_device`` on older cores
+    or when the parent device is not registered yet (``ValueError``).
     """
     parent_identifier = (domain, devid)
     if hass is not None and config_entry_id is not None:
         resolve_id = getattr(dr, "async_get_device_id_by_identifier", None)
         if callable(resolve_id):
-            info["via_device_id"] = resolve_id(
-                hass,
-                parent_identifier,
-                config_entry_id=config_entry_id,
-            )
+            try:
+                info["via_device_id"] = resolve_id(
+                    hass,
+                    parent_identifier,
+                    config_entry_id=config_entry_id,
+                )
+            except ValueError:
+                # Parent not registered yet — keep a deprecated identifier link.
+                info["via_device"] = parent_identifier
             return
     # HA < 2026.7 or callers without hass (pure unit tests of naming/identifiers).
     info["via_device"] = parent_identifier

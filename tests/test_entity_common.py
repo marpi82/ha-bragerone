@@ -905,6 +905,26 @@ async def test_device_info_falls_back_when_via_device_id_helper_missing(
 
 
 @pytest.mark.asyncio
+async def test_device_info_falls_back_when_parent_device_missing(hass: HomeAssistant) -> None:
+    """Missing parent device (ValueError from helper) keeps via_device link."""
+    runtime, *_rest = make_runtime()
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update({"menu_key": "modules.menu.thermostats", "menu_group_title": "Menu"})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    # Do not register the parent device — helper raises ValueError.
+
+    info = device_info_from_descriptor(
+        descriptor,
+        domain=DOMAIN,
+        grouping=DEVICE_GROUPING_BY_MENU,
+        hass=hass,
+        config_entry_id=entry.entry_id,
+    )
+    assert info["via_device"] == (DOMAIN, "DEV9")
+    assert "via_device_id" not in info
+
+
+@pytest.mark.asyncio
 async def test_async_remove_legacy_connection_devices_skips_blank_devids(hass: HomeAssistant) -> None:
     """Blank module ids are ignored when scanning for legacy connection devices."""
     from homeassistant.helpers import device_registry as dr
