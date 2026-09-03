@@ -15,7 +15,7 @@
           "device_grouping": "Združevanje naprav"
         },
         "data_description": {
-          "device_grouping": "Ravno = ena naprava HA na modul. Združi po meniju = podrejene naprave po stabilnem ključu menija (via_device). Sprememba prerazporedi pripadnost naprav (avtomatizacije/nadzorne plošče)."
+          "device_grouping": "Ravno = ena naprava HA na modul. Združi po meniju = podrejene naprave po stabilnem ključu menija. Sprememba prerazporedi pripadnost naprav (avtomatizacije/nadzorne plošče)."
         }
       }
     }
@@ -29,7 +29,7 @@
           "device_grouping": "Združevanje naprav"
         },
         "data_description": {
-          "device_grouping": "Ravno = ena naprava HA na modul. Združi po meniju = podrejene naprave po stabilnem ključu menija (via_device). Sprememba prerazporedi pripadnost naprav (avtomatizacije/nadzorne plošče)."
+          "device_grouping": "Ravno = ena naprava HA na modul. Združi po meniju = podrejene naprave po stabilnem ključu menija. Sprememba prerazporedi pripadnost naprav (avtomatizacije/nadzorne plošče)."
         }
       }
     }

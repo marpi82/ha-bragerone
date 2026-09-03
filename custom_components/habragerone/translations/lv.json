@@ -15,7 +15,7 @@
           "device_grouping": "Ierīču grupēšana"
         },
         "data_description": {
-          "device_grouping": "Plakans = viena HA ierīce uz moduli. Grupēt pēc izvēlnes = apakšierīces pēc stabilas izvēlnes atslēgas (via_device). Izmaiņa pārkartē ierīču piederību (automatizācijas/paneļi)."
+          "device_grouping": "Plakans = viena HA ierīce uz moduli. Grupēt pēc izvēlnes = apakšierīces pēc stabilas izvēlnes atslēgas. Izmaiņa pārkartē ierīču piederību (automatizācijas/paneļi)."
         }
       }
     }
@@ -29,7 +29,7 @@
           "device_grouping": "Ierīču grupēšana"
         },
         "data_description": {
-          "device_grouping": "Plakans = viena HA ierīce uz moduli. Grupēt pēc izvēlnes = apakšierīces pēc stabilas izvēlnes atslēgas (via_device). Izmaiņa pārkartē ierīču piederību (automatizācijas/paneļi)."
+          "device_grouping": "Plakans = viena HA ierīce uz moduli. Grupēt pēc izvēlnes = apakšierīces pēc stabilas izvēlnes atslēgas. Izmaiņa pārkartē ierīču piederību (automatizācijas/paneļi)."
         }
       }
     }

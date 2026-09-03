@@ -123,7 +123,7 @@ class _BragerAlarmsFeedSensor(SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Attach to the internet module device (same parent as connectivity via_device)."""
+        """Attach to the internet module device (same parent device as connectivity)."""
         meta = self._runtime.modules_meta.get(self._devid, self._module_meta)
         module_name = str(meta.get("name") or self._module_meta.get("name") or self._devid)
         return DeviceInfo(
@@ -273,7 +273,7 @@ class BragerActivitySensor(SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Attach to the internet module device (same parent as connectivity via_device)."""
+        """Attach to the internet module device (same parent device as connectivity)."""
         meta = self._runtime.modules_meta.get(self._devid, self._module_meta)
         module_name = str(meta.get("name") or self._module_meta.get("name") or self._devid)
         return DeviceInfo(

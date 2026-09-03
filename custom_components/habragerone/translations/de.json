@@ -15,7 +15,7 @@
           "device_grouping": "Gerätegruppierung"
         },
         "data_description": {
-          "device_grouping": "Flach = ein HA-Gerät pro Modul. Nach Menü gruppieren = Untergeräte pro stabilem Menüschlüssel (via_device). Änderung verschiebt die Gerätezuordnung (Automationen/Dashboards)."
+          "device_grouping": "Flach = ein HA-Gerät pro Modul. Nach Menü gruppieren = Untergeräte pro stabilem Menüschlüssel. Änderung verschiebt die Gerätezuordnung (Automationen/Dashboards)."
         }
       }
     }
@@ -29,7 +29,7 @@
           "device_grouping": "Gerätegruppierung"
         },
         "data_description": {
-          "device_grouping": "Flach = ein HA-Gerät pro Modul. Nach Menü gruppieren = Untergeräte pro stabilem Menüschlüssel (via_device). Änderung verschiebt die Gerätezuordnung (Automationen/Dashboards)."
+          "device_grouping": "Flach = ein HA-Gerät pro Modul. Nach Menü gruppieren = Untergeräte pro stabilem Menüschlüssel. Änderung verschiebt die Gerätezuordnung (Automationen/Dashboards)."
         }
       }
     }

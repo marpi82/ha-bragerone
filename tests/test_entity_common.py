@@ -396,9 +396,14 @@ def test_device_info_from_descriptor_builds_registry_payload() -> None:
     assert info["model"] == "Boiler module"
     assert info["sw_version"] == "1.2.3"
     assert "via_device" not in info
+    assert "via_device_id" not in info
 
 
-def test_device_info_from_descriptor_groups_by_menu_when_enabled() -> None:
+@pytest.mark.asyncio
+async def test_device_info_from_descriptor_groups_by_menu_when_enabled(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
     descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
     descriptor.update(
         {
@@ -411,10 +416,25 @@ def test_device_info_from_descriptor_groups_by_menu_when_enabled() -> None:
             "panel_path": "Menu termostatów/Zawór 1",
         },
     )
-    info = device_info_from_descriptor(descriptor, domain=DOMAIN, grouping=DEVICE_GROUPING_BY_MENU)
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    parent = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV9")},
+        manufacturer="BragerOne",
+        name="boiler",
+        model="Boiler module",
+    )
+    info = device_info_from_descriptor(
+        descriptor,
+        domain=DOMAIN,
+        grouping=DEVICE_GROUPING_BY_MENU,
+        hass=hass,
+        config_entry_id=entry.entry_id,
+    )
     assert info["identifiers"] == {(DOMAIN, "DEV9:modules.menu.thermostats")}
     assert info["name"] == "Menu termostatów"
-    assert info["via_device"] == (DOMAIN, "DEV9")
+    assert info["via_device_id"] == parent.id
+    assert "via_device" not in info
     assert info["model"] == "Boiler module"
 
 
@@ -424,6 +444,22 @@ def test_device_info_from_descriptor_group_mode_keeps_parent_without_menu_key() 
     info = device_info_from_descriptor(descriptor, domain=DOMAIN, grouping=DEVICE_GROUPING_BY_MENU)
     assert info["identifiers"] == {(DOMAIN, "DEV9")}
     assert "via_device" not in info
+    assert "via_device_id" not in info
+
+
+def test_device_info_group_by_menu_without_hass_falls_back_to_via_device() -> None:
+    """Pure unit callers without hass keep deprecated via_device for HA < 2026.7 shim."""
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update(
+        {
+            "module_name": "boiler",
+            "menu_key": "modules.menu.thermostats",
+            "menu_group_title": "Menu termostatów",
+        },
+    )
+    info = device_info_from_descriptor(descriptor, domain=DOMAIN, grouping=DEVICE_GROUPING_BY_MENU)
+    assert info["via_device"] == (DOMAIN, "DEV9")
+    assert "via_device_id" not in info
 
 
 def test_device_info_flat_ignores_menu_key() -> None:
@@ -544,7 +580,7 @@ async def test_async_register_module_parent_devices_for_group_by_menu(hass: Home
         modules_meta={"DEV9": {"name": "boiler", "title": "Boiler module", "version": "1.2.3"}},
     )
 
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")})
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "DEV9"), entry.entry_id)
     assert device is not None
     assert device.name == "boiler"
 
@@ -560,7 +596,7 @@ async def test_async_register_module_parent_devices_skips_flat_mode(hass: HomeAs
 
     await async_register_module_parent_devices(hass, entry, descriptors=[descriptor], modules_meta={})
 
-    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is None
+    assert dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "DEV9"), entry.entry_id) is None
 
 
 @pytest.mark.asyncio
@@ -582,7 +618,7 @@ async def test_async_register_module_parent_devices_from_modules_list_only(hass:
         modules_meta={"DEV9": {"name": "Boiler only modules list"}},
     )
 
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")})
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "DEV9"), entry.entry_id)
     assert device is not None
     assert device.name == "Boiler only modules list"
 
@@ -605,7 +641,7 @@ async def test_async_register_module_parent_devices_skips_invalid_rows(hass: Hom
         modules_meta={},
     )
 
-    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is not None
+    assert dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "DEV9"), entry.entry_id) is not None
 
 
 @pytest.mark.asyncio
@@ -622,7 +658,7 @@ async def test_async_register_module_parent_devices_no_devids_is_noop(hass: Home
 
     await async_register_module_parent_devices(hass, entry, descriptors=["bad"], modules_meta={})
 
-    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is None
+    assert dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "DEV9"), entry.entry_id) is None
 
 
 @pytest.mark.asyncio
@@ -641,7 +677,7 @@ async def test_async_register_module_parent_devices_ignores_non_list_modules(has
 
     await async_register_module_parent_devices(hass, entry, descriptors=[descriptor], modules_meta={})
 
-    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is not None
+    assert dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "DEV9"), entry.entry_id) is not None
 
 
 @pytest.mark.asyncio
@@ -658,7 +694,7 @@ async def test_async_register_module_parent_devices_skips_blank_module_ids(hass:
 
     await async_register_module_parent_devices(hass, entry, descriptors=[], modules_meta={"": {}, "  ": {}})
 
-    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is None
+    assert dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "DEV9"), entry.entry_id) is None
 
 
 @pytest.mark.asyncio
@@ -674,7 +710,7 @@ async def test_async_register_module_parent_devices_skips_non_mapping_meta(hass:
 
     await async_register_module_parent_devices(hass, entry, descriptors=[descriptor], modules_meta="bad-meta")  # type: ignore[arg-type]
 
-    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is not None
+    assert dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "DEV9"), entry.entry_id) is not None
 
 
 @pytest.mark.asyncio
@@ -706,7 +742,7 @@ async def test_async_register_module_parent_devices_skips_invalid_identifiers(
 
     await async_register_module_parent_devices(hass, entry, descriptors=[descriptor], modules_meta={})
 
-    assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "DEV9")}) is None
+    assert dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "DEV9"), entry.entry_id) is None
 
 
 @pytest.mark.asyncio
@@ -814,8 +850,78 @@ async def test_async_remove_legacy_connection_devices_drops_empty_orphans(hass: 
 
     await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
 
+    assert registry.async_get_device_by_identifier((DOMAIN, "DEV1:module.connection"), entry.entry_id) is None
+    assert registry.async_get_device_by_identifier((DOMAIN, "DEV1"), entry.entry_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_async_remove_legacy_connection_devices_falls_back_without_scoped_lookup(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HA < 2026.7 path uses deprecated async_get_device when scoped lookup is absent."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    registry = dr.async_get(hass)
+    registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1:module.connection")},
+        manufacturer="BragerOne",
+        name="Boiler — Connection with module",
+        model="Brager module",
+    )
+    monkeypatch.setattr(registry, "async_get_device_by_identifier", None, raising=False)
+
+    await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
+
     assert registry.async_get_device(identifiers={(DOMAIN, "DEV1:module.connection")}) is None
-    assert registry.async_get_device(identifiers={(DOMAIN, "DEV1")}) is not None
+
+
+@pytest.mark.asyncio
+async def test_device_info_falls_back_when_via_device_id_helper_missing(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When async_get_device_id_by_identifier is unavailable, keep via_device."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update({"menu_key": "modules.menu.thermostats", "menu_group_title": "Menu"})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    monkeypatch.setattr(dr, "async_get_device_id_by_identifier", None, raising=False)
+
+    info = device_info_from_descriptor(
+        descriptor,
+        domain=DOMAIN,
+        grouping=DEVICE_GROUPING_BY_MENU,
+        hass=hass,
+        config_entry_id=entry.entry_id,
+    )
+    assert info["via_device"] == (DOMAIN, "DEV9")
+    assert "via_device_id" not in info
+
+
+@pytest.mark.asyncio
+async def test_device_info_falls_back_when_parent_device_missing(hass: HomeAssistant) -> None:
+    """Missing parent device (ValueError from helper) keeps via_device link."""
+    runtime, *_rest = make_runtime()
+    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
+    descriptor.update({"menu_key": "modules.menu.thermostats", "menu_group_title": "Menu"})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    # Do not register the parent device — helper raises ValueError.
+
+    info = device_info_from_descriptor(
+        descriptor,
+        domain=DOMAIN,
+        grouping=DEVICE_GROUPING_BY_MENU,
+        hass=hass,
+        config_entry_id=entry.entry_id,
+    )
+    assert info["via_device"] == (DOMAIN, "DEV9")
+    assert "via_device_id" not in info
 
 
 @pytest.mark.asyncio
@@ -836,7 +942,7 @@ async def test_async_remove_legacy_connection_devices_skips_blank_devids(hass: H
 
     await async_remove_legacy_connection_devices(hass, entry, devids=["", "  ", "DEV1"])
 
-    assert registry.async_get_device(identifiers={(DOMAIN, "DEV1:module.connection")}) is None
+    assert registry.async_get_device_by_identifier((DOMAIN, "DEV1:module.connection"), entry.entry_id) is None
 
 
 @pytest.mark.asyncio
@@ -866,4 +972,4 @@ async def test_async_remove_legacy_connection_devices_keeps_populated_legacy_dev
 
     await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
 
-    assert device_registry.async_get_device(identifiers={(DOMAIN, "DEV1:module.connection")}) is not None
+    assert device_registry.async_get_device_by_identifier((DOMAIN, "DEV1:module.connection"), entry.entry_id) is not None
