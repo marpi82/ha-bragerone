@@ -28,6 +28,7 @@ from custom_components.habragerone.runtime import (  # noqa: E402
     _alarm_name_helpers,
     _extract_activity_rows,
     _extract_alarm_rows,
+    _import_alarm_name_helpers,
     _module_events_rest_ok,
     _resolve_activity_display_value,
     _resolve_activity_i18n_token,
@@ -669,23 +670,47 @@ async def test_resolve_activity_display_value_more_branches() -> None:
     assert await _resolve_activity_display_value(1, unit_code=1, resolver=resolver4) == 1
 
 
-def test_alarm_name_helpers_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Missing AlarmName helpers import as ``(None, None)``."""
-    import importlib
-    import sys
+def test_alarm_name_helpers_missing_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing AlarmName helpers surface as ``(None, None)``."""
+    monkeypatch.setattr("custom_components.habragerone.runtime._parse_alarm_name_enum", None)
+    monkeypatch.setattr("custom_components.habragerone.runtime._resolve_alarm_label", None)
+    assert _alarm_name_helpers() == (None, None)
 
-    monkeypatch.delitem(sys.modules, "pybragerone.models.alarm_names", raising=False)
-    real_import_module = importlib.import_module
 
-    def _broken_import_module(name: str, *args: object, **kwargs: object) -> object:
+def test_import_alarm_name_helpers_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ImportError from older wheels yields ``(None, None)`` without raising."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _mock_import(name: str, globals: object = None, locals: object = None, fromlist: object = (), level: int = 0) -> object:
         if name == "pybragerone.models.alarm_names":
             raise ImportError("missing")
-        return real_import_module(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
-    monkeypatch.setattr(importlib, "import_module", _broken_import_module)
-    from custom_components.habragerone.runtime import _alarm_name_helpers as reload_helpers
+    monkeypatch.setattr(builtins, "__import__", _mock_import)
+    assert _import_alarm_name_helpers() == (None, None)
 
-    assert reload_helpers() == (None, None)
+
+def test_import_alarm_name_helpers_returns_callables(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Successful import binds parse/resolve callables used by the runtime."""
+    import types
+
+    fake = types.ModuleType("pybragerone.models.alarm_names")
+
+    def _parse(_source: object) -> dict[int, str]:
+        return {38: "ERROR_X"}
+
+    def _resolve(_alarm_id: int, *, alarm_names: object, errors_i18n: object) -> str:
+        return "Fuel"
+
+    fake.parse_alarm_name_enum = _parse  # type: ignore[attr-defined]
+    fake.resolve_alarm_label = _resolve  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "pybragerone.models.alarm_names", fake)
+
+    parse_fn, resolve_fn = _import_alarm_name_helpers()
+    assert parse_fn is _parse
+    assert resolve_fn is _resolve
 
 
 def test_try_live_assets_catalog_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -704,13 +729,16 @@ def test_try_live_assets_catalog_import_error(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_alarm_name_helpers_returns_imported_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Helper import returns parse/resolve callables when the module is present."""
-    import types
+    """Helper accessor returns parse/resolve callables when bound at import time."""
 
-    fake = types.ModuleType("pybragerone.models.alarm_names")
-    fake.parse_alarm_name_enum = lambda _source: {38: "ERROR_X"}
-    fake.resolve_alarm_label = lambda alarm_id, *, alarm_names, errors_i18n: "Fuel"
-    monkeypatch.setitem(sys.modules, "pybragerone.models.alarm_names", fake)
+    def _parse(_source: object) -> dict[int, str]:
+        return {38: "ERROR_X"}
+
+    def _resolve(_alarm_id: int, *, alarm_names: object, errors_i18n: object) -> str:
+        return "Fuel"
+
+    monkeypatch.setattr("custom_components.habragerone.runtime._parse_alarm_name_enum", _parse)
+    monkeypatch.setattr("custom_components.habragerone.runtime._resolve_alarm_label", _resolve)
     parse_fn, resolve_fn = _alarm_name_helpers()
     assert callable(parse_fn)
     assert callable(resolve_fn)
