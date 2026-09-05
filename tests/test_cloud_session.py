@@ -126,6 +126,11 @@ async def test_runtime_cloud_session_edge_paths() -> None:
     runtime._seed_cloud_session_from_gateway()
     assert runtime.cloud_session_outage()["reason"] == "keep"
 
+    # Empty / all-None dict must not wipe a previously cached last_*.
+    gateway.cloud_session_outage = lambda: {}  # type: ignore[method-assign]
+    runtime._seed_cloud_session_from_gateway()
+    assert runtime.cloud_session_outage()["reason"] == "keep"
+
     # Dict snapshot seeds the cache (sanitized like extract_outage_fields).
     gateway.cloud_session_outage = lambda: {  # type: ignore[method-assign]
         "down_since": True,

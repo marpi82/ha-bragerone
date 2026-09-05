@@ -37,9 +37,10 @@ def outage_snapshot_has_values(snapshot: Mapping[str, Any]) -> bool:
 def outage_state_attributes(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
     """Build HA entity/diagnostic attributes from an outage snapshot.
 
-    While down, ``down_for_s`` is derived from wall-clock ``down_since`` whenever
-    attributes are recomputed (typically on the next connectivity/session state
-    write — Home Assistant does not refresh attributes on a timer). ``reason`` /
+    While down, ``down_for_s`` is derived from wall-clock ``down_since``
+    (``time.time()`` epoch from the library — not monotonic) whenever attributes
+    are recomputed (typically on the next connectivity/session state write —
+    Home Assistant does not refresh attributes on a timer). ``reason`` /
     ``last_reason`` are client observation sources, not plant hardware diagnostics.
 
     While an outage is active (``down_since`` set), only live ``down_*`` /
