@@ -25,6 +25,24 @@ def test_extract_outage_fields_from_event() -> None:
     }
 
 
+def test_extract_outage_fields_from_mapping() -> None:
+    assert extract_outage_fields(
+        {
+            "down_since": True,
+            "down_for_s": 2,
+            "reason": "",
+            "last_down_for_s": 9,
+            "last_reason": "ws",
+        }
+    ) == {
+        "down_since": None,
+        "down_for_s": 2.0,
+        "reason": None,
+        "last_down_for_s": 9.0,
+        "last_reason": "ws",
+    }
+
+
 def test_outage_state_attributes_live_down_for_s() -> None:
     attrs = outage_state_attributes({"down_since": 1_700_000_000.0, "reason": "ws", "last_down_for_s": None})
     assert attrs["down_since"] == 1_700_000_000.0

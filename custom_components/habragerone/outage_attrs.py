@@ -10,10 +10,14 @@ _OUTAGE_KEYS = ("down_since", "down_for_s", "reason", "last_down_for_s", "last_r
 
 
 def extract_outage_fields(event: Any) -> dict[str, float | str | None]:
-    """Pull additive outage fields from a gateway connectivity event (duck-typed)."""
+    """Pull additive outage fields from a gateway event or mapping (duck-typed).
+
+    Booleans are rejected (``bool`` is a subclass of ``int``), empty strings become
+    ``None``, and numeric values are normalized to ``float``.
+    """
     snapshot: dict[str, float | str | None] = {}
     for key in _OUTAGE_KEYS:
-        value = getattr(event, key, None)
+        value = event.get(key) if isinstance(event, Mapping) else getattr(event, key, None)
         if isinstance(value, bool):
             snapshot[key] = None
         elif isinstance(value, (int, float)):

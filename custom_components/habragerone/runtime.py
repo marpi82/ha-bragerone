@@ -801,9 +801,7 @@ class BragerRuntime:
         if callable(outage_fn):
             snapshot = outage_fn()
             if isinstance(snapshot, dict):
-                self._cloud_session_outage = {
-                    key: snapshot.get(key) for key in ("down_since", "down_for_s", "reason", "last_down_for_s", "last_reason")
-                }
+                self._cloud_session_outage = extract_outage_fields(snapshot)
 
     def _on_gateway_connectivity(self, event: Any) -> None:
         """Handle ``ModuleConnectivity`` (or duck-typed) events from the gateway."""
