@@ -235,3 +235,34 @@ async def test_cloud_session_outage_attributes(hass: HomeAssistant) -> None:
     assert attrs["last_down_for_s"] == 17.2
     assert attrs["last_reason"] == "disconnect"
     await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_cloud_session_live_push_attributes(hass: HomeAssistant) -> None:
+    """Cloud-session sensor exposes push_healthy / live_stale without redefining on/off."""
+    runtime, _api, gateway, _store = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerCloudSessionBinarySensor(entry=entry, runtime=runtime)
+    entity.hass = hass
+    entity.async_schedule_update_ha_state = lambda *_a, **_k: None  # type: ignore[method-assign]
+
+    await runtime.start()
+    await entity.async_added_to_hass()
+    await entity.async_update()
+    assert entity.is_on is True
+
+    gateway.emit_live_push(healthy=False, live_stale_for_s=95.0)
+    await entity.async_update()
+    attrs = entity.extra_state_attributes
+    assert attrs["push_healthy"] is False
+    assert attrs["live_stale_for_s"] == 95.0
+    assert entity.is_on is True
+    assert runtime.live_push_health()["push_healthy"] is False
+
+    gateway.emit_live_push(healthy=True, last_resumed_after_s=95.0)
+    await entity.async_update()
+    attrs = entity.extra_state_attributes
+    assert attrs["push_healthy"] is True
+    assert attrs["last_resumed_after_s"] == 95.0
+    assert "live_stale_for_s" not in attrs
+    await runtime.stop()

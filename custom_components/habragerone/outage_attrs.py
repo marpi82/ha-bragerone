@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 _OUTAGE_KEYS = ("down_since", "down_for_s", "reason", "last_down_for_s", "last_reason")
+_LIVE_PUSH_KEYS = ("push_healthy", "live_stale_for_s", "last_resumed_after_s")
 
 
 def extract_outage_fields(event: Any) -> dict[str, float | str | None]:
@@ -68,4 +69,64 @@ def outage_state_attributes(snapshot: Mapping[str, Any] | None) -> dict[str, Any
     last_reason = snapshot.get("last_reason")
     if isinstance(last_reason, str) and last_reason:
         attrs["last_reason"] = last_reason
+    return attrs
+
+
+def extract_live_push_fields(event: Any) -> dict[str, float | bool | None]:
+    """Pull live-push health fields from a gateway event or mapping (duck-typed).
+
+    Accepts either snapshot keys (``push_healthy``) or
+    :class:`~pybragerone.models.events.LivePushHealth` (``healthy``).
+    """
+    if isinstance(event, Mapping):
+        healthy_raw = event.get("push_healthy", event.get("healthy"))
+        stale_raw = event.get("live_stale_for_s")
+        resumed_raw = event.get("last_resumed_after_s")
+    else:
+        healthy_raw = getattr(event, "push_healthy", None)
+        if healthy_raw is None:
+            healthy_raw = getattr(event, "healthy", None)
+        stale_raw = getattr(event, "live_stale_for_s", None)
+        resumed_raw = getattr(event, "last_resumed_after_s", None)
+
+    snapshot: dict[str, float | bool | None] = {
+        "push_healthy": healthy_raw if isinstance(healthy_raw, bool) else None,
+    }
+    for key, value in (("live_stale_for_s", stale_raw), ("last_resumed_after_s", resumed_raw)):
+        if isinstance(value, bool):
+            snapshot[key] = None
+        elif isinstance(value, (int, float)):
+            snapshot[key] = float(value)
+        else:
+            snapshot[key] = None
+    return snapshot
+
+
+def live_push_snapshot_has_values(snapshot: Mapping[str, Any]) -> bool:
+    """Return ``True`` when *snapshot* carries any non-``None`` live-push field."""
+    return any(snapshot.get(key) is not None for key in _LIVE_PUSH_KEYS)
+
+
+def live_push_state_attributes(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Build HA attributes from a live-push health snapshot.
+
+    Does not redefine cloud-session ``on/off`` — only additive push-health fields.
+    While unhealthy, expose ``live_stale_for_s``; after resume, ``last_resumed_after_s``.
+    """
+    if not isinstance(snapshot, Mapping):
+        return {}
+    attrs: dict[str, Any] = {}
+    healthy = snapshot.get("push_healthy")
+    if isinstance(healthy, bool):
+        attrs["push_healthy"] = healthy
+    stale_for = snapshot.get("live_stale_for_s")
+    if isinstance(stale_for, bool):
+        stale_for = None
+    if isinstance(stale_for, (int, float)) and healthy is False:
+        attrs["live_stale_for_s"] = round(float(stale_for), 1)
+    resumed = snapshot.get("last_resumed_after_s")
+    if isinstance(resumed, bool):
+        resumed = None
+    if isinstance(resumed, (int, float)) and healthy is not False:
+        attrs["last_resumed_after_s"] = round(float(resumed), 1)
     return attrs

@@ -23,7 +23,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
-from .outage_attrs import outage_state_attributes
+from .outage_attrs import live_push_state_attributes, outage_state_attributes
 from .runtime import BragerRuntime
 from .upstream_assets import async_probe_upstream_assets_fingerprint
 
@@ -65,6 +65,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
                 "last_param_update_age_s": round(age_s, 1) if isinstance(age_s, (int, float)) else None,
                 "last_live_param_update_age_s": round(live_age_s, 1) if isinstance(live_age_s, (int, float)) else None,
                 **outage_state_attributes(brager_runtime.cloud_session_outage()),
+                **live_push_state_attributes(brager_runtime.live_push_health()),
             }
 
     platform_counter: Counter[str] = Counter()

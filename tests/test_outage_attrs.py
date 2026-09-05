@@ -110,3 +110,19 @@ def test_extract_and_attrs_reject_bool_and_empty_strings() -> None:
     }
     attrs = outage_state_attributes({"down_since": True, "reason": "", "last_down_for_s": False, "last_reason": ""})
     assert attrs == {}
+
+
+def test_live_push_extract_and_state_attributes() -> None:
+    from custom_components.habragerone.outage_attrs import (
+        extract_live_push_fields,
+        live_push_state_attributes,
+    )
+
+    event = types.SimpleNamespace(healthy=False, live_stale_for_s=40.5, last_resumed_after_s=12.0)
+    snap = extract_live_push_fields(event)
+    assert snap == {"push_healthy": False, "live_stale_for_s": 40.5, "last_resumed_after_s": 12.0}
+    assert live_push_state_attributes(snap) == {"push_healthy": False, "live_stale_for_s": 40.5}
+
+    resumed = extract_live_push_fields({"push_healthy": True, "live_stale_for_s": None, "last_resumed_after_s": 40.5})
+    assert live_push_state_attributes(resumed) == {"push_healthy": True, "last_resumed_after_s": 40.5}
+    assert live_push_state_attributes(None) == {}
