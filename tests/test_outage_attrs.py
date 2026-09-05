@@ -33,6 +33,22 @@ def test_outage_state_attributes_live_down_for_s() -> None:
     assert attrs["down_for_s"] >= 0.0
 
 
+def test_outage_state_attributes_hides_last_during_active_outage() -> None:
+    """Prior-cycle last_* must not appear while down_since is set (Bugbot)."""
+    attrs = outage_state_attributes(
+        {
+            "down_since": 1_700_000_000.0,
+            "down_for_s": 3.0,
+            "reason": "disconnect",
+            "last_down_for_s": 99.0,
+            "last_reason": "stop",
+        }
+    )
+    assert attrs["reason"] == "disconnect"
+    assert "last_down_for_s" not in attrs
+    assert "last_reason" not in attrs
+
+
 def test_outage_state_attributes_last_only_when_up() -> None:
     attrs = outage_state_attributes(
         {"down_since": None, "down_for_s": None, "reason": None, "last_down_for_s": 12.34, "last_reason": "disconnect"}

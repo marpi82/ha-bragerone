@@ -31,6 +31,9 @@ def outage_state_attributes(snapshot: Mapping[str, Any] | None) -> dict[str, Any
     While down, ``down_for_s`` is recomputed from wall-clock ``down_since`` so
     attributes stay fresh without polling. ``reason`` / ``last_reason`` are
     client observation sources, not plant hardware diagnostics.
+
+    While an outage is active (``down_since`` set), only live ``down_*`` /
+    ``reason`` are exposed — prior-cycle ``last_*`` stay hidden until restore.
     """
     if not isinstance(snapshot, Mapping):
         return {}
@@ -39,11 +42,13 @@ def outage_state_attributes(snapshot: Mapping[str, Any] | None) -> dict[str, Any
     if isinstance(down_since, bool):
         down_since = None
     if isinstance(down_since, (int, float)):
-        attrs["down_since"] = float(down_since)
-        attrs["down_for_s"] = round(max(0.0, time.time() - float(down_since)), 1)
-    reason = snapshot.get("reason")
-    if isinstance(reason, str) and reason:
-        attrs["reason"] = reason
+        since = float(down_since)
+        attrs["down_since"] = since
+        attrs["down_for_s"] = round(max(0.0, time.time() - since), 1)
+        reason = snapshot.get("reason")
+        if isinstance(reason, str) and reason:
+            attrs["reason"] = reason
+        return attrs
     last_down = snapshot.get("last_down_for_s")
     if isinstance(last_down, bool):
         last_down = None
