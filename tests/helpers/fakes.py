@@ -182,11 +182,14 @@ class FakeGateway:
             prior = self._module_outage.get(devid, {})
             duration = last_down_for_s if last_down_for_s is not None else prior.get("down_for_s")
             ended_reason = last_reason if last_reason is not None else prior.get("reason")
+            last_down: float | None = None
+            if not isinstance(duration, bool) and isinstance(duration, (int, float)):
+                last_down = float(duration)
             self._module_outage[devid] = {
                 "down_since": None,
                 "down_for_s": None,
                 "reason": None,
-                "last_down_for_s": float(duration) if isinstance(duration, (int, float)) else 1.0,
+                "last_down_for_s": last_down,
                 "last_reason": str(ended_reason) if isinstance(ended_reason, str) else source,
             }
         outage = self._module_outage.get(devid, {})
@@ -234,11 +237,14 @@ class FakeGateway:
             prior = self._cloud_outage
             duration = last_down_for_s if last_down_for_s is not None else prior.get("down_for_s")
             ended_reason = last_reason if last_reason is not None else prior.get("reason")
+            last_down: float | None = None
+            if not isinstance(duration, bool) and isinstance(duration, (int, float)):
+                last_down = float(duration)
             self._cloud_outage = {
                 "down_since": None,
                 "down_for_s": None,
                 "reason": None,
-                "last_down_for_s": float(duration) if isinstance(duration, (int, float)) else 1.0,
+                "last_down_for_s": last_down,
                 "last_reason": str(ended_reason) if isinstance(ended_reason, str) else source,
             }
         event = types.SimpleNamespace(
