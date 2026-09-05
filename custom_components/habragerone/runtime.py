@@ -20,6 +20,7 @@ from pybragerone.models.param_resolver import ParamResolver
 from .command_write import WriteContext, WriteValidationError, prepare_write
 from .const import CONF_ROUTE_VISIBILITY_DEPS, CONF_ROUTE_VISIBILITY_NAME, CONF_ROUTE_VISIBILITY_PATH, CONF_UI_ROUTE_SYMBOL
 from .numeric_display import descriptor_numeric_transform
+from .outage_attrs import extract_outage_fields, outage_snapshot_has_values
 
 
 def _import_alarm_name_helpers() -> tuple[Any, Any]:
@@ -72,6 +73,8 @@ class BragerRuntime:
     _event_feed_listeners: set[EventFeedCallback] = field(default_factory=set)
     _module_online: dict[str, bool] = field(default_factory=dict)
     _cloud_session_up: bool | None = None
+    _cloud_session_outage: dict[str, float | str | None] = field(default_factory=dict)
+    _module_outage: dict[str, dict[str, float | str | None]] = field(default_factory=dict)
     _start_monotonic: float | None = None
     _first_update_logged: bool = False
     _status_resolver: ParamResolver | None = None
@@ -332,6 +335,15 @@ class BragerRuntime:
     def cloud_session_up(self) -> bool | None:
         """Return cached library↔cloud Socket.IO session state, or ``None`` if unknown."""
         return self._cloud_session_up
+
+    def cloud_session_outage(self) -> dict[str, float | str | None]:
+        """Return cached cloud-session outage attrs (``down_since`` / ``reason`` / ``last_*``)."""
+        return dict(self._cloud_session_outage)
+
+    def module_outage(self, devid: str) -> dict[str, float | str | None]:
+        """Return cached module↔cloud outage attrs for *devid*."""
+        snapshot = self._module_outage.get(devid)
+        return dict(snapshot) if isinstance(snapshot, dict) else {}
 
     @property
     def supports_module_connectivity(self) -> bool:
@@ -785,6 +797,14 @@ class BragerRuntime:
         up = self.gateway.ws_session_up()
         if isinstance(up, bool):
             self._apply_cloud_session(up)
+        outage_fn = getattr(self.gateway, "cloud_session_outage", None)
+        if callable(outage_fn):
+            snapshot = outage_fn()
+            if isinstance(snapshot, dict):
+                outage = extract_outage_fields(snapshot)
+                # Empty dict / all-None from older wheels must not wipe last_*.
+                if outage_snapshot_has_values(outage):
+                    self._cloud_session_outage = outage
 
     def _on_gateway_connectivity(self, event: Any) -> None:
         """Handle ``ModuleConnectivity`` (or duck-typed) events from the gateway."""
@@ -797,6 +817,10 @@ class BragerRuntime:
         online_changed = getattr(event, "online_changed", True)
         if not isinstance(online_changed, bool):
             online_changed = True
+        outage = extract_outage_fields(event)
+        # Older wheels / metadata-only events may omit outage fields; do not wipe last_*.
+        if outage_snapshot_has_values(outage):
+            self._module_outage[devid] = outage
         self._apply_module_online(
             devid,
             online,
@@ -810,6 +834,9 @@ class BragerRuntime:
         up = getattr(event, "up", None)
         if not isinstance(up, bool):
             return
+        outage = extract_outage_fields(event)
+        if outage_snapshot_has_values(outage):
+            self._cloud_session_outage = outage
         self._apply_cloud_session(up)
 
     def _on_gateway_alarm_quantity(self, event: Any) -> None:

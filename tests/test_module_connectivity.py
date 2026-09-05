@@ -485,3 +485,67 @@ async def test_runtime_logs_online_transition_marker(caplog: pytest.LogCaptureFi
         runtime._apply_module_online("DEV1", True, connected_at=123, online_changed=False)
     assert "Module online state changed" not in caplog.text
     await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_connectivity_sensor_outage_attributes(hass: HomeAssistant) -> None:
+    """Module connectivity sensor surfaces outage attrs from runtime cache."""
+    runtime, _api, gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler", "connectedAt": 1}})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerModuleConnectivityBinarySensor(
+        entry=entry,
+        runtime=runtime,
+        devid="DEV1",
+        module_meta={"name": "Boiler", "connectedAt": 1},
+        connection_descriptor=CONNECTION_DESCRIPTOR,
+    )
+    entity.hass = hass
+    entity.async_schedule_update_ha_state = lambda *a, **k: None  # type: ignore[method-assign]
+    await runtime.start()
+    await entity.async_added_to_hass()
+
+    gateway.emit_connectivity("DEV1", False, connected_at=0, source="ws", down_since=1_700_000_100.0)
+    await entity.async_update()
+    attrs = entity.extra_state_attributes
+    assert attrs["reason"] == "ws"
+    assert attrs["down_since"] == 1_700_000_100.0
+    assert runtime.module_outage("DEV1")["reason"] == "ws"
+
+    gateway.emit_connectivity("DEV1", True, connected_at=50, source="rest", last_down_for_s=8.5, last_reason="ws")
+    await entity.async_update()
+    attrs = entity.extra_state_attributes
+    assert "down_since" not in attrs
+    assert attrs["last_down_for_s"] == 8.5
+    assert attrs["last_reason"] == "ws"
+    await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_module_outage_cache_survives_events_without_outage_fields() -> None:
+    """Metadata/legacy connectivity events without outage fields must not wipe last_*."""
+    runtime, _api, _gateway, _store = make_runtime()
+    await runtime.start()
+    runtime._on_gateway_connectivity(
+        types.SimpleNamespace(
+            devid="DEV1",
+            online=True,
+            online_changed=True,
+            connected_at=50,
+            gateway=None,
+            last_down_for_s=12.0,
+            last_reason="ws",
+        )
+    )
+    assert runtime.module_outage("DEV1")["last_reason"] == "ws"
+    runtime._on_gateway_connectivity(
+        types.SimpleNamespace(
+            devid="DEV1",
+            online=True,
+            online_changed=False,
+            connected_at=51,
+            gateway={"address": "a"},
+        )
+    )
+    assert runtime.module_outage("DEV1")["last_reason"] == "ws"
+    assert runtime.module_outage("DEV1")["last_down_for_s"] == 12.0
+    await runtime.stop()

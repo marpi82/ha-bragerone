@@ -32,6 +32,11 @@ class _ModuleConnectivityStub:
     gateway: dict[str, object] | None = None
     online_changed: bool = True
     metadata_changed: bool = False
+    down_since: float | None = None
+    down_for_s: float | None = None
+    reason: str | None = None
+    last_down_for_s: float | None = None
+    last_reason: str | None = None
 
 
 @pytest.fixture(autouse=True)

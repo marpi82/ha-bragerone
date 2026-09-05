@@ -23,6 +23,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
+from .outage_attrs import outage_state_attributes
 from .runtime import BragerRuntime
 from .upstream_assets import async_probe_upstream_assets_fingerprint
 
@@ -52,6 +53,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
                 connectivity[devid] = {
                     "online": brager_runtime.module_online(devid),
                     "connectedAt": connected_at if isinstance(connected_at, int) else None,
+                    **outage_state_attributes(brager_runtime.module_outage(devid)),
                 }
             age_fn = getattr(brager_runtime.gateway, "last_param_update_age_s", None)
             age_s = age_fn() if callable(age_fn) else None
@@ -62,6 +64,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
                 "supported": brager_runtime.supports_cloud_session,
                 "last_param_update_age_s": round(age_s, 1) if isinstance(age_s, (int, float)) else None,
                 "last_live_param_update_age_s": round(live_age_s, 1) if isinstance(live_age_s, (int, float)) else None,
+                **outage_state_attributes(brager_runtime.cloud_session_outage()),
             }
 
     platform_counter: Counter[str] = Counter()

@@ -115,6 +115,38 @@ async def test_runtime_cloud_session_edge_paths() -> None:
     runtime._seed_cloud_session_from_gateway()
     assert runtime.cloud_session_up() is None
 
+    # Missing / non-callable cloud_session_outage is a no-op for the outage cache.
+    runtime._cloud_session_outage = {"reason": "keep"}
+    gateway.cloud_session_outage = "not-callable"  # type: ignore[method-assign, assignment]
+    runtime._seed_cloud_session_from_gateway()
+    assert runtime.cloud_session_outage()["reason"] == "keep"
+
+    # Non-dict outage snapshot is ignored.
+    gateway.cloud_session_outage = lambda: "not-a-dict"  # type: ignore[method-assign, return-value]
+    runtime._seed_cloud_session_from_gateway()
+    assert runtime.cloud_session_outage()["reason"] == "keep"
+
+    # Empty / all-None dict must not wipe a previously cached last_*.
+    gateway.cloud_session_outage = lambda: {}  # type: ignore[method-assign]
+    runtime._seed_cloud_session_from_gateway()
+    assert runtime.cloud_session_outage()["reason"] == "keep"
+
+    # Dict snapshot seeds the cache (sanitized like extract_outage_fields).
+    gateway.cloud_session_outage = lambda: {  # type: ignore[method-assign]
+        "down_since": True,
+        "down_for_s": False,
+        "reason": "",
+        "last_down_for_s": 4.5,
+        "last_reason": "disconnect",
+    }
+    runtime._seed_cloud_session_from_gateway()
+    assert runtime.cloud_session_outage() == {
+        "down_since": None,
+        "down_for_s": None,
+        "reason": None,
+        "last_down_for_s": 4.5,
+        "last_reason": "disconnect",
+    }
     # Invalid / non-bool cloud-session events are ignored.
     runtime._on_gateway_cloud_session(object())
     runtime._on_gateway_cloud_session(types.SimpleNamespace(up="nope"))
@@ -122,6 +154,9 @@ async def test_runtime_cloud_session_edge_paths() -> None:
 
     runtime._on_gateway_cloud_session(types.SimpleNamespace(up=True))
     assert runtime.cloud_session_up() is True
+    # Events without outage fields must not wipe a previously seeded last_* snapshot.
+    assert runtime.cloud_session_outage()["last_reason"] == "disconnect"
+    assert runtime.cloud_session_outage()["last_down_for_s"] == 4.5
 
     # Listener exceptions are swallowed.
     def _boom(_up: bool, _changed: bool) -> None:
@@ -170,3 +205,33 @@ async def test_async_setup_skips_cloud_session_without_gateway_api(hass: HomeAss
     added: list[object] = []
     await async_setup_entry(hass, entry, added.extend)
     assert not any(isinstance(entity, BragerCloudSessionBinarySensor) for entity in added)
+
+
+@pytest.mark.asyncio
+async def test_cloud_session_outage_attributes(hass: HomeAssistant) -> None:
+    """Cloud-session sensor exposes down_for_s / reason while down and last_* after restore."""
+    runtime, _api, gateway, _store = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerCloudSessionBinarySensor(entry=entry, runtime=runtime)
+    entity.hass = hass
+    entity.async_schedule_update_ha_state = lambda *_a, **_k: None  # type: ignore[method-assign]
+
+    await runtime.start()
+    await entity.async_added_to_hass()
+    assert entity.extra_state_attributes == {}
+
+    gateway.emit_cloud_session(False, source="disconnect", down_since=1_700_000_000.0, down_for_s=0.0)
+    await entity.async_update()
+    attrs = entity.extra_state_attributes
+    assert attrs["reason"] == "disconnect"
+    assert attrs["down_since"] == 1_700_000_000.0
+    assert "down_for_s" in attrs
+    assert runtime.cloud_session_outage()["reason"] == "disconnect"
+
+    gateway.emit_cloud_session(True, source="connect", last_down_for_s=17.2, last_reason="disconnect")
+    await entity.async_update()
+    attrs = entity.extra_state_attributes
+    assert "down_since" not in attrs
+    assert attrs["last_down_for_s"] == 17.2
+    assert attrs["last_reason"] == "disconnect"
+    await runtime.stop()
