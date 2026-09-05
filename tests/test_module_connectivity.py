@@ -518,3 +518,34 @@ async def test_connectivity_sensor_outage_attributes(hass: HomeAssistant) -> Non
     assert attrs["last_down_for_s"] == 8.5
     assert attrs["last_reason"] == "ws"
     await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_module_outage_cache_survives_events_without_outage_fields() -> None:
+    """Metadata/legacy connectivity events without outage fields must not wipe last_*."""
+    runtime, _api, _gateway, _store = make_runtime()
+    await runtime.start()
+    runtime._on_gateway_connectivity(
+        types.SimpleNamespace(
+            devid="DEV1",
+            online=True,
+            online_changed=True,
+            connected_at=50,
+            gateway=None,
+            last_down_for_s=12.0,
+            last_reason="ws",
+        )
+    )
+    assert runtime.module_outage("DEV1")["last_reason"] == "ws"
+    runtime._on_gateway_connectivity(
+        types.SimpleNamespace(
+            devid="DEV1",
+            online=True,
+            online_changed=False,
+            connected_at=51,
+            gateway={"address": "a"},
+        )
+    )
+    assert runtime.module_outage("DEV1")["last_reason"] == "ws"
+    assert runtime.module_outage("DEV1")["last_down_for_s"] == 12.0
+    await runtime.stop()

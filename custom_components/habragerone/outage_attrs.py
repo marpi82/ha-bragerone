@@ -29,6 +29,11 @@ def extract_outage_fields(event: Any) -> dict[str, float | str | None]:
     return snapshot
 
 
+def outage_snapshot_has_values(snapshot: Mapping[str, Any]) -> bool:
+    """Return ``True`` when *snapshot* carries any non-``None`` outage field."""
+    return any(snapshot.get(key) is not None for key in _OUTAGE_KEYS)
+
+
 def outage_state_attributes(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
     """Build HA entity/diagnostic attributes from an outage snapshot.
 

@@ -43,6 +43,13 @@ def test_extract_outage_fields_from_mapping() -> None:
     }
 
 
+def test_outage_snapshot_has_values() -> None:
+    from custom_components.habragerone.outage_attrs import outage_snapshot_has_values
+
+    assert outage_snapshot_has_values({"down_since": None, "reason": None}) is False
+    assert outage_snapshot_has_values({"last_reason": "disconnect"}) is True
+
+
 def test_outage_state_attributes_live_down_for_s() -> None:
     attrs = outage_state_attributes({"down_since": 1_700_000_000.0, "reason": "ws", "last_down_for_s": None})
     assert attrs["down_since"] == 1_700_000_000.0

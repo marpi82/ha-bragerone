@@ -149,6 +149,9 @@ async def test_runtime_cloud_session_edge_paths() -> None:
 
     runtime._on_gateway_cloud_session(types.SimpleNamespace(up=True))
     assert runtime.cloud_session_up() is True
+    # Events without outage fields must not wipe a previously seeded last_* snapshot.
+    assert runtime.cloud_session_outage()["last_reason"] == "disconnect"
+    assert runtime.cloud_session_outage()["last_down_for_s"] == 4.5
 
     # Listener exceptions are swallowed.
     def _boom(_up: bool, _changed: bool) -> None:

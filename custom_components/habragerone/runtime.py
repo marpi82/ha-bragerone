@@ -20,7 +20,7 @@ from pybragerone.models.param_resolver import ParamResolver
 from .command_write import WriteContext, WriteValidationError, prepare_write
 from .const import CONF_ROUTE_VISIBILITY_DEPS, CONF_ROUTE_VISIBILITY_NAME, CONF_ROUTE_VISIBILITY_PATH, CONF_UI_ROUTE_SYMBOL
 from .numeric_display import descriptor_numeric_transform
-from .outage_attrs import extract_outage_fields
+from .outage_attrs import extract_outage_fields, outage_snapshot_has_values
 
 
 def _import_alarm_name_helpers() -> tuple[Any, Any]:
@@ -814,7 +814,10 @@ class BragerRuntime:
         online_changed = getattr(event, "online_changed", True)
         if not isinstance(online_changed, bool):
             online_changed = True
-        self._module_outage[devid] = extract_outage_fields(event)
+        outage = extract_outage_fields(event)
+        # Older wheels / metadata-only events may omit outage fields; do not wipe last_*.
+        if outage_snapshot_has_values(outage):
+            self._module_outage[devid] = outage
         self._apply_module_online(
             devid,
             online,
@@ -828,7 +831,9 @@ class BragerRuntime:
         up = getattr(event, "up", None)
         if not isinstance(up, bool):
             return
-        self._cloud_session_outage = extract_outage_fields(event)
+        outage = extract_outage_fields(event)
+        if outage_snapshot_has_values(outage):
+            self._cloud_session_outage = outage
         self._apply_cloud_session(up)
 
     def _on_gateway_alarm_quantity(self, event: Any) -> None:
