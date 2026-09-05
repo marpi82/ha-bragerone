@@ -28,9 +28,10 @@ def extract_outage_fields(event: Any) -> dict[str, float | str | None]:
 def outage_state_attributes(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
     """Build HA entity/diagnostic attributes from an outage snapshot.
 
-    While down, ``down_for_s`` is recomputed from wall-clock ``down_since`` so
-    attributes stay fresh without polling. ``reason`` / ``last_reason`` are
-    client observation sources, not plant hardware diagnostics.
+    While down, ``down_for_s`` is derived from wall-clock ``down_since`` whenever
+    attributes are recomputed (typically on the next connectivity/session state
+    write — Home Assistant does not refresh attributes on a timer). ``reason`` /
+    ``last_reason`` are client observation sources, not plant hardware diagnostics.
 
     While an outage is active (``down_since`` set), only live ``down_*`` /
     ``reason`` are exposed — prior-cycle ``last_*`` stay hidden until restore.

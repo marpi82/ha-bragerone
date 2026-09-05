@@ -115,6 +115,29 @@ async def test_runtime_cloud_session_edge_paths() -> None:
     runtime._seed_cloud_session_from_gateway()
     assert runtime.cloud_session_up() is None
 
+    # Missing / non-callable cloud_session_outage is a no-op for the outage cache.
+    runtime._cloud_session_outage = {"reason": "keep"}
+    gateway.cloud_session_outage = "not-callable"  # type: ignore[method-assign, assignment]
+    runtime._seed_cloud_session_from_gateway()
+    assert runtime.cloud_session_outage()["reason"] == "keep"
+
+    # Non-dict outage snapshot is ignored.
+    gateway.cloud_session_outage = lambda: "not-a-dict"  # type: ignore[method-assign, return-value]
+    runtime._seed_cloud_session_from_gateway()
+    assert runtime.cloud_session_outage()["reason"] == "keep"
+
+    # Dict snapshot seeds the cache.
+    gateway.cloud_session_outage = lambda: {  # type: ignore[method-assign]
+        "down_since": None,
+        "down_for_s": None,
+        "reason": None,
+        "last_down_for_s": 4.5,
+        "last_reason": "disconnect",
+    }
+    runtime._seed_cloud_session_from_gateway()
+    assert runtime.cloud_session_outage()["last_reason"] == "disconnect"
+    assert runtime.cloud_session_outage()["last_down_for_s"] == 4.5
+
     # Invalid / non-bool cloud-session events are ignored.
     runtime._on_gateway_cloud_session(object())
     runtime._on_gateway_cloud_session(types.SimpleNamespace(up="nope"))

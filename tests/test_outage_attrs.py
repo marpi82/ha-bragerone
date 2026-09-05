@@ -49,6 +49,13 @@ def test_outage_state_attributes_hides_last_during_active_outage() -> None:
     assert "last_reason" not in attrs
 
 
+def test_outage_state_attributes_active_without_reason() -> None:
+    attrs = outage_state_attributes({"down_since": 1_700_000_000.0, "reason": None})
+    assert attrs["down_since"] == 1_700_000_000.0
+    assert "reason" not in attrs
+    assert "last_down_for_s" not in attrs
+
+
 def test_outage_state_attributes_last_only_when_up() -> None:
     attrs = outage_state_attributes(
         {"down_since": None, "down_for_s": None, "reason": None, "last_down_for_s": 12.34, "last_reason": "disconnect"}
