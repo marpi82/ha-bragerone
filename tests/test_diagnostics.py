@@ -180,6 +180,26 @@ async def test_diagnostics_reports_last_param_update_age(hass: HomeAssistant) ->
 
 
 @pytest.mark.asyncio
+async def test_diagnostics_includes_outage_attrs(hass: HomeAssistant) -> None:
+    from custom_components.habragerone.const import DATA_RUNTIME
+    from tests.helpers.fakes import make_runtime
+
+    runtime, _api, gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler", "connectedAt": 0}})
+    await runtime.start()
+    gateway.emit_cloud_session(False, source="disconnect", down_since=1_700_000_000.0)
+    gateway.emit_connectivity("DEV1", False, connected_at=0, source="rest", down_since=1_700_000_050.0)
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.data[DOMAIN][entry.entry_id][DATA_RUNTIME] = runtime
+
+    payload = await async_get_config_entry_diagnostics(hass, entry)
+    assert payload["cloud_session"]["reason"] == "disconnect"
+    assert payload["cloud_session"]["down_since"] == 1_700_000_000.0
+    assert payload["connectivity"]["DEV1"]["reason"] == "rest"
+    assert payload["connectivity"]["DEV1"]["down_since"] == 1_700_000_050.0
+    await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_diagnostics_connectivity_without_gateway_modules_list(hass: HomeAssistant) -> None:
     from custom_components.habragerone.const import DATA_RUNTIME
     from tests.helpers.fakes import make_runtime

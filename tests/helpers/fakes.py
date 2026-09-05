@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import types
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -77,6 +78,8 @@ class FakeGateway:
         self._ws_session_up = False
         self._last_param_update_age_s: float | None = None
         self._last_live_param_update_age_s: float | None = None
+        self._cloud_outage: dict[str, float | str | None] = {}
+        self._module_outage: dict[str, dict[str, float | str | None]] = {}
         self._start_error = start_error
         self._start_delay = start_delay
         self.started = False
@@ -123,6 +126,15 @@ class FakeGateway:
         """Return whether the fake Socket.IO session is up."""
         return self._ws_session_up
 
+    def cloud_session_outage(self) -> dict[str, float | str | None]:
+        """Return fake cloud-session outage snapshot."""
+        return dict(self._cloud_outage)
+
+    def module_outage(self, devid: str) -> dict[str, float | str | None]:
+        """Return fake module outage snapshot for *devid*."""
+        snapshot = self._module_outage.get(devid)
+        return dict(snapshot) if isinstance(snapshot, dict) else {}
+
     def last_param_update_age_s(self) -> float | None:
         """Return seconds since the last fake ParamUpdate, or ``None``."""
         age = self._last_param_update_age_s
@@ -145,13 +157,39 @@ class FakeGateway:
         connected_at: int | None = None,
         source: str = "derived",
         gateway: dict[str, object] | None = None,
+        down_since: float | None = None,
+        down_for_s: float | None = None,
+        reason: str | None = None,
+        last_down_for_s: float | None = None,
+        last_reason: str | None = None,
     ) -> None:
         """Update online cache and notify registered connectivity callbacks."""
         if connected_at is not None:
             self._connected_at[devid] = connected_at
         if gateway is not None:
             self._gateway[devid] = dict(gateway)
+        previous = self._online.get(devid)
         self._online[devid] = online
+        if not online and (previous is None or previous is True):
+            self._module_outage[devid] = {
+                "down_since": down_since if down_since is not None else time.time(),
+                "down_for_s": down_for_s if down_for_s is not None else 0.0,
+                "reason": reason if reason is not None else source,
+                "last_down_for_s": self._module_outage.get(devid, {}).get("last_down_for_s"),
+                "last_reason": self._module_outage.get(devid, {}).get("last_reason"),
+            }
+        elif online and previous is False:
+            prior = self._module_outage.get(devid, {})
+            duration = last_down_for_s if last_down_for_s is not None else prior.get("down_for_s")
+            ended_reason = last_reason if last_reason is not None else prior.get("reason")
+            self._module_outage[devid] = {
+                "down_since": None,
+                "down_for_s": None,
+                "reason": None,
+                "last_down_for_s": float(duration) if isinstance(duration, (int, float)) else 1.0,
+                "last_reason": str(ended_reason) if isinstance(ended_reason, str) else source,
+            }
+        outage = self._module_outage.get(devid, {})
         event = types.SimpleNamespace(
             devid=devid,
             online=online,
@@ -160,15 +198,59 @@ class FakeGateway:
             gateway=self._gateway.get(devid),
             online_changed=True,
             metadata_changed=False,
+            down_since=outage.get("down_since"),
+            down_for_s=outage.get("down_for_s"),
+            reason=outage.get("reason"),
+            last_down_for_s=outage.get("last_down_for_s"),
+            last_reason=outage.get("last_reason"),
         )
         for callback in list(self._connectivity_callbacks):
             callback(event)
 
-    def emit_cloud_session(self, up: bool, *, source: str = "disconnect", changed: bool = True) -> None:
+    def emit_cloud_session(
+        self,
+        up: bool,
+        *,
+        source: str = "disconnect",
+        changed: bool = True,
+        down_since: float | None = None,
+        down_for_s: float | None = None,
+        reason: str | None = None,
+        last_down_for_s: float | None = None,
+        last_reason: str | None = None,
+    ) -> None:
         """Update session cache and notify registered cloud-session callbacks."""
         previous = self._ws_session_up
         self._ws_session_up = up
-        event = types.SimpleNamespace(up=up, source=source, changed=changed or previous is not up)
+        if not up and previous:
+            self._cloud_outage = {
+                "down_since": down_since if down_since is not None else time.time(),
+                "down_for_s": down_for_s if down_for_s is not None else 0.0,
+                "reason": reason if reason is not None else source,
+                "last_down_for_s": self._cloud_outage.get("last_down_for_s"),
+                "last_reason": self._cloud_outage.get("last_reason"),
+            }
+        elif up and previous is False and self._cloud_outage.get("down_since") is not None:
+            prior = self._cloud_outage
+            duration = last_down_for_s if last_down_for_s is not None else prior.get("down_for_s")
+            ended_reason = last_reason if last_reason is not None else prior.get("reason")
+            self._cloud_outage = {
+                "down_since": None,
+                "down_for_s": None,
+                "reason": None,
+                "last_down_for_s": float(duration) if isinstance(duration, (int, float)) else 1.0,
+                "last_reason": str(ended_reason) if isinstance(ended_reason, str) else source,
+            }
+        event = types.SimpleNamespace(
+            up=up,
+            source=source,
+            changed=changed or previous is not up,
+            down_since=self._cloud_outage.get("down_since"),
+            down_for_s=self._cloud_outage.get("down_for_s"),
+            reason=self._cloud_outage.get("reason"),
+            last_down_for_s=self._cloud_outage.get("last_down_for_s"),
+            last_reason=self._cloud_outage.get("last_reason"),
+        )
         for callback in list(self._cloud_session_callbacks):
             callback(event)
 

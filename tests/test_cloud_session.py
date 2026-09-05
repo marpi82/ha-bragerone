@@ -170,3 +170,33 @@ async def test_async_setup_skips_cloud_session_without_gateway_api(hass: HomeAss
     added: list[object] = []
     await async_setup_entry(hass, entry, added.extend)
     assert not any(isinstance(entity, BragerCloudSessionBinarySensor) for entity in added)
+
+
+@pytest.mark.asyncio
+async def test_cloud_session_outage_attributes(hass: HomeAssistant) -> None:
+    """Cloud-session sensor exposes down_for_s / reason while down and last_* after restore."""
+    runtime, _api, gateway, _store = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerCloudSessionBinarySensor(entry=entry, runtime=runtime)
+    entity.hass = hass
+    entity.async_schedule_update_ha_state = lambda *_a, **_k: None  # type: ignore[method-assign]
+
+    await runtime.start()
+    await entity.async_added_to_hass()
+    assert entity.extra_state_attributes == {}
+
+    gateway.emit_cloud_session(False, source="disconnect", down_since=1_700_000_000.0, down_for_s=0.0)
+    await entity.async_update()
+    attrs = entity.extra_state_attributes
+    assert attrs["reason"] == "disconnect"
+    assert attrs["down_since"] == 1_700_000_000.0
+    assert "down_for_s" in attrs
+    assert runtime.cloud_session_outage()["reason"] == "disconnect"
+
+    gateway.emit_cloud_session(True, source="connect", last_down_for_s=17.2, last_reason="disconnect")
+    await entity.async_update()
+    attrs = entity.extra_state_attributes
+    assert "down_since" not in attrs
+    assert attrs["last_down_for_s"] == 17.2
+    assert attrs["last_reason"] == "disconnect"
+    await runtime.stop()

@@ -32,6 +32,7 @@ from .entity_common import (
     module_parent_device_info,
     record_platform_entity_stats,
 )
+from .outage_attrs import outage_state_attributes
 from .runtime import BragerRuntime
 from .status_rules import coerce_status_bool, resolve_entity_bool, status_binary_has_sync_path, status_label_to_bool
 
@@ -328,6 +329,8 @@ class BragerModuleConnectivityBinarySensor(BinarySensorEntity):
         not_connected_label = labels.get("connection.notConnected")
         if isinstance(not_connected_label, str):
             attrs["state_label_off"] = not_connected_label
+        # Client-side outage timing (reason = observation source, not plant diagnosis).
+        attrs.update(outage_state_attributes(self._runtime.module_outage(self._devid)))
         return attrs
 
     async def async_added_to_hass(self) -> None:
@@ -388,6 +391,11 @@ class BragerCloudSessionBinarySensor(BinarySensorEntity):
             name="BragerOne",
             entry_type=DeviceEntryType.SERVICE,
         )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose cloud-session outage duration / reason (client observation source)."""
+        return outage_state_attributes(self._runtime.cloud_session_outage())
 
     async def async_added_to_hass(self) -> None:
         """Attach cloud-session listener when entity is added."""
