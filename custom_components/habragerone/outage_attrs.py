@@ -77,17 +77,21 @@ def extract_live_push_fields(event: Any) -> dict[str, float | bool | None]:
 
     Accepts either snapshot keys (``push_healthy``) or
     :class:`~pybragerone.models.events.LivePushHealth` (``healthy``).
+    Resume duration is canonicalized to ``last_resumed_after_s`` (library key);
+    ``last_live_resumed_after_s`` is accepted as an input alias only.
     """
     if isinstance(event, Mapping):
         healthy_raw = event.get("push_healthy", event.get("healthy"))
         stale_raw = event.get("live_stale_for_s")
-        resumed_raw = event.get("last_resumed_after_s")
+        resumed_raw = event.get("last_resumed_after_s", event.get("last_live_resumed_after_s"))
     else:
         healthy_raw = getattr(event, "push_healthy", None)
         if healthy_raw is None:
             healthy_raw = getattr(event, "healthy", None)
         stale_raw = getattr(event, "live_stale_for_s", None)
         resumed_raw = getattr(event, "last_resumed_after_s", None)
+        if resumed_raw is None:
+            resumed_raw = getattr(event, "last_live_resumed_after_s", None)
 
     snapshot: dict[str, float | bool | None] = {
         "push_healthy": healthy_raw if isinstance(healthy_raw, bool) else None,

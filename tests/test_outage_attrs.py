@@ -124,10 +124,21 @@ def test_live_push_extract_and_state_attributes() -> None:
     assert snap == {"push_healthy": False, "live_stale_for_s": 40.5, "last_resumed_after_s": 12.0}
     assert live_push_state_attributes(snap) == {"push_healthy": False, "live_stale_for_s": 40.5}
 
+    # Object with push_healthy set (no healthy fallback branch).
+    direct = extract_live_push_fields(types.SimpleNamespace(push_healthy=True, live_stale_for_s=None, last_resumed_after_s=None))
+    assert direct["push_healthy"] is True
+
     resumed = extract_live_push_fields({"push_healthy": True, "live_stale_for_s": None, "last_resumed_after_s": 40.5})
     assert live_push_state_attributes(resumed) == {"push_healthy": True, "last_resumed_after_s": 40.5}
     assert live_push_state_attributes(None) == {}
     assert live_push_snapshot_has_values({"push_healthy": None, "live_stale_for_s": None, "last_resumed_after_s": None}) is False
+
+    # Issue #263 provisional alias accepted on input; HA attrs stay library-canonical.
+    alias = extract_live_push_fields({"push_healthy": True, "last_live_resumed_after_s": 7.5})
+    assert alias["last_resumed_after_s"] == 7.5
+    assert live_push_state_attributes(alias) == {"push_healthy": True, "last_resumed_after_s": 7.5}
+    alias_obj = extract_live_push_fields(types.SimpleNamespace(healthy=True, last_live_resumed_after_s=2.0))
+    assert alias_obj["last_resumed_after_s"] == 2.0
 
     # bools rejected for numeric fields; empty / unknown shapes stay None
     bad = extract_live_push_fields(types.SimpleNamespace(healthy=True, live_stale_for_s=True, last_resumed_after_s=False))

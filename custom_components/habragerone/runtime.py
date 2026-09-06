@@ -888,6 +888,11 @@ class BragerRuntime:
         health = extract_live_push_fields(event)
         if live_push_snapshot_has_values(health):
             self._live_push_health = health
+        changed = event.get("changed", True) if isinstance(event, Mapping) else getattr(event, "changed", True)
+        if not isinstance(changed, bool):
+            changed = True
+        if not changed:
+            return
         for callback in list(self._live_push_listeners):
             try:
                 callback()

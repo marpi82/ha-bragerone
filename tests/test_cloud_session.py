@@ -312,6 +312,19 @@ async def test_runtime_live_push_seed_and_listener_edges(caplog: pytest.LogCaptu
     assert runtime.live_push_health()["push_healthy"] is False
     assert "Live-push listener failed" in caplog.text
 
+    # Empty snapshot: do not wipe cache; still notify when changed=True.
+    runtime._on_gateway_live_push(types.SimpleNamespace(healthy=None, live_stale_for_s=None, last_resumed_after_s=None))
+    assert hits["n"] == 2
+    assert runtime.live_push_health()["push_healthy"] is False
+
+    # changed=False: update cache when values present, but skip HA fan-out.
+    gateway.emit_live_push(healthy=True, last_resumed_after_s=3.0, changed=False)
+    assert hits["n"] == 2
+    assert runtime.live_push_health()["push_healthy"] is True
+    runtime._on_gateway_live_push({"push_healthy": False, "live_stale_for_s": 9.0, "changed": "yes"})
+    assert hits["n"] == 3
+    assert runtime.live_push_health()["push_healthy"] is False
+
     # Unsupported gateway: supports_live_push false short-circuits seed.
     gateway.on_live_push = None  # type: ignore[method-assign, assignment]
     assert runtime.supports_live_push is False
