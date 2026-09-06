@@ -148,5 +148,10 @@ def test_live_push_extract_and_state_attributes() -> None:
         "push_healthy": False
     }
     assert live_push_state_attributes({"push_healthy": None, "last_resumed_after_s": 3.0}) == {"last_resumed_after_s": 3.0}
-    # Mapping without push_healthy falls back to healthy key already covered; bare mapping path:
+    # Mapping without push_healthy falls back to healthy; None push_healthy also falls back.
     assert extract_live_push_fields({"healthy": True}).get("push_healthy") is True
+    assert extract_live_push_fields({"push_healthy": None, "healthy": False}).get("push_healthy") is False
+    assert (
+        extract_live_push_fields({"last_resumed_after_s": None, "last_live_resumed_after_s": 4.0}).get("last_resumed_after_s")
+        == 4.0
+    )

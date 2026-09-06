@@ -81,9 +81,13 @@ def extract_live_push_fields(event: Any) -> dict[str, float | bool | None]:
     ``last_live_resumed_after_s`` is accepted as an input alias only.
     """
     if isinstance(event, Mapping):
-        healthy_raw = event.get("push_healthy", event.get("healthy"))
+        healthy_raw = event.get("push_healthy")
+        if healthy_raw is None:
+            healthy_raw = event.get("healthy")
         stale_raw = event.get("live_stale_for_s")
-        resumed_raw = event.get("last_resumed_after_s", event.get("last_live_resumed_after_s"))
+        resumed_raw = event.get("last_resumed_after_s")
+        if resumed_raw is None:
+            resumed_raw = event.get("last_live_resumed_after_s")
     else:
         healthy_raw = getattr(event, "push_healthy", None)
         if healthy_raw is None:
