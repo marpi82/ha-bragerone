@@ -929,6 +929,29 @@ async def test_lookup_device_by_identifier_returns_none_for_non_device_entries(h
 
 
 @pytest.mark.asyncio
+async def test_lookup_device_by_identifier_returns_none_when_fallback_scan_misses(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fallback scan returns None when no device owns the identifier."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    registry = dr.async_get(hass)
+    registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV2:module.connection")},
+        manufacturer="BragerOne",
+        name="Boiler — Connection with module",
+        model="Brager module",
+    )
+    monkeypatch.setattr(registry, "async_get_device_by_identifier", None, raising=False)
+
+    assert _lookup_device_by_identifier(registry, (DOMAIN, "DEV1:module.connection"), entry.entry_id) is None
+
+
+@pytest.mark.asyncio
 async def test_device_info_falls_back_when_via_device_id_helper_missing(
     hass: HomeAssistant,
     monkeypatch: pytest.MonkeyPatch,
