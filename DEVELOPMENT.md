@@ -69,6 +69,29 @@ Per-module diagnostic sensors expose SPA **current** and **history** alarms (`al
 Per-module diagnostic sensors expose the SPA **Activity** feed (`routes.activity.index`) with state = loaded row count (first page, SPA default `limit=20`) and an `activities` attribute list (`id`, `devid`, `parameter`, `parameter_key`, `value`, `value_raw`, `prev_value`, `prev_value_raw`, `state`, `state_key`, `created_at`, `created_by`). Labels come from SPA i18n (`activity.state.*`, parameters/units via `ParamResolver` / catalog) — never hardcoded PL/EN. Lists refresh on platform setup, when a module connectivity flip goes online, and after successful Home Assistant writes (SPA logs parameter changes) — no blind polling. Soft-depends on `py-bragerone` `modules_activity` (library PR #338); older pins skip entity creation.
 
 
+### Field-testing a library pre-release on HassOS (#275)
+
+On **HassOS / HACS**, do **not** pin `py-bragerone` with `git+https://…@sha` in `manifest.json`. HACS updates overwrite local edits, and git installs are a poor fit for HassOS (Alpine/musl) wheels.
+
+Supported path:
+
+1. Publish a library pre-release to **PyPI** from [py-bragerone](https://github.com/marpi82/py-bragerone) (`YYYY.M.NrcN` / `bN` / `aN`).
+2. Bump the exact pin here:
+
+   ```bash
+   ./scripts/pin_pybragerone.sh 2026.9.2rc2
+   uv lock
+   ```
+
+   That updates `custom_components/habragerone/manifest.json` `requirements` and
+   `pyproject.toml`. It does **not** change the integration `"version"` field
+   (use `scripts/release.sh` for HACS tags).
+3. Commit the pin + lock, then cut an integration pre-release (`./scripts/release.sh … rc` / `beta`).
+4. On the live HA instance: HACS → **Show beta versions** → install/update BragerOne.
+5. Smoke config flow, entities, reconnect / cloud session, and (when the pin includes it) diagnostics `connectivity_episodes`.
+
+For **native / Cursor Cloud** HA only, `USE_LOCAL_PYBRAGERONE=1 uv run poe hass-prepare` still uses an editable sibling checkout — that path is not available on HassOS.
+
 ### Publishing Releases
 
 Do **not** cut a stable HACS tag until the same version has been smoke-tested as a HACS **pre-release** on a live Home Assistant install. Tooling already supports this (`scripts/release.sh` + `.github/workflows/release.yml`); skipping the beta/rc step is a process failure, not a tooling gap.

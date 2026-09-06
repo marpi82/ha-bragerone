@@ -4,6 +4,14 @@ This directory contains development helper scripts for ha-bragerone.
 
 ## Scripts
 
+### pin_pybragerone.sh
+Bump the exact `py-bragerone==…` pin in `manifest.json` and `pyproject.toml` (then run `uv lock`). For HassOS field-tests, only pin published PyPI pre-releases — see DEVELOPMENT.md.
+
+```bash
+./scripts/pin_pybragerone.sh 2026.9.2rc2
+uv lock
+```
+
 ### setup.sh
 Initial development environment setup script. Installs dependencies, sets up pre-commit hooks, creates configuration files.
 
