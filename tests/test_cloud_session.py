@@ -266,3 +266,56 @@ async def test_cloud_session_live_push_attributes(hass: HomeAssistant) -> None:
     assert attrs["last_resumed_after_s"] == 95.0
     assert "live_stale_for_s" not in attrs
     await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_runtime_live_push_seed_and_listener_edges(caplog: pytest.LogCaptureFixture) -> None:
+    """Cover seed skips and listener isolation for live-push health."""
+    runtime, _api, gateway, _store = make_runtime()
+    hits = {"n": 0}
+    runtime.add_live_push_listener(lambda: hits.__setitem__("n", hits["n"] + 1))
+
+    def _boom() -> None:
+        raise RuntimeError("listener boom")
+
+    runtime.add_live_push_listener(_boom)
+
+    await runtime.start()
+    assert runtime.supports_live_push is True
+    # start seeds from empty live_push → cache stays empty until emit
+    assert runtime.live_push_health() == {}
+
+    gateway.live_push_health = "not-callable"  # type: ignore[method-assign, assignment]
+    runtime._seed_live_push_from_gateway()
+    assert runtime.live_push_health() == {}
+
+    gateway.live_push_health = lambda: "not-a-dict"  # type: ignore[method-assign, return-value]
+    runtime._seed_live_push_from_gateway()
+    assert runtime.live_push_health() == {}
+
+    gateway.live_push_health = lambda: {  # type: ignore[method-assign]
+        "push_healthy": None,
+        "live_stale_for_s": None,
+        "last_resumed_after_s": None,
+    }
+    runtime._seed_live_push_from_gateway()
+    assert runtime.live_push_health() == {}
+
+    gateway.live_push_health = lambda: {"push_healthy": True, "live_stale_for_s": None, "last_resumed_after_s": 1.5}  # type: ignore[method-assign]
+    runtime._seed_live_push_from_gateway()
+    assert runtime.live_push_health()["push_healthy"] is True
+    assert runtime.live_push_health()["last_resumed_after_s"] == 1.5
+
+    with caplog.at_level("ERROR"):
+        gateway.emit_live_push(healthy=False, live_stale_for_s=12.0)
+    assert hits["n"] == 1
+    assert runtime.live_push_health()["push_healthy"] is False
+    assert "Live-push listener failed" in caplog.text
+
+    # Unsupported gateway: supports_live_push false short-circuits seed.
+    gateway.on_live_push = None  # type: ignore[method-assign, assignment]
+    assert runtime.supports_live_push is False
+    runtime._live_push_health = {"push_healthy": True}
+    runtime._seed_live_push_from_gateway()
+    assert runtime.live_push_health()["push_healthy"] is True
+    await runtime.stop()

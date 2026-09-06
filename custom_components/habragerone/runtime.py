@@ -363,7 +363,7 @@ class BragerRuntime:
         return dict(self._cloud_session_outage)
 
     def live_push_health(self) -> dict[str, float | bool | None]:
-        """Return cached live-push health (``push_healthy`` / ``live_stale_for_s`` / ``last_resumed_*``)."""
+        """Return cached live-push health (``push_healthy`` / ``live_stale_for_s`` / ``last_resumed_after_s``)."""
         return dict(self._live_push_health)
 
     def module_outage(self, devid: str) -> dict[str, float | str | None]:
@@ -387,8 +387,8 @@ class BragerRuntime:
 
     @property
     def supports_live_push(self) -> bool:
-        """Return whether the gateway exposes live ParamUpdate push-health APIs."""
-        return callable(getattr(self.gateway, "on_live_push", None)) and callable(getattr(self.gateway, "live_push_health", None))
+        """Return whether the gateway exposes live ParamUpdate push-health callbacks."""
+        return callable(getattr(self.gateway, "on_live_push", None))
 
     @property
     def supports_alarm_quantity(self) -> bool:

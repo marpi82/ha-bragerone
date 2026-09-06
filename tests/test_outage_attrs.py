@@ -115,6 +115,7 @@ def test_extract_and_attrs_reject_bool_and_empty_strings() -> None:
 def test_live_push_extract_and_state_attributes() -> None:
     from custom_components.habragerone.outage_attrs import (
         extract_live_push_fields,
+        live_push_snapshot_has_values,
         live_push_state_attributes,
     )
 
@@ -126,3 +127,15 @@ def test_live_push_extract_and_state_attributes() -> None:
     resumed = extract_live_push_fields({"push_healthy": True, "live_stale_for_s": None, "last_resumed_after_s": 40.5})
     assert live_push_state_attributes(resumed) == {"push_healthy": True, "last_resumed_after_s": 40.5}
     assert live_push_state_attributes(None) == {}
+    assert live_push_snapshot_has_values({"push_healthy": None, "live_stale_for_s": None, "last_resumed_after_s": None}) is False
+
+    # bools rejected for numeric fields; empty / unknown shapes stay None
+    bad = extract_live_push_fields(types.SimpleNamespace(healthy=True, live_stale_for_s=True, last_resumed_after_s=False))
+    assert bad["live_stale_for_s"] is None
+    assert bad["last_resumed_after_s"] is None
+    assert live_push_state_attributes({"push_healthy": False, "live_stale_for_s": True, "last_resumed_after_s": False}) == {
+        "push_healthy": False
+    }
+    assert live_push_state_attributes({"push_healthy": None, "last_resumed_after_s": 3.0}) == {"last_resumed_after_s": 3.0}
+    # Mapping without push_healthy falls back to healthy key already covered; bare mapping path:
+    assert extract_live_push_fields({"healthy": True}).get("push_healthy") is True
