@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import yaml
+
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
