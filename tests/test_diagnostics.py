@@ -200,6 +200,58 @@ async def test_diagnostics_includes_outage_attrs(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
+async def test_diagnostics_includes_connectivity_episodes(hass: HomeAssistant) -> None:
+    from custom_components.habragerone.const import DATA_RUNTIME
+    from tests.helpers.fakes import make_runtime
+
+    runtime, _api, gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler", "connectedAt": 1}})
+    gateway._connectivity_episodes = [
+        {
+            "layer": "cloud",
+            "started_at": 1_700_000_000.0,
+            "ended_at": 1_700_000_030.0,
+            "down_for_s": 30.0,
+            "reason": "handshake_503",
+            "devid": None,
+            "episode_id": "cloud-abcd1234",
+        },
+        {
+            "layer": "module",
+            "started_at": 1_700_000_100.0,
+            "ended_at": 1_700_000_160.0,
+            "down_for_s": 60.0,
+            "reason": "rest",
+            "devid": "DEV1",
+            "episode_id": "module-efgh5678",
+        },
+        {"layer": "bogus", "down_for_s": 1.0},
+    ]
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    hass.data[DOMAIN][entry.entry_id][DATA_RUNTIME] = runtime
+
+    payload = await async_get_config_entry_diagnostics(hass, entry)
+    episodes = payload["connectivity_episodes"]
+    assert isinstance(episodes, list)
+    assert len(episodes) == 2
+    assert episodes[0]["layer"] == "cloud"
+    assert episodes[0]["reason"] == "handshake_503"
+    assert episodes[1]["layer"] == "module"
+    assert episodes[1]["devid"] == "DEV1"
+    assert runtime.supports_connectivity_episodes is True
+    await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_runtime_connectivity_episodes_soft_dep() -> None:
+    from tests.helpers.fakes import make_runtime
+
+    runtime, _api, gateway, _store = make_runtime()
+    gateway.connectivity_episodes = "not-callable"  # type: ignore[method-assign, assignment]
+    assert runtime.supports_connectivity_episodes is False
+    assert runtime.connectivity_episodes() == []
+
+
+@pytest.mark.asyncio
 async def test_diagnostics_connectivity_without_gateway_modules_list(hass: HomeAssistant) -> None:
     from custom_components.habragerone.const import DATA_RUNTIME
     from tests.helpers.fakes import make_runtime
