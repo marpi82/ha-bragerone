@@ -8,6 +8,9 @@ from typing import Any
 
 _OUTAGE_KEYS = ("down_since", "down_for_s", "reason", "last_down_for_s", "last_reason")
 _LIVE_PUSH_KEYS = ("push_healthy", "live_stale_for_s", "last_resumed_after_s")
+_EPISODE_LAYERS = frozenset({"cloud", "module", "live_stale"})
+_EPISODE_FLOAT_KEYS = ("started_at", "ended_at", "down_for_s")
+_EPISODE_STR_KEYS = ("reason", "devid", "episode_id")
 
 
 def extract_outage_fields(event: Any) -> dict[str, float | str | None]:
@@ -138,3 +141,37 @@ def live_push_state_attributes(snapshot: Mapping[str, Any] | None) -> dict[str, 
     if isinstance(resumed, (int, float)) and healthy is not False:
         attrs["last_resumed_after_s"] = round(float(resumed), 1)
     return attrs
+
+
+def sanitize_connectivity_episodes(raw: object) -> list[dict[str, float | str | None]]:
+    """Normalize gateway ``connectivity_episodes()`` into diagnostics-safe dicts.
+
+    Drops malformed entries. No credentials are expected in the library payload;
+    this still type-narrows so diagnostics never emit unexpected shapes.
+    """
+    if not isinstance(raw, list):
+        return []
+    episodes: list[dict[str, float | str | None]] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        layer = item.get("layer")
+        if not isinstance(layer, str) or layer not in _EPISODE_LAYERS:
+            continue
+        episode: dict[str, float | str | None] = {"layer": layer}
+        for key in _EPISODE_FLOAT_KEYS:
+            value = item.get(key)
+            if isinstance(value, bool):
+                episode[key] = None
+            elif isinstance(value, (int, float)):
+                episode[key] = float(value)
+            else:
+                episode[key] = None
+        for key in _EPISODE_STR_KEYS:
+            value = item.get(key)
+            if isinstance(value, str) and value:
+                episode[key] = value
+            else:
+                episode[key] = None
+        episodes.append(episode)
+    return episodes

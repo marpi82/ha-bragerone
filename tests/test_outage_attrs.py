@@ -155,3 +155,34 @@ def test_live_push_extract_and_state_attributes() -> None:
         extract_live_push_fields({"last_resumed_after_s": None, "last_live_resumed_after_s": 4.0}).get("last_resumed_after_s")
         == 4.0
     )
+
+
+def test_sanitize_connectivity_episodes() -> None:
+    from custom_components.habragerone.outage_attrs import sanitize_connectivity_episodes
+
+    assert sanitize_connectivity_episodes("nope") == []
+    assert sanitize_connectivity_episodes([None, {"layer": "nope"}]) == []
+    cleaned = sanitize_connectivity_episodes(
+        [
+            {
+                "layer": "live_stale",
+                "started_at": "bad",
+                "ended_at": 20,
+                "down_for_s": True,
+                "reason": "",
+                "devid": "M1",
+                "episode_id": "live_stale-1",
+            }
+        ]
+    )
+    assert cleaned == [
+        {
+            "layer": "live_stale",
+            "started_at": None,
+            "ended_at": 20.0,
+            "down_for_s": None,
+            "reason": None,
+            "devid": "M1",
+            "episode_id": "live_stale-1",
+        }
+    ]

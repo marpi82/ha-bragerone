@@ -25,6 +25,7 @@ from .outage_attrs import (
     extract_outage_fields,
     live_push_snapshot_has_values,
     outage_snapshot_has_values,
+    sanitize_connectivity_episodes,
 )
 
 
@@ -370,6 +371,21 @@ class BragerRuntime:
         """Return cached module↔cloud outage attrs for *devid*."""
         snapshot = self._module_outage.get(devid)
         return dict(snapshot) if isinstance(snapshot, dict) else {}
+
+    def connectivity_episodes(self) -> list[dict[str, float | str | None]]:
+        """Return recent completed connectivity episodes from the gateway (soft-dep).
+
+        Empty when the pinned ``pybragerone`` build lacks ``connectivity_episodes``.
+        """
+        episodes_fn = getattr(self.gateway, "connectivity_episodes", None)
+        if not callable(episodes_fn):
+            return []
+        return sanitize_connectivity_episodes(episodes_fn())
+
+    @property
+    def supports_connectivity_episodes(self) -> bool:
+        """Return whether the gateway exposes the episode ring-buffer snapshot."""
+        return callable(getattr(self.gateway, "connectivity_episodes", None))
 
     @property
     def supports_module_connectivity(self) -> bool:

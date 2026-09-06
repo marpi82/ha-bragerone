@@ -38,6 +38,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
 
     connectivity: dict[str, dict[str, object]] = {}
     cloud_session: dict[str, object] | None = None
+    connectivity_episodes: list[dict[str, float | str | None]] = []
     if isinstance(runtime, dict):
         brager_runtime = runtime.get(DATA_RUNTIME)
         if isinstance(brager_runtime, BragerRuntime):
@@ -67,6 +68,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
                 **outage_state_attributes(brager_runtime.cloud_session_outage()),
                 **live_push_state_attributes(brager_runtime.live_push_health()),
             }
+            connectivity_episodes = brager_runtime.connectivity_episodes()
 
     platform_counter: Counter[str] = Counter()
     writable_counter = 0
@@ -330,6 +332,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
             "descriptor_summary": summary_core,
             "connectivity": connectivity,
             "cloud_session": cloud_session,
+            "connectivity_episodes": connectivity_episodes,
         },
         REDACT_KEYS,
     )

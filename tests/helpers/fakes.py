@@ -82,6 +82,7 @@ class FakeGateway:
         self._cloud_outage: dict[str, float | str | None] = {}
         self._live_push: dict[str, float | bool | None] = {}
         self._module_outage: dict[str, dict[str, float | str | None]] = {}
+        self._connectivity_episodes: list[dict[str, float | str | None]] = []
         self._start_error = start_error
         self._start_delay = start_delay
         self.started = False
@@ -144,6 +145,10 @@ class FakeGateway:
         """Return fake module outage snapshot for *devid*."""
         snapshot = self._module_outage.get(devid)
         return dict(snapshot) if isinstance(snapshot, dict) else {}
+
+    def connectivity_episodes(self) -> list[dict[str, float | str | None]]:
+        """Return fake completed connectivity episodes (oldest → newest)."""
+        return [dict(item) for item in self._connectivity_episodes]
 
     def last_param_update_age_s(self) -> float | None:
         """Return seconds since the last fake ParamUpdate, or ``None``."""
