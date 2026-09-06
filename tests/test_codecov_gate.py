@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import yaml
-
 from pathlib import Path
 from typing import Any
 
+import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _CI_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
