@@ -235,3 +235,104 @@ async def test_cloud_session_outage_attributes(hass: HomeAssistant) -> None:
     assert attrs["last_down_for_s"] == 17.2
     assert attrs["last_reason"] == "disconnect"
     await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_cloud_session_live_push_attributes(hass: HomeAssistant) -> None:
+    """Cloud-session sensor exposes push_healthy / live_stale without redefining on/off."""
+    runtime, _api, gateway, _store = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity = BragerCloudSessionBinarySensor(entry=entry, runtime=runtime)
+    entity.hass = hass
+    entity.async_schedule_update_ha_state = lambda *_a, **_k: None  # type: ignore[method-assign]
+
+    await runtime.start()
+    await entity.async_added_to_hass()
+    await entity.async_update()
+    assert entity.is_on is True
+
+    gateway.emit_live_push(healthy=False, live_stale_for_s=95.0)
+    await entity.async_update()
+    attrs = entity.extra_state_attributes
+    assert attrs["push_healthy"] is False
+    assert attrs["live_stale_for_s"] == 95.0
+    assert entity.is_on is True
+    assert runtime.live_push_health()["push_healthy"] is False
+
+    gateway.emit_live_push(healthy=True, last_resumed_after_s=95.0)
+    await entity.async_update()
+    attrs = entity.extra_state_attributes
+    assert attrs["push_healthy"] is True
+    assert attrs["last_resumed_after_s"] == 95.0
+    assert "live_stale_for_s" not in attrs
+    await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_runtime_live_push_seed_and_listener_edges(caplog: pytest.LogCaptureFixture) -> None:
+    """Cover seed skips and listener isolation for live-push health."""
+    runtime, _api, gateway, _store = make_runtime()
+    hits = {"n": 0}
+    runtime.add_live_push_listener(lambda: hits.__setitem__("n", hits["n"] + 1))
+
+    def _boom() -> None:
+        raise RuntimeError("listener boom")
+
+    runtime.add_live_push_listener(_boom)
+
+    await runtime.start()
+    assert runtime.supports_live_push is True
+    # start seeds from empty live_push → cache stays empty until emit
+    assert runtime.live_push_health() == {}
+
+    gateway.live_push_health = "not-callable"  # type: ignore[method-assign, assignment]
+    runtime._seed_live_push_from_gateway()
+    assert runtime.live_push_health() == {}
+
+    gateway.live_push_health = lambda: "not-a-dict"  # type: ignore[method-assign, return-value]
+    runtime._seed_live_push_from_gateway()
+    assert runtime.live_push_health() == {}
+
+    gateway.live_push_health = lambda: {  # type: ignore[method-assign]
+        "push_healthy": None,
+        "live_stale_for_s": None,
+        "last_resumed_after_s": None,
+    }
+    runtime._seed_live_push_from_gateway()
+    assert runtime.live_push_health() == {}
+
+    gateway.live_push_health = lambda: {  # type: ignore[method-assign]
+        "push_healthy": True,
+        "live_stale_for_s": None,
+        "last_resumed_after_s": 1.5,
+    }
+    runtime._seed_live_push_from_gateway()
+    assert runtime.live_push_health()["push_healthy"] is True
+    assert runtime.live_push_health()["last_resumed_after_s"] == 1.5
+
+    with caplog.at_level("ERROR"):
+        gateway.emit_live_push(healthy=False, live_stale_for_s=12.0)
+    assert hits["n"] == 1
+    assert runtime.live_push_health()["push_healthy"] is False
+    assert "Live-push listener failed" in caplog.text
+
+    # Empty snapshot: do not wipe cache; still notify when changed=True.
+    runtime._on_gateway_live_push(types.SimpleNamespace(healthy=None, live_stale_for_s=None, last_resumed_after_s=None))
+    assert hits["n"] == 2
+    assert runtime.live_push_health()["push_healthy"] is False
+
+    # changed=False: update cache when values present, but skip HA fan-out.
+    gateway.emit_live_push(healthy=True, last_resumed_after_s=3.0, changed=False)
+    assert hits["n"] == 2
+    assert runtime.live_push_health()["push_healthy"] is True
+    runtime._on_gateway_live_push({"push_healthy": False, "live_stale_for_s": 9.0, "changed": "yes"})
+    assert hits["n"] == 3
+    assert runtime.live_push_health()["push_healthy"] is False
+
+    # Unsupported gateway: supports_live_push false short-circuits seed.
+    gateway.on_live_push = None  # type: ignore[method-assign, assignment]
+    assert runtime.supports_live_push is False
+    runtime._live_push_health = {"push_healthy": True}
+    runtime._seed_live_push_from_gateway()
+    assert runtime.live_push_health()["push_healthy"] is True
+    await runtime.stop()

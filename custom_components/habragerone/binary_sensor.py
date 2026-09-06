@@ -32,7 +32,7 @@ from .entity_common import (
     module_parent_device_info,
     record_platform_entity_stats,
 )
-from .outage_attrs import outage_state_attributes
+from .outage_attrs import live_push_state_attributes, outage_state_attributes
 from .runtime import BragerRuntime
 from .status_rules import coerce_status_bool, resolve_entity_bool, status_binary_has_sync_path, status_label_to_bool
 
@@ -381,6 +381,7 @@ class BragerCloudSessionBinarySensor(BinarySensorEntity):
         self._attr_is_on = up
         self._attr_available = up is not None
         self._unsubscribe_session: Any = None
+        self._unsubscribe_live_push: Any = None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -394,19 +395,25 @@ class BragerCloudSessionBinarySensor(BinarySensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose cloud-session outage duration / reason (client observation source)."""
-        return outage_state_attributes(self._runtime.cloud_session_outage())
+        """Expose cloud-session outage + live-push health (additive; on/off unchanged)."""
+        attrs = outage_state_attributes(self._runtime.cloud_session_outage())
+        attrs.update(live_push_state_attributes(self._runtime.live_push_health()))
+        return attrs
 
     async def async_added_to_hass(self) -> None:
-        """Attach cloud-session listener when entity is added."""
+        """Attach cloud-session and live-push listeners when entity is added."""
         self._unsubscribe_session = self._runtime.add_cloud_session_listener(self._on_cloud_session)
+        self._unsubscribe_live_push = self._runtime.add_live_push_listener(self._on_live_push)
         self.async_schedule_update_ha_state(True)
 
     async def async_will_remove_from_hass(self) -> None:
-        """Detach cloud-session listener before entity removal."""
+        """Detach cloud-session / live-push listeners before entity removal."""
         if callable(self._unsubscribe_session):
             self._unsubscribe_session()
             self._unsubscribe_session = None
+        if callable(getattr(self, "_unsubscribe_live_push", None)):
+            self._unsubscribe_live_push()
+            self._unsubscribe_live_push = None
 
     async def async_update(self) -> None:
         """Refresh on/off from runtime cloud-session cache."""
@@ -415,6 +422,9 @@ class BragerCloudSessionBinarySensor(BinarySensorEntity):
         self._attr_available = up is not None
 
     def _on_cloud_session(self, _up: bool, _changed: bool = True) -> None:
+        self.async_schedule_update_ha_state(True)
+
+    def _on_live_push(self) -> None:
         self.async_schedule_update_ha_state(True)
 
 

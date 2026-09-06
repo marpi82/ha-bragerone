@@ -110,3 +110,48 @@ def test_extract_and_attrs_reject_bool_and_empty_strings() -> None:
     }
     attrs = outage_state_attributes({"down_since": True, "reason": "", "last_down_for_s": False, "last_reason": ""})
     assert attrs == {}
+
+
+def test_live_push_extract_and_state_attributes() -> None:
+    from custom_components.habragerone.outage_attrs import (
+        extract_live_push_fields,
+        live_push_snapshot_has_values,
+        live_push_state_attributes,
+    )
+
+    event = types.SimpleNamespace(healthy=False, live_stale_for_s=40.5, last_resumed_after_s=12.0)
+    snap = extract_live_push_fields(event)
+    assert snap == {"push_healthy": False, "live_stale_for_s": 40.5, "last_resumed_after_s": 12.0}
+    assert live_push_state_attributes(snap) == {"push_healthy": False, "live_stale_for_s": 40.5}
+
+    # Object with push_healthy set (no healthy fallback branch).
+    direct = extract_live_push_fields(types.SimpleNamespace(push_healthy=True, live_stale_for_s=None, last_resumed_after_s=None))
+    assert direct["push_healthy"] is True
+
+    resumed = extract_live_push_fields({"push_healthy": True, "live_stale_for_s": None, "last_resumed_after_s": 40.5})
+    assert live_push_state_attributes(resumed) == {"push_healthy": True, "last_resumed_after_s": 40.5}
+    assert live_push_state_attributes(None) == {}
+    assert live_push_snapshot_has_values({"push_healthy": None, "live_stale_for_s": None, "last_resumed_after_s": None}) is False
+
+    # Issue #263 provisional alias accepted on input; HA attrs stay library-canonical.
+    alias = extract_live_push_fields({"push_healthy": True, "last_live_resumed_after_s": 7.5})
+    assert alias["last_resumed_after_s"] == 7.5
+    assert live_push_state_attributes(alias) == {"push_healthy": True, "last_resumed_after_s": 7.5}
+    alias_obj = extract_live_push_fields(types.SimpleNamespace(healthy=True, last_live_resumed_after_s=2.0))
+    assert alias_obj["last_resumed_after_s"] == 2.0
+
+    # bools rejected for numeric fields; empty / unknown shapes stay None
+    bad = extract_live_push_fields(types.SimpleNamespace(healthy=True, live_stale_for_s=True, last_resumed_after_s=False))
+    assert bad["live_stale_for_s"] is None
+    assert bad["last_resumed_after_s"] is None
+    assert live_push_state_attributes({"push_healthy": False, "live_stale_for_s": True, "last_resumed_after_s": False}) == {
+        "push_healthy": False
+    }
+    assert live_push_state_attributes({"push_healthy": None, "last_resumed_after_s": 3.0}) == {"last_resumed_after_s": 3.0}
+    # Mapping without push_healthy falls back to healthy; None push_healthy also falls back.
+    assert extract_live_push_fields({"healthy": True}).get("push_healthy") is True
+    assert extract_live_push_fields({"push_healthy": None, "healthy": False}).get("push_healthy") is False
+    assert (
+        extract_live_push_fields({"last_resumed_after_s": None, "last_live_resumed_after_s": 4.0}).get("last_resumed_after_s")
+        == 4.0
+    )

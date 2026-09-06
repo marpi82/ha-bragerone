@@ -20,7 +20,12 @@ from pybragerone.models.param_resolver import ParamResolver
 from .command_write import WriteContext, WriteValidationError, prepare_write
 from .const import CONF_ROUTE_VISIBILITY_DEPS, CONF_ROUTE_VISIBILITY_NAME, CONF_ROUTE_VISIBILITY_PATH, CONF_UI_ROUTE_SYMBOL
 from .numeric_display import descriptor_numeric_transform
-from .outage_attrs import extract_outage_fields, outage_snapshot_has_values
+from .outage_attrs import (
+    extract_live_push_fields,
+    extract_outage_fields,
+    live_push_snapshot_has_values,
+    outage_snapshot_has_values,
+)
 
 
 def _import_alarm_name_helpers() -> tuple[Any, Any]:
@@ -43,6 +48,8 @@ UpdateCallback = Callable[[ParamUpdate], None]
 ConnectivityCallback = Callable[[str, bool, bool], None]
 # library↔cloud Socket.IO session: up, changed.
 CloudSessionCallback = Callable[[bool, bool], None]
+# live ParamUpdate push health flipped (or resume notify).
+LivePushCallback = Callable[[], None]
 # Module event-feed (alarms / activity) refresh completed for one devid.
 EventFeedCallback = Callable[[str], None]
 # Route visibility changed for one symbol on a module (devid, symbol, visible).
@@ -70,10 +77,12 @@ class BragerRuntime:
     _listeners: set[UpdateCallback] = field(default_factory=set)
     _connectivity_listeners: set[ConnectivityCallback] = field(default_factory=set)
     _cloud_session_listeners: set[CloudSessionCallback] = field(default_factory=set)
+    _live_push_listeners: set[LivePushCallback] = field(default_factory=set)
     _event_feed_listeners: set[EventFeedCallback] = field(default_factory=set)
     _module_online: dict[str, bool] = field(default_factory=dict)
     _cloud_session_up: bool | None = None
     _cloud_session_outage: dict[str, float | str | None] = field(default_factory=dict)
+    _live_push_health: dict[str, float | bool | None] = field(default_factory=dict)
     _module_outage: dict[str, dict[str, float | str | None]] = field(default_factory=dict)
     _start_monotonic: float | None = None
     _first_update_logged: bool = False
@@ -115,6 +124,9 @@ class BragerRuntime:
         register_session = getattr(self.gateway, "on_cloud_session", None)
         if self.supports_cloud_session and callable(register_session):
             register_session(self._on_gateway_cloud_session)
+        register_live_push = getattr(self.gateway, "on_live_push", None)
+        if self.supports_live_push and callable(register_live_push):
+            register_live_push(self._on_gateway_live_push)
         register_alarm_qty = getattr(self.gateway, "on_alarm_quantity", None)
         if self.supports_alarm_quantity and callable(register_alarm_qty):
             register_alarm_qty(self._on_gateway_alarm_quantity)
@@ -130,6 +142,7 @@ class BragerRuntime:
             raise
         self._seed_module_online_from_gateway()
         self._seed_cloud_session_from_gateway()
+        self._seed_live_push_from_gateway()
         await self.refresh_route_visibility()
         if self._start_monotonic is not None:
             LOGGER.debug(
@@ -319,6 +332,15 @@ class BragerRuntime:
 
         return _remove
 
+    def add_live_push_listener(self, callback: LivePushCallback) -> Callable[[], None]:
+        """Register a live-push health listener and return unsubscribe callable."""
+        self._live_push_listeners.add(callback)
+
+        def _remove() -> None:
+            self._live_push_listeners.discard(callback)
+
+        return _remove
+
     def add_event_feed_listener(self, callback: EventFeedCallback) -> Callable[[], None]:
         """Register a module alarms/activity event-feed listener and return unsubscribe callable."""
         self._event_feed_listeners.add(callback)
@@ -340,6 +362,10 @@ class BragerRuntime:
         """Return cached cloud-session outage attrs (``down_since`` / ``reason`` / ``last_*``)."""
         return dict(self._cloud_session_outage)
 
+    def live_push_health(self) -> dict[str, float | bool | None]:
+        """Return cached live-push health (``push_healthy`` / ``live_stale_for_s`` / ``last_resumed_after_s``)."""
+        return dict(self._live_push_health)
+
     def module_outage(self, devid: str) -> dict[str, float | str | None]:
         """Return cached module↔cloud outage attrs for *devid*."""
         snapshot = self._module_outage.get(devid)
@@ -358,6 +384,11 @@ class BragerRuntime:
         return callable(getattr(self.gateway, "on_cloud_session", None)) and callable(
             getattr(self.gateway, "ws_session_up", None)
         )
+
+    @property
+    def supports_live_push(self) -> bool:
+        """Return whether the gateway exposes live ParamUpdate push-health callbacks."""
+        return callable(getattr(self.gateway, "on_live_push", None))
 
     @property
     def supports_alarm_quantity(self) -> bool:
@@ -806,6 +837,19 @@ class BragerRuntime:
                 if outage_snapshot_has_values(outage):
                     self._cloud_session_outage = outage
 
+    def _seed_live_push_from_gateway(self) -> None:
+        """Pull initial live-push health snapshot from the gateway after start."""
+        if not self.supports_live_push:
+            return
+        health_fn = getattr(self.gateway, "live_push_health", None)
+        if not callable(health_fn):
+            return
+        snapshot = health_fn()
+        if isinstance(snapshot, dict):
+            health = extract_live_push_fields(snapshot)
+            if live_push_snapshot_has_values(health):
+                self._live_push_health = health
+
     def _on_gateway_connectivity(self, event: Any) -> None:
         """Handle ``ModuleConnectivity`` (or duck-typed) events from the gateway."""
         devid = str(getattr(event, "devid", "") or "")
@@ -838,6 +882,22 @@ class BragerRuntime:
         if outage_snapshot_has_values(outage):
             self._cloud_session_outage = outage
         self._apply_cloud_session(up)
+
+    def _on_gateway_live_push(self, event: Any) -> None:
+        """Handle ``LivePushHealth`` (or duck-typed) events from the gateway."""
+        health = extract_live_push_fields(event)
+        if live_push_snapshot_has_values(health):
+            self._live_push_health = health
+        changed = event.get("changed", True) if isinstance(event, Mapping) else getattr(event, "changed", True)
+        if not isinstance(changed, bool):
+            changed = True
+        if not changed:
+            return
+        for callback in list(self._live_push_listeners):
+            try:
+                callback()
+            except Exception:
+                LOGGER.exception("Live-push listener failed")
 
     def _on_gateway_alarm_quantity(self, event: Any) -> None:
         """Refresh alarm feed when SPA alarm count changes for a subscribed module."""

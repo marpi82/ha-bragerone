@@ -74,11 +74,13 @@ class FakeGateway:
         self._gateway: dict[str, dict[str, object]] = {}
         self._connectivity_callbacks: list[Any] = []
         self._cloud_session_callbacks: list[Any] = []
+        self._live_push_callbacks: list[Any] = []
         self._alarm_quantity_callbacks: list[Any] = []
         self._ws_session_up = False
         self._last_param_update_age_s: float | None = None
         self._last_live_param_update_age_s: float | None = None
         self._cloud_outage: dict[str, float | str | None] = {}
+        self._live_push: dict[str, float | bool | None] = {}
         self._module_outage: dict[str, dict[str, float | str | None]] = {}
         self._start_error = start_error
         self._start_delay = start_delay
@@ -105,6 +107,10 @@ class FakeGateway:
         """Register a CloudSessionConnectivity callback (mirrors BragerOneGateway)."""
         self._cloud_session_callbacks.append(callback)
 
+    def on_live_push(self, callback: Any) -> None:
+        """Register a LivePushHealth callback (mirrors BragerOneGateway)."""
+        self._live_push_callbacks.append(callback)
+
     def on_alarm_quantity(self, callback: Any) -> None:
         """Register an AlarmQuantityChanged callback (mirrors BragerOneGateway)."""
         self._alarm_quantity_callbacks.append(callback)
@@ -129,6 +135,10 @@ class FakeGateway:
     def cloud_session_outage(self) -> dict[str, float | str | None]:
         """Return fake cloud-session outage snapshot."""
         return dict(self._cloud_outage)
+
+    def live_push_health(self) -> dict[str, float | bool | None]:
+        """Return fake live-push health snapshot."""
+        return dict(self._live_push)
 
     def module_outage(self, devid: str) -> dict[str, float | str | None]:
         """Return fake module outage snapshot for *devid*."""
@@ -258,6 +268,31 @@ class FakeGateway:
             last_reason=self._cloud_outage.get("last_reason"),
         )
         for callback in list(self._cloud_session_callbacks):
+            callback(event)
+
+    def emit_live_push(
+        self,
+        *,
+        healthy: bool | None,
+        live_stale_for_s: float | None = None,
+        last_resumed_after_s: float | None = None,
+        changed: bool = True,
+    ) -> None:
+        """Update live-push cache and notify registered callbacks."""
+        self._live_push = {
+            "push_healthy": healthy,
+            "live_stale_for_s": live_stale_for_s,
+            "last_resumed_after_s": last_resumed_after_s
+            if last_resumed_after_s is not None
+            else self._live_push.get("last_resumed_after_s"),
+        }
+        event = types.SimpleNamespace(
+            healthy=healthy,
+            live_stale_for_s=self._live_push.get("live_stale_for_s"),
+            last_resumed_after_s=self._live_push.get("last_resumed_after_s"),
+            changed=changed,
+        )
+        for callback in list(self._live_push_callbacks):
             callback(event)
 
 
