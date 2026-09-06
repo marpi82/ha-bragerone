@@ -301,7 +301,11 @@ async def test_runtime_live_push_seed_and_listener_edges(caplog: pytest.LogCaptu
     runtime._seed_live_push_from_gateway()
     assert runtime.live_push_health() == {}
 
-    gateway.live_push_health = lambda: {"push_healthy": True, "live_stale_for_s": None, "last_resumed_after_s": 1.5}  # type: ignore[method-assign]
+    gateway.live_push_health = lambda: {  # type: ignore[method-assign]
+        "push_healthy": True,
+        "live_stale_for_s": None,
+        "last_resumed_after_s": 1.5,
+    }
     runtime._seed_live_push_from_gateway()
     assert runtime.live_push_health()["push_healthy"] is True
     assert runtime.live_push_health()["last_resumed_after_s"] == 1.5
