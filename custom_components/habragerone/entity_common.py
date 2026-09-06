@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
-from typing import Any
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
+from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -426,12 +426,7 @@ async def async_remove_legacy_connection_devices(
         if not devid:
             continue
         legacy_identifier = (DOMAIN, f"{devid}:{CONNECTION_MENU_KEY}")
-        get_by_identifier = getattr(device_registry, "async_get_device_by_identifier", None)
-        if callable(get_by_identifier):
-            device = get_by_identifier(legacy_identifier, entry.entry_id)
-        else:
-            # HA < 2026.7 — identifiers were globally unique; remove with the next train.
-            device = device_registry.async_get_device(identifiers={legacy_identifier})
+        device = _lookup_device_by_identifier(device_registry, legacy_identifier, entry.entry_id)
         if device is None:
             continue
         entities = er.async_entries_for_device(
@@ -442,6 +437,37 @@ async def async_remove_legacy_connection_devices(
         if entities:
             continue
         device_registry.async_remove_device(device.id)
+
+
+def _lookup_device_by_identifier(
+    device_registry: dr.DeviceRegistry,
+    identifier: tuple[str, str],
+    config_entry_id: str,
+) -> dr.DeviceEntry | None:
+    """Resolve a device by identifier without using deprecated ``async_get_device``.
+
+    Prefers ``async_get_device_by_identifier`` (HA 2026.7+). On older cores, scan
+    ``async_entries_for_config_entry`` — mapping-style ``devices`` access and
+    ``async_get_device`` are hard errors under HA 2026.9+ outside a stable frame.
+    """
+    get_by_identifier = getattr(device_registry, "async_get_device_by_identifier", None)
+    if callable(get_by_identifier):
+        found = get_by_identifier(identifier, config_entry_id)
+        return found if isinstance(found, dr.DeviceEntry) else None
+    for device in dr.async_entries_for_config_entry(device_registry, config_entry_id):
+        if identifier in device.identifiers:
+            return device
+    return None
+
+
+def _set_legacy_via_device(info: DeviceInfo, parent_identifier: tuple[str, str]) -> None:
+    """Attach deprecated ``via_device`` for HA < 2026.7.
+
+    Home Assistant 2026.9 removed ``via_device`` from the ``DeviceInfo`` TypedDict
+    (``via_device_id`` only). The key remains valid at runtime on older cores, so
+    write through a mutable mapping cast instead of a TypedDict key access.
+    """
+    cast(MutableMapping[str, Any], info)["via_device"] = parent_identifier
 
 
 def device_info_from_descriptor(
@@ -519,10 +545,10 @@ def _attach_menu_via_device(
                 )
             except ValueError:
                 # Parent not registered yet — keep a deprecated identifier link.
-                info["via_device"] = parent_identifier
+                _set_legacy_via_device(info, parent_identifier)
             return
     # HA < 2026.7 or callers without hass (pure unit tests of naming/identifiers).
-    info["via_device"] = parent_identifier
+    _set_legacy_via_device(info, parent_identifier)
 
 
 def module_is_reachable(runtime: BragerRuntime, devid: str) -> bool:
