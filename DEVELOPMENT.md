@@ -71,7 +71,7 @@ Per-module diagnostic sensors expose the SPA **Activity** feed (`routes.activity
 
 ### Field-testing a library pre-release on HassOS (#275)
 
-On **HassOS / HACS**, do **not** pin `py-bragerone` with `git+https://…@sha` in `manifest.json`. HACS updates overwrite local edits, and git installs are a poor fit for HAOS/musl wheels.
+On **HassOS / HACS**, do **not** pin `py-bragerone` with `git+https://…@sha` in `manifest.json`. HACS updates overwrite local edits, and git installs are a poor fit for HassOS (Alpine/musl) wheels.
 
 Supported path:
 

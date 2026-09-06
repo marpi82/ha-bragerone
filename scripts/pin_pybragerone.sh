@@ -28,8 +28,8 @@ if [[ -z "${VERSION}" ]]; then
   exit 1
 fi
 
-# CalVer + optional pre-release suffix (matches library tags / PyPI).
-if [[ ! "${VERSION}" =~ ^[0-9]{4}\.[0-9]+(\.[0-9]+)?((a|b|rc)[0-9]+)?$ ]]; then
+# Three-segment CalVer + optional pre-release suffix (matches library tags / PyPI).
+if [[ ! "${VERSION}" =~ ^[0-9]{4}\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]; then
   log_error "Unexpected version shape: ${VERSION}"
   echo "Expected CalVer like 2026.9.2 or 2026.9.2rc2"
   exit 1
@@ -56,13 +56,10 @@ reqs = data.get("requirements")
 if not isinstance(reqs, list):
     raise SystemExit("manifest.json requirements must be a list")
 pin = f"py-bragerone=={version}"
-updated: list[str] = []
+updated: list[object] = []
 found = False
 for item in reqs:
-    if not isinstance(item, str):
-        updated.append(item)  # type: ignore[arg-type]
-        continue
-    if item.startswith("py-bragerone==") or item.startswith("py-bragerone@"):
+    if isinstance(item, str) and (item.startswith("py-bragerone==") or item.startswith("py-bragerone@")):
         updated.append(pin)
         found = True
     else:
@@ -83,13 +80,16 @@ path = Path(sys.argv[1])
 version = sys.argv[2]
 text = path.read_text(encoding="utf-8")
 pattern = re.compile(r'(["\'])py-bragerone==[^"\']+\1')
+matches = pattern.findall(text)
+if len(matches) != 1:
+    raise SystemExit(f"expected exactly one py-bragerone== pin in pyproject.toml, found {len(matches)}")
 replacement = f'\\1py-bragerone=={version}\\1'
-new_text, count = pattern.subn(replacement, text, count=1)
+new_text, count = pattern.subn(replacement, text)
 if count != 1:
-    raise SystemExit(f"expected exactly one py-bragerone== pin in pyproject.toml, found {count}")
+    raise SystemExit(f"failed to rewrite py-bragerone pin (replacements={count})")
 path.write_text(new_text, encoding="utf-8")
 PY
 
 log_info "Pinned py-bragerone==${VERSION} in manifest.json and pyproject.toml"
 log_info "Next: uv lock && commit, then tag/release the integration when ready"
-log_info "HassOS: install via HACS beta — do not use git+ pins on HAOS"
+log_info "HassOS: install via HACS beta — do not use git+ pins on HassOS"
