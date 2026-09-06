@@ -43,8 +43,10 @@ def test_ci_tests_job_uploads_coverage_for_prs_and_pushes() -> None:
     workflow = _load_yaml(_CI_WORKFLOW)
 
     steps = workflow["jobs"]["tests"]["steps"]
-    pr_step = next(step for step in steps if step.get("name") == "Upload coverage reports to Codecov (pull request)")
-    push_step = next(step for step in steps if step.get("name") == "Upload coverage reports to Codecov (push)")
+    pr_step = next((step for step in steps if step.get("name") == "Upload coverage reports to Codecov (pull request)"), None)
+    assert pr_step is not None, "Missing Codecov PR upload step in CI workflow"
+    push_step = next((step for step in steps if step.get("name") == "Upload coverage reports to Codecov (push)"), None)
+    assert push_step is not None, "Missing Codecov push upload step in CI workflow"
 
     expected_action = "codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f"
 
