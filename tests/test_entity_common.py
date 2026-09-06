@@ -25,8 +25,10 @@ from custom_components.habragerone.const import (  # noqa: E402
 from custom_components.habragerone.entity_common import (  # noqa: E402
     _address_selectors_need_compose,
     _is_address_selector_entry,
+    _lookup_device_by_identifier,
     _mapping_value_selector_entries,
     _menu_device_display_name,
+    _set_legacy_via_device,
     async_register_module_parent_devices,
     async_remove_legacy_connection_devices,
     attach_route_visibility_listener,
@@ -465,6 +467,18 @@ def test_device_info_group_by_menu_without_hass_falls_back_to_via_device() -> No
     assert "via_device_id" not in info
 
 
+def test_set_legacy_via_device_stores_compat_parent_identifier() -> None:
+    """Legacy via_device links are still written through a mutable mapping."""
+    from collections.abc import MutableMapping
+    from typing import cast
+
+    info = device_info_from_descriptor(writable_parameter_descriptor(devid="DEV9", symbol="TEMP"), domain=DOMAIN)
+
+    _set_legacy_via_device(info, (DOMAIN, "DEV9"))
+
+    assert cast(MutableMapping[str, Any], info).get("via_device") == (DOMAIN, "DEV9")
+
+
 def test_device_info_flat_ignores_menu_key() -> None:
     descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
     descriptor.update(
@@ -881,6 +895,37 @@ async def test_async_remove_legacy_connection_devices_falls_back_without_scoped_
 
     legacy_id = (DOMAIN, "DEV1:module.connection")
     assert not any(legacy_id in device.identifiers for device in dr.async_entries_for_config_entry(registry, entry.entry_id))
+
+
+@pytest.mark.asyncio
+async def test_lookup_device_by_identifier_returns_none_for_non_device_entries(hass: HomeAssistant) -> None:
+    """Scoped lookup ignores unexpected helper return types."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    registry = dr.async_get(hass)
+
+    class _NotADevice:
+        pass
+
+    registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1:module.connection")},
+        manufacturer="BragerOne",
+        name="Boiler — Connection with module",
+        model="Brager module",
+    )
+    original = registry.async_get_device_by_identifier
+
+    def _bad_lookup(identifier: tuple[str, str], config_entry_id: str) -> object | None:
+        if identifier == (DOMAIN, "DEV1:module.connection") and config_entry_id == entry.entry_id:
+            return _NotADevice()
+        return original(identifier, config_entry_id)
+
+    registry.async_get_device_by_identifier = _bad_lookup  # type: ignore[method-assign]
+
+    assert _lookup_device_by_identifier(registry, (DOMAIN, "DEV1:module.connection"), entry.entry_id) is None
 
 
 @pytest.mark.asyncio
