@@ -25,6 +25,7 @@ from custom_components.habragerone.const import (  # noqa: E402
 from custom_components.habragerone.entity_common import (  # noqa: E402
     _address_selectors_need_compose,
     _is_address_selector_entry,
+    _lookup_device_by_identifier,
     _mapping_value_selector_entries,
     _menu_device_display_name,
     async_register_module_parent_devices,
@@ -881,6 +882,48 @@ async def test_async_remove_legacy_connection_devices_falls_back_without_scoped_
 
     legacy_id = (DOMAIN, "DEV1:module.connection")
     assert not any(legacy_id in device.identifiers for device in dr.async_entries_for_config_entry(registry, entry.entry_id))
+
+
+@pytest.mark.asyncio
+async def test_lookup_device_by_identifier_rejects_non_device_entry(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scoped lookup returning a non-DeviceEntry is treated as a miss."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    registry = dr.async_get(hass)
+    monkeypatch.setattr(registry, "async_get_device_by_identifier", lambda *_a, **_k: object(), raising=False)
+
+    assert _lookup_device_by_identifier(registry, (DOMAIN, "DEV1:module.connection"), entry.entry_id) is None
+
+
+@pytest.mark.asyncio
+async def test_lookup_device_by_identifier_scan_misses_without_match(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HA < 2026.7 scan returns None when the entry has no matching identifier."""
+    from homeassistant.helpers import device_registry as dr
+
+    runtime, *_rest = make_runtime()
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    registry = dr.async_get(hass)
+    registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "DEV1")},
+        manufacturer="BragerOne",
+        name="Boiler",
+        model="Brager module",
+    )
+    monkeypatch.setattr(registry, "async_get_device_by_identifier", None, raising=False)
+
+    assert _lookup_device_by_identifier(registry, (DOMAIN, "DEV1:module.connection"), entry.entry_id) is None
+    # No-op remove when the legacy connection device is absent (also covers blank devid skip).
+    await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1", ""])
+    assert any((DOMAIN, "DEV1") in device.identifiers for device in dr.async_entries_for_config_entry(registry, entry.entry_id))
 
 
 @pytest.mark.asyncio
