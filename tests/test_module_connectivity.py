@@ -31,7 +31,7 @@ from custom_components.habragerone.const import (  # noqa: E402
     DOMAIN,
 )
 from custom_components.habragerone.entity_common import entity_is_available, module_is_reachable  # noqa: E402
-from custom_components.habragerone.event_feeds import BragerAlarmsCurrentSensor  # noqa: E402
+from custom_components.habragerone.event_feeds import BragerActivitySensor, BragerAlarmsCurrentSensor  # noqa: E402
 from custom_components.habragerone.number import BragerSymbolNumber  # noqa: E402
 from custom_components.habragerone.select import BragerSymbolSelect  # noqa: E402
 from custom_components.habragerone.sensor import BragerSymbolSensor  # noqa: E402
@@ -140,8 +140,10 @@ def test_attach_transport_availability_listener_fires_and_unsubscribes() -> None
     assert calls == ["update"]
 
     calls.clear()
-    # Idempotent repeat (changed=False) must not schedule.
-    runtime._apply_cloud_session(False)
+    # Idempotent runtime repeats do not invoke listeners; cover the helper's
+    # ``changed=False`` guard by calling the registered callback directly.
+    for callback in list(runtime._cloud_session_listeners):
+        callback(False, False)
     assert calls == []
 
     calls.clear()
@@ -659,6 +661,7 @@ async def test_module_outage_cache_survives_events_without_outage_fields() -> No
         ("switch", "switch.test_transport"),
         ("button", "button.test_transport"),
         ("alarms", "sensor.test_alarms_transport"),
+        ("activity", "sensor.test_activity_transport"),
     ],
 )
 @pytest.mark.asyncio
@@ -689,7 +692,7 @@ async def test_platform_entity_transport_flip_unavailable_and_unsubscribe(
         entity = BragerSymbolSwitch(entry=entry, runtime=runtime, descriptor=switch_descriptor())
     elif kind == "button":
         entity = BragerActionButton(entry=entry, runtime=runtime, descriptor=button_descriptor())
-    else:
+    elif kind == "alarms":
         runtime._alarms_feed_loaded["DEV1"] = True
         entity = BragerAlarmsCurrentSensor(
             entry=entry,
@@ -697,6 +700,15 @@ async def test_platform_entity_transport_flip_unavailable_and_unsubscribe(
             devid="DEV1",
             module_meta={"name": "Boiler"},
             name="Current alarms",
+        )
+    else:
+        runtime._activity_feed_loaded["DEV1"] = True
+        entity = BragerActivitySensor(
+            entry=entry,
+            runtime=runtime,
+            devid="DEV1",
+            module_meta={"name": "Boiler"},
+            name="Activity",
         )
 
     entity.hass = hass
