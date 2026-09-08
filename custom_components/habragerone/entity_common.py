@@ -249,6 +249,24 @@ def attach_route_visibility_listener(
     return runtime.add_route_visibility_listener(_on_route_visibility)
 
 
+def transport_is_reachable(runtime: BragerRuntime) -> bool:
+    """Return whether library↔cloud transport should keep entities available.
+
+    Unknown bits (``None``) do not fail closed — same startup bias as module
+    connectivity. Explicit session-down or ``push_healthy=False`` (zombie) does.
+    Uses ``getattr`` so lightweight test doubles without the soft-dep flags still
+    work.
+    """
+    if bool(getattr(runtime, "supports_cloud_session", False)) and runtime.cloud_session_up() is False:
+        return False
+    if bool(getattr(runtime, "supports_live_push", False)):
+        health = runtime.live_push_health()
+        healthy = health.get("push_healthy") if isinstance(health, Mapping) else None
+        if healthy is False:
+            return False
+    return True
+
+
 def attach_transport_availability_listener(
     runtime: BragerRuntime,
     *,
@@ -256,14 +274,14 @@ def attach_transport_availability_listener(
 ) -> Callable[[], None] | None:
     """Subscribe to library↔cloud session and live-push flips for availability refresh.
 
-    Parameter entities only listened to module ``connectedAt`` historically, so a
-    Socket.IO drop or zombie push stream left stale ParamStore values marked
-    available (flat history lines). Unknown (``None``) transport bits do not
-    subscribe-notify until the gateway seeds them.
+    State-bearing platforms (parameters, buttons, event feeds) historically only
+    listened to module ``connectedAt``, so a Socket.IO drop or zombie push stream
+    left stale ParamStore values marked available (flat history lines). Unknown
+    (``None``) transport bits do not subscribe-notify until the gateway seeds them.
     """
     unsubs: list[Callable[[], None]] = []
 
-    if runtime.supports_cloud_session:
+    if bool(getattr(runtime, "supports_cloud_session", False)):
 
         def _on_cloud_session(_up: bool, changed: bool = True) -> None:
             if changed:
@@ -271,7 +289,7 @@ def attach_transport_availability_listener(
 
         unsubs.append(runtime.add_cloud_session_listener(_on_cloud_session))
 
-    if runtime.supports_live_push:
+    if bool(getattr(runtime, "supports_live_push", False)):
 
         def _on_live_push() -> None:
             schedule_update()
@@ -286,21 +304,6 @@ def attach_transport_availability_listener(
             remove()
 
     return _unsubscribe
-
-
-def transport_is_reachable(runtime: BragerRuntime) -> bool:
-    """Return whether library↔cloud transport should keep parameter entities available.
-
-    Unknown bits (``None``) do not fail closed — same startup bias as module
-    connectivity. Explicit session-down or ``push_healthy=False`` (zombie) does.
-    """
-    if runtime.supports_cloud_session and runtime.cloud_session_up() is False:
-        return False
-    if runtime.supports_live_push:
-        healthy = runtime.live_push_health().get("push_healthy")
-        if healthy is False:
-            return False
-    return True
 
 
 def store_value_for_address(store: ParamStore, address: str) -> Any | None:
