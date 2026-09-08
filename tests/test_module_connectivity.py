@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import types
+from typing import Any
 
 import pytest
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
@@ -16,8 +18,10 @@ install_pybragerone_stubs()
 
 from custom_components.habragerone.binary_sensor import (  # noqa: E402
     BragerModuleConnectivityBinarySensor,
+    BragerStatusBinarySensor,
     async_setup_entry,
 )
+from custom_components.habragerone.button import BragerActionButton  # noqa: E402
 from custom_components.habragerone.const import (  # noqa: E402
     CONF_CONNECTION_DESCRIPTORS,
     CONF_DEVICE_GROUPING,
@@ -27,7 +31,19 @@ from custom_components.habragerone.const import (  # noqa: E402
     DOMAIN,
 )
 from custom_components.habragerone.entity_common import entity_is_available, module_is_reachable  # noqa: E402
-from tests.helpers.descriptors import binary_sensor_descriptor  # noqa: E402
+from custom_components.habragerone.event_feeds import BragerAlarmsCurrentSensor  # noqa: E402
+from custom_components.habragerone.number import BragerSymbolNumber  # noqa: E402
+from custom_components.habragerone.select import BragerSymbolSelect  # noqa: E402
+from custom_components.habragerone.sensor import BragerSymbolSensor  # noqa: E402
+from custom_components.habragerone.switch import BragerSymbolSwitch  # noqa: E402
+from tests.helpers.descriptors import (  # noqa: E402
+    binary_sensor_descriptor,
+    button_descriptor,
+    select_descriptor,
+    sensor_descriptor,
+    switch_descriptor,
+    writable_parameter_descriptor,
+)
 from tests.helpers.fakes import make_runtime  # noqa: E402
 from tests.helpers.hass import register_config_entry  # noqa: E402
 
@@ -630,4 +646,103 @@ async def test_module_outage_cache_survives_events_without_outage_fields() -> No
     )
     assert runtime.module_outage("DEV1")["last_reason"] == "ws"
     assert runtime.module_outage("DEV1")["last_down_for_s"] == 12.0
+    await runtime.stop()
+
+
+@pytest.mark.parametrize(
+    ("kind", "entity_id"),
+    [
+        ("sensor", "sensor.test_transport"),
+        ("binary", "binary_sensor.test_transport"),
+        ("number", "number.test_transport"),
+        ("select", "select.test_transport"),
+        ("switch", "switch.test_transport"),
+        ("button", "button.test_transport"),
+        ("alarms", "sensor.test_alarms_transport"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_platform_entity_transport_flip_unavailable_and_unsubscribe(
+    hass: HomeAssistant,
+    kind: str,
+    entity_id: str,
+) -> None:
+    """Gateway session/live-push flips schedule refresh → unavailable; removal detaches."""
+    runtime, _api, gateway, _store = make_runtime(
+        flat_values={"P6.v0": 21.5, "P5.s0": 1, "P4.v1": 1},
+        modules_meta={"DEV1": {"name": "Boiler"}},
+    )
+    runtime._module_online["DEV1"] = True
+    await runtime.start()
+
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
+    entity: Any
+    if kind == "sensor":
+        entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=sensor_descriptor())
+    elif kind == "binary":
+        entity = BragerStatusBinarySensor(entry=entry, runtime=runtime, descriptor=binary_sensor_descriptor())
+    elif kind == "number":
+        entity = BragerSymbolNumber(entry=entry, runtime=runtime, descriptor=writable_parameter_descriptor())
+    elif kind == "select":
+        entity = BragerSymbolSelect(entry=entry, runtime=runtime, descriptor=select_descriptor())
+    elif kind == "switch":
+        entity = BragerSymbolSwitch(entry=entry, runtime=runtime, descriptor=switch_descriptor())
+    elif kind == "button":
+        entity = BragerActionButton(entry=entry, runtime=runtime, descriptor=button_descriptor())
+    else:
+        runtime._alarms_feed_loaded["DEV1"] = True
+        entity = BragerAlarmsCurrentSensor(
+            entry=entry,
+            runtime=runtime,
+            devid="DEV1",
+            module_meta={"name": "Boiler"},
+            name="Current alarms",
+        )
+
+    entity.hass = hass
+    entity.entity_id = entity_id
+    entity.async_write_ha_state = lambda: None  # type: ignore[method-assign]
+    pending: list[asyncio.Task[None]] = []
+
+    def _schedule(force_refresh: bool = False) -> None:
+        if force_refresh:
+            pending.append(asyncio.create_task(entity.async_update()))
+
+    entity.async_schedule_update_ha_state = _schedule  # type: ignore[method-assign]
+
+    await entity.async_added_to_hass()
+    assert callable(entity._unsubscribe_transport)
+    for task in pending:
+        await task
+    pending.clear()
+
+    await entity.async_update()
+    assert entity.available is True
+
+    gateway.emit_cloud_session(False, source="disconnect")
+    assert pending
+    for task in pending:
+        await task
+    pending.clear()
+    assert entity.available is False
+
+    gateway.emit_cloud_session(True, source="connect")
+    for task in pending:
+        await task
+    pending.clear()
+    await entity.async_update()
+    assert entity.available is True
+
+    gateway.emit_live_push(healthy=False, live_stale_for_s=200.0)
+    assert pending
+    for task in pending:
+        await task
+    pending.clear()
+    assert entity.available is False
+
+    await entity.async_will_remove_from_hass()
+    assert entity._unsubscribe_transport is None
+    gateway.emit_cloud_session(False, source="disconnect")
+    gateway.emit_live_push(healthy=True)
+    assert pending == []
     await runtime.stop()

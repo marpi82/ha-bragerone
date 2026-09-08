@@ -274,10 +274,11 @@ def attach_transport_availability_listener(
 ) -> Callable[[], None] | None:
     """Subscribe to library↔cloud session and live-push flips for availability refresh.
 
-    State-bearing platforms (parameters, buttons, event feeds) historically only
-    listened to module ``connectedAt``, so a Socket.IO drop or zombie push stream
-    left stale ParamStore values marked available (flat history lines). Unknown
-    (``None``) transport bits do not subscribe-notify until the gateway seeds them.
+    Used by parameter platforms, command buttons, and event-feed sensors. Those
+    entities historically only listened to module ``connectedAt``, so a Socket.IO
+    drop or zombie push stream left stale ParamStore values marked available
+    (flat history lines). Unknown (``None``) transport bits do not
+    subscribe-notify until the gateway seeds them.
     """
     unsubs: list[Callable[[], None]] = []
 
