@@ -87,6 +87,60 @@ def test_module_is_reachable_true_when_transport_healthy() -> None:
     assert entity_is_available(runtime, devid="DEV1", has_value=True) is True
 
 
+def test_transport_is_reachable_ignores_non_mapping_live_push_health() -> None:
+    """Non-dict live_push_health snapshots do not fail closed."""
+    from custom_components.habragerone.entity_common import transport_is_reachable
+
+    runtime = types.SimpleNamespace(
+        supports_cloud_session=False,
+        supports_live_push=True,
+        live_push_health=lambda: ["not", "a", "mapping"],
+    )
+    assert transport_is_reachable(runtime) is True
+
+
+def test_attach_transport_availability_listener_none_without_soft_deps() -> None:
+    """No session/push APIs → helper returns None (nothing to subscribe)."""
+    from custom_components.habragerone.entity_common import attach_transport_availability_listener
+
+    runtime = types.SimpleNamespace(supports_cloud_session=False, supports_live_push=False)
+    assert attach_transport_availability_listener(runtime, schedule_update=lambda: None) is None
+
+
+def test_attach_transport_availability_listener_fires_and_unsubscribes() -> None:
+    """Session/live-push flips invoke schedule_update; unsubscribe detaches both."""
+    from custom_components.habragerone.entity_common import attach_transport_availability_listener
+
+    runtime, *_rest = make_runtime()
+    calls: list[str] = []
+
+    def _schedule() -> None:
+        calls.append("update")
+
+    remove = attach_transport_availability_listener(runtime, schedule_update=_schedule)
+    assert remove is not None
+
+    runtime._apply_cloud_session(False)
+    assert calls == ["update"]
+
+    calls.clear()
+    # Idempotent repeat (changed=False) must not schedule.
+    runtime._apply_cloud_session(False)
+    assert calls == []
+
+    calls.clear()
+    for callback in list(runtime._live_push_listeners):
+        callback()
+    assert calls == ["update"]
+
+    calls.clear()
+    remove()
+    runtime._apply_cloud_session(True)
+    for callback in list(runtime._live_push_listeners):
+        callback()
+    assert calls == []
+
+
 @pytest.mark.asyncio
 async def test_runtime_seeds_and_fans_out_connectivity() -> None:
     runtime, _api, gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
