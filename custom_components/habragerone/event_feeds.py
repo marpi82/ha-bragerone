@@ -13,7 +13,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import slugify
 
 from .const import CONF_MODULES_META, DOMAIN
-from .entity_common import module_is_reachable
+from .entity_common import attach_transport_availability_listener, module_is_reachable
 from .runtime import BragerRuntime
 
 
@@ -115,6 +115,7 @@ class _BragerAlarmsFeedSensor(SensorEntity):
         self._attr_available = True
         self._unsubscribe_feed: Any = None
         self._unsubscribe_connectivity: Any = None
+        self._unsubscribe_transport: Any = None
 
     def _alarms(self) -> list[dict[str, Any]]:
         if self._feed_kind == "current":
@@ -143,6 +144,10 @@ class _BragerAlarmsFeedSensor(SensorEntity):
         """Subscribe to feed + connectivity; initial list was refreshed at setup."""
         self._unsubscribe_feed = self._runtime.add_event_feed_listener(self._on_event_feed)
         self._unsubscribe_connectivity = self._runtime.add_connectivity_listener(self._on_connectivity)
+        self._unsubscribe_transport = attach_transport_availability_listener(
+            self._runtime,
+            schedule_update=lambda: self.async_schedule_update_ha_state(True),
+        )
         self._apply_from_cache()
         self.async_write_ha_state()
 
@@ -154,6 +159,9 @@ class _BragerAlarmsFeedSensor(SensorEntity):
         if callable(self._unsubscribe_connectivity):
             self._unsubscribe_connectivity()
             self._unsubscribe_connectivity = None
+        if callable(self._unsubscribe_transport):
+            self._unsubscribe_transport()
+            self._unsubscribe_transport = None
 
     async def async_update(self) -> None:
         """Refresh state from the runtime alarms cache (no REST from here)."""
@@ -267,6 +275,7 @@ class BragerActivitySensor(SensorEntity):
         self._attr_available = True
         self._unsubscribe_feed: Any = None
         self._unsubscribe_connectivity: Any = None
+        self._unsubscribe_transport: Any = None
 
     def _activities(self) -> list[dict[str, Any]]:
         return self._runtime.activity(self._devid)
@@ -293,6 +302,10 @@ class BragerActivitySensor(SensorEntity):
         """Subscribe to feed + connectivity; initial list was refreshed at setup."""
         self._unsubscribe_feed = self._runtime.add_event_feed_listener(self._on_event_feed)
         self._unsubscribe_connectivity = self._runtime.add_connectivity_listener(self._on_connectivity)
+        self._unsubscribe_transport = attach_transport_availability_listener(
+            self._runtime,
+            schedule_update=lambda: self.async_schedule_update_ha_state(True),
+        )
         self._apply_from_cache()
         self.async_write_ha_state()
 
@@ -304,6 +317,9 @@ class BragerActivitySensor(SensorEntity):
         if callable(self._unsubscribe_connectivity):
             self._unsubscribe_connectivity()
             self._unsubscribe_connectivity = None
+        if callable(self._unsubscribe_transport):
+            self._unsubscribe_transport()
+            self._unsubscribe_transport = None
 
     async def async_update(self) -> None:
         """Refresh state from the runtime activity cache (no REST from here)."""

@@ -59,6 +59,34 @@ def test_module_is_reachable_unknown_defaults_true() -> None:
     assert entity_is_available(runtime, devid="DEV1", has_value=False) is False
 
 
+def test_module_is_reachable_false_when_cloud_session_down() -> None:
+    """Session-down fail-closes parameter reachability even if module looks online."""
+    runtime, *_rest = make_runtime()
+    runtime._module_online["DEV1"] = True
+    runtime._cloud_session_up = False
+    assert module_is_reachable(runtime, "DEV1") is False
+    assert entity_is_available(runtime, devid="DEV1", has_value=True) is False
+
+
+def test_module_is_reachable_false_when_live_push_unhealthy() -> None:
+    """Zombie push_healthy=False fails closed even while module + session look up."""
+    runtime, *_rest = make_runtime()
+    runtime._module_online["DEV1"] = True
+    runtime._cloud_session_up = True
+    runtime._live_push_health = {"push_healthy": False, "live_stale_for_s": 200.0, "last_resumed_after_s": None}
+    assert module_is_reachable(runtime, "DEV1") is False
+    assert entity_is_available(runtime, devid="DEV1", has_value=True) is False
+
+
+def test_module_is_reachable_true_when_transport_healthy() -> None:
+    runtime, *_rest = make_runtime()
+    runtime._module_online["DEV1"] = True
+    runtime._cloud_session_up = True
+    runtime._live_push_health = {"push_healthy": True, "live_stale_for_s": None, "last_resumed_after_s": None}
+    assert module_is_reachable(runtime, "DEV1") is True
+    assert entity_is_available(runtime, devid="DEV1", has_value=True) is True
+
+
 @pytest.mark.asyncio
 async def test_runtime_seeds_and_fans_out_connectivity() -> None:
     runtime, _api, gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})

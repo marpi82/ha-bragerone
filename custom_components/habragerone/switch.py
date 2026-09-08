@@ -14,6 +14,7 @@ from pybragerone.models.events import ParamUpdate
 from .const import DOMAIN
 from .entity_common import (
     attach_route_visibility_listener,
+    attach_transport_availability_listener,
     descriptor_current_raw_value,
     descriptor_display_name,
     descriptor_enabled_by_default,
@@ -72,6 +73,7 @@ class BragerSymbolSwitch(SwitchEntity):
         self._unsubscribe_listener: Any = None
         self._unsubscribe_connectivity: Any = None
         self._unsubscribe_route_visibility: Any = None
+        self._unsubscribe_transport: Any = None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -94,6 +96,10 @@ class BragerSymbolSwitch(SwitchEntity):
             descriptor=self._descriptor,
             schedule_update=lambda: self.async_schedule_update_ha_state(True),
         )
+        self._unsubscribe_transport = attach_transport_availability_listener(
+            self._runtime,
+            schedule_update=lambda: self.async_schedule_update_ha_state(True),
+        )
         self.async_schedule_update_ha_state(True)
 
     async def async_will_remove_from_hass(self) -> None:
@@ -107,6 +113,9 @@ class BragerSymbolSwitch(SwitchEntity):
         if callable(self._unsubscribe_route_visibility):
             self._unsubscribe_route_visibility()
             self._unsubscribe_route_visibility = None
+        if callable(self._unsubscribe_transport):
+            self._unsubscribe_transport()
+            self._unsubscribe_transport = None
 
     async def async_update(self) -> None:
         """Refresh switch state from ParamStore value and command rules."""

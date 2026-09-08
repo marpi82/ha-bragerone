@@ -20,6 +20,7 @@ from .const import (
 )
 from .entity_common import (
     attach_route_visibility_listener,
+    attach_transport_availability_listener,
     descriptor_current_raw_value,
     descriptor_display_name,
     descriptor_enabled_by_default,
@@ -128,6 +129,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         self._unsubscribe_listener: Any = None
         self._unsubscribe_connectivity: Any = None
         self._unsubscribe_route_visibility: Any = None
+        self._unsubscribe_transport: Any = None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -148,6 +150,10 @@ class BragerStatusBinarySensor(BinarySensorEntity):
             self._runtime,
             devid=self._devid,
             descriptor=self._descriptor,
+            schedule_update=lambda: self.async_schedule_update_ha_state(True),
+        )
+        self._unsubscribe_transport = attach_transport_availability_listener(
+            self._runtime,
             schedule_update=lambda: self.async_schedule_update_ha_state(True),
         )
         raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
@@ -215,6 +221,9 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         if callable(self._unsubscribe_route_visibility):
             self._unsubscribe_route_visibility()
             self._unsubscribe_route_visibility = None
+        if callable(self._unsubscribe_transport):
+            self._unsubscribe_transport()
+            self._unsubscribe_transport = None
 
     async def async_update(self) -> None:
         """Refresh state from ParamStore / SPA status resolver."""
