@@ -249,6 +249,64 @@ def attach_route_visibility_listener(
     return runtime.add_route_visibility_listener(_on_route_visibility)
 
 
+def transport_is_reachable(runtime: BragerRuntime) -> bool:
+    """Return whether library↔cloud transport should keep entities available.
+
+    Unknown bits (``None``) do not fail closed — same startup bias as module
+    connectivity. Explicit session-down or ``push_healthy=False`` (zombie) does.
+    Uses ``getattr`` so lightweight test doubles without the soft-dep flags still
+    work.
+    """
+    if bool(getattr(runtime, "supports_cloud_session", False)) and runtime.cloud_session_up() is False:
+        return False
+    if bool(getattr(runtime, "supports_live_push", False)):
+        health = runtime.live_push_health()
+        healthy = health.get("push_healthy") if isinstance(health, Mapping) else None
+        if healthy is False:
+            return False
+    return True
+
+
+def attach_transport_availability_listener(
+    runtime: BragerRuntime,
+    *,
+    schedule_update: Callable[[], None],
+) -> Callable[[], None] | None:
+    """Subscribe to library↔cloud session and live-push flips for availability refresh.
+
+    Used by parameter platforms, command buttons, and event-feed sensors. Those
+    entities historically only listened to module ``connectedAt``, so a Socket.IO
+    drop or zombie push stream left stale ParamStore values marked available
+    (flat history lines). Unknown (``None``) transport bits do not
+    subscribe-notify until the gateway seeds them.
+    """
+    unsubs: list[Callable[[], None]] = []
+
+    if bool(getattr(runtime, "supports_cloud_session", False)):
+
+        def _on_cloud_session(_up: bool, changed: bool = True) -> None:
+            if changed:
+                schedule_update()
+
+        unsubs.append(runtime.add_cloud_session_listener(_on_cloud_session))
+
+    if bool(getattr(runtime, "supports_live_push", False)):
+
+        def _on_live_push() -> None:
+            schedule_update()
+
+        unsubs.append(runtime.add_live_push_listener(_on_live_push))
+
+    if not unsubs:
+        return None
+
+    def _unsubscribe() -> None:
+        for remove in unsubs:
+            remove()
+
+    return _unsubscribe
+
+
 def store_value_for_address(store: ParamStore, address: str) -> Any | None:
     """Read one value from ParamStore using ``P<n>.<chan><idx>`` address syntax."""
     try:
@@ -554,9 +612,14 @@ def _attach_menu_via_device(
 def module_is_reachable(runtime: BragerRuntime, devid: str) -> bool:
     """Return whether entities for *devid* should be treated as reachable.
 
-    Unknown connectivity (``None``) keeps previous value-based availability so
-    startups before the first REST poll do not blank the UI.
+    Combines SPA module ``connectedAt`` with library↔cloud transport health.
+    Unknown module connectivity (``None``) does not blank the UI by itself, but
+    an explicit cloud-session down or zombie ``push_healthy=False`` does — so a
+    HA/network outage that cannot refresh ``get_modules`` still yields
+    ``unavailable`` instead of a flat stale history line.
     """
+    if not transport_is_reachable(runtime):
+        return False
     online = runtime.module_online(devid)
     if online is None:
         return True
@@ -571,7 +634,7 @@ def entity_is_available(
     descriptor: Mapping[str, Any] | None = None,
     symbol: str | None = None,
 ) -> bool:
-    """Combine value presence, module connectivity, and SPA route visibility (#192)."""
+    """Combine value presence, reachability, and SPA route visibility (#192)."""
     symbol_name = symbol
     if descriptor is not None:
         if bool(descriptor.get(CONF_UI_ROUTE_SYMBOL)):
