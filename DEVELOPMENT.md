@@ -79,7 +79,7 @@ Supported path:
 2. Bump the exact pin here:
 
    ```bash
-   ./scripts/pin_pybragerone.sh 2026.9.2rc3
+   ./scripts/pin_pybragerone.sh 2026.9.2rc4
    uv lock
    ```
 
