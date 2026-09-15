@@ -6,6 +6,7 @@ import asyncio
 import sys
 import types
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -1095,3 +1096,103 @@ def test_on_gateway_alarm_quantity_requires_running_loop() -> None:
     ):
         runtime._on_gateway_alarm_quantity(types.SimpleNamespace(devid="DEV1", changed=True))
         refresh.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_on_gateway_alarm_feed_invalidate_schedules_refresh() -> None:
+    """Alarm feed invalidate events schedule async_refresh_alarms for the devid."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    scheduled: list[str] = []
+
+    async def _refresh(_self: BragerRuntime, devid: str) -> None:
+        scheduled.append(devid)
+
+    with patch.object(BragerRuntime, "async_refresh_alarms", _refresh):
+        runtime._on_gateway_alarm_feed_invalidate(types.SimpleNamespace(devid="DEV1", reason="change"))
+        await asyncio.sleep(0)
+        assert scheduled == ["DEV1"]
+
+
+@pytest.mark.asyncio
+async def test_on_gateway_activity_feed_invalidate_schedules_refresh() -> None:
+    """Activity feed invalidate events schedule async_refresh_activity for the devid."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    scheduled: list[str] = []
+
+    async def _refresh(_self: BragerRuntime, devid: str) -> None:
+        scheduled.append(devid)
+
+    with patch.object(BragerRuntime, "async_refresh_activity", _refresh):
+        runtime._on_gateway_activity_feed_invalidate(types.SimpleNamespace(devid="DEV1", reason="task"))
+        await asyncio.sleep(0)
+        assert scheduled == ["DEV1"]
+
+
+def test_on_gateway_feed_invalidate_ignores_blank_devid() -> None:
+    """Blank devid must not schedule feed refresh work."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+
+    with (
+        patch.object(BragerRuntime, "async_refresh_alarms", AsyncMock()) as alarms,
+        patch.object(BragerRuntime, "async_refresh_activity", AsyncMock()) as activity,
+    ):
+        runtime._on_gateway_alarm_feed_invalidate(types.SimpleNamespace(devid="   "))
+        runtime._on_gateway_activity_feed_invalidate(types.SimpleNamespace(devid=""))
+        alarms.assert_not_called()
+        activity.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_runtime_start_registers_feed_invalidate_callbacks() -> None:
+    """start() soft-subscribes alarm/activity invalidate handlers on FakeGateway."""
+    runtime, _api, gateway, _store = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    await runtime.start()
+    try:
+        assert runtime._on_gateway_alarm_feed_invalidate in gateway._alarm_feed_invalidate_callbacks
+        assert runtime._on_gateway_activity_feed_invalidate in gateway._activity_feed_invalidate_callbacks
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_runtime_start_tolerates_gateway_without_feed_invalidate() -> None:
+    """Older gateways lacking feed-invalidate hooks still start cleanly."""
+    from tests.helpers.fakes import FakeBus
+
+    class _LegacyGateway:
+        def __init__(self) -> None:
+            self.modules = ["DEV1"]
+            self.bus = FakeBus()
+            self.started = False
+
+        async def start(self) -> None:
+            self.started = True
+
+        async def stop(self) -> None:
+            self.started = False
+
+        def on_module_connectivity(self, callback: Any) -> None:
+            del callback
+
+        def on_cloud_session(self, callback: Any) -> None:
+            del callback
+
+        def on_live_push(self, callback: Any) -> None:
+            del callback
+
+        def on_alarm_quantity(self, callback: Any) -> None:
+            del callback
+
+        def module_online(self, devid: str) -> bool | None:
+            del devid
+            return None
+
+        def ws_session_up(self) -> bool:
+            return True
+
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    runtime.gateway = _LegacyGateway()  # type: ignore[assignment]
+    assert runtime.supports_alarm_feed_invalidate is False
+    assert runtime.supports_activity_feed_invalidate is False
+    await runtime.start()
+    await runtime.stop()
