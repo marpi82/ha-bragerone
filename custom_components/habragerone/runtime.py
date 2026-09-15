@@ -131,6 +131,12 @@ class BragerRuntime:
         register_alarm_qty = getattr(self.gateway, "on_alarm_quantity", None)
         if self.supports_alarm_quantity and callable(register_alarm_qty):
             register_alarm_qty(self._on_gateway_alarm_quantity)
+        register_alarm_feed = getattr(self.gateway, "on_alarm_feed_invalidate", None)
+        if self.supports_alarm_feed_invalidate and callable(register_alarm_feed):
+            register_alarm_feed(self._on_gateway_alarm_feed_invalidate)
+        register_activity_feed = getattr(self.gateway, "on_activity_feed_invalidate", None)
+        if self.supports_activity_feed_invalidate and callable(register_activity_feed):
+            register_activity_feed(self._on_gateway_activity_feed_invalidate)
         try:
             await self.gateway.start()
         except Exception:
@@ -410,6 +416,16 @@ class BragerRuntime:
     def supports_alarm_quantity(self) -> bool:
         """Return whether the gateway exposes alarm-quantity push callbacks (#254)."""
         return callable(getattr(self.gateway, "on_alarm_quantity", None))
+
+    @property
+    def supports_alarm_feed_invalidate(self) -> bool:
+        """Return whether the gateway exposes alarm-list invalidate callbacks (#405)."""
+        return callable(getattr(self.gateway, "on_alarm_feed_invalidate", None))
+
+    @property
+    def supports_activity_feed_invalidate(self) -> bool:
+        """Return whether the gateway exposes activity-list invalidate callbacks (#405)."""
+        return callable(getattr(self.gateway, "on_activity_feed_invalidate", None))
 
     @property
     def supports_module_alarms(self) -> bool:
@@ -922,13 +938,37 @@ class BragerRuntime:
         devid = str(getattr(event, "devid", "") or "").strip()
         if not devid:
             return
+        self._schedule_event_feed_refresh(self.async_refresh_alarms, devid, name_prefix="habragerone-alarms-qty")
+
+    def _on_gateway_alarm_feed_invalidate(self, event: Any) -> None:
+        """Refresh alarm lists when SPA signals ``alarms:change`` / ``received`` (#405)."""
+        devid = str(getattr(event, "devid", "") or "").strip()
+        if not devid:
+            return
+        self._schedule_event_feed_refresh(self.async_refresh_alarms, devid, name_prefix="habragerone-alarms-inv")
+
+    def _on_gateway_activity_feed_invalidate(self, event: Any) -> None:
+        """Refresh activity lists when SPA quantity/task signals fire (#405)."""
+        devid = str(getattr(event, "devid", "") or "").strip()
+        if not devid:
+            return
+        self._schedule_event_feed_refresh(self.async_refresh_activity, devid, name_prefix="habragerone-activity-inv")
+
+    def _schedule_event_feed_refresh(
+        self,
+        refresh: Any,
+        devid: str,
+        *,
+        name_prefix: str,
+    ) -> None:
+        """Schedule a fire-and-forget REST feed refresh on the running loop."""
         try:
             asyncio.get_running_loop()
         except RuntimeError:
             return
         task = asyncio.create_task(
-            self.async_refresh_alarms(devid),
-            name=f"habragerone-alarms-qty-{devid}",
+            refresh(devid),
+            name=f"{name_prefix}-{devid}",
         )
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)

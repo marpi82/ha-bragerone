@@ -1095,3 +1095,47 @@ def test_on_gateway_alarm_quantity_requires_running_loop() -> None:
     ):
         runtime._on_gateway_alarm_quantity(types.SimpleNamespace(devid="DEV1", changed=True))
         refresh.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_on_gateway_alarm_feed_invalidate_schedules_refresh() -> None:
+    """Alarm feed invalidate events schedule async_refresh_alarms for the devid."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    scheduled: list[str] = []
+
+    async def _refresh(_self: BragerRuntime, devid: str) -> None:
+        scheduled.append(devid)
+
+    with patch.object(BragerRuntime, "async_refresh_alarms", _refresh):
+        runtime._on_gateway_alarm_feed_invalidate(types.SimpleNamespace(devid="DEV1", reason="change"))
+        await asyncio.sleep(0)
+        assert scheduled == ["DEV1"]
+
+
+@pytest.mark.asyncio
+async def test_on_gateway_activity_feed_invalidate_schedules_refresh() -> None:
+    """Activity feed invalidate events schedule async_refresh_activity for the devid."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+    scheduled: list[str] = []
+
+    async def _refresh(_self: BragerRuntime, devid: str) -> None:
+        scheduled.append(devid)
+
+    with patch.object(BragerRuntime, "async_refresh_activity", _refresh):
+        runtime._on_gateway_activity_feed_invalidate(types.SimpleNamespace(devid="DEV1", reason="task"))
+        await asyncio.sleep(0)
+        assert scheduled == ["DEV1"]
+
+
+def test_on_gateway_feed_invalidate_ignores_blank_devid() -> None:
+    """Blank devid must not schedule feed refresh work."""
+    runtime, *_rest = make_runtime(modules_meta={"DEV1": {"name": "Boiler"}})
+
+    with (
+        patch.object(BragerRuntime, "async_refresh_alarms", AsyncMock()) as alarms,
+        patch.object(BragerRuntime, "async_refresh_activity", AsyncMock()) as activity,
+    ):
+        runtime._on_gateway_alarm_feed_invalidate(types.SimpleNamespace(devid="   "))
+        runtime._on_gateway_activity_feed_invalidate(types.SimpleNamespace(devid=""))
+        alarms.assert_not_called()
+        activity.assert_not_called()

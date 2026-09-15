@@ -76,6 +76,8 @@ class FakeGateway:
         self._cloud_session_callbacks: list[Any] = []
         self._live_push_callbacks: list[Any] = []
         self._alarm_quantity_callbacks: list[Any] = []
+        self._alarm_feed_invalidate_callbacks: list[Any] = []
+        self._activity_feed_invalidate_callbacks: list[Any] = []
         self._ws_session_up = False
         self._last_param_update_age_s: float | None = None
         self._last_live_param_update_age_s: float | None = None
@@ -115,6 +117,14 @@ class FakeGateway:
     def on_alarm_quantity(self, callback: Any) -> None:
         """Register an AlarmQuantityChanged callback (mirrors BragerOneGateway)."""
         self._alarm_quantity_callbacks.append(callback)
+
+    def on_alarm_feed_invalidate(self, callback: Any) -> None:
+        """Register an AlarmFeedInvalidate callback (mirrors BragerOneGateway)."""
+        self._alarm_feed_invalidate_callbacks.append(callback)
+
+    def on_activity_feed_invalidate(self, callback: Any) -> None:
+        """Register an ActivityFeedInvalidate callback (mirrors BragerOneGateway)."""
+        self._activity_feed_invalidate_callbacks.append(callback)
 
     def module_online(self, devid: str) -> bool | None:
         """Return cached online flag, or ``None`` when unknown."""
