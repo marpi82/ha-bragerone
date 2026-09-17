@@ -7,7 +7,7 @@ HACS custom integration (`custom_components/habragerone`) connecting BragerOne h
 - **Platforms**: `sensor` (HA `device_class` / `state_class` / unit constants from bootstrap units), `binary_sensor`, `switch`, `number` (`NumberMode.BOX`), `select`, `button` (no `climate`).
 - **Python**: `>=3.14.2,<3.15`; **HA**: `homeassistant>=2026.3.0`; iot_class `cloud_push`.
 - **Dependencies**: **uv** (`uv.lock` committed). Runtime deps pinned exactly in `manifest.json`.
-- **Build/versioning**: hatchling + hatch-vcs, CalVer from git tags.
+- **Build/versioning**: hatchling + hatch-vcs, CalVer from git tags. CI/release use `uv sync --locked --group dev --no-install-project` then `uv build --no-build-isolation` (locked backend; avoid floating hatchling).
 - **Releases**: `scripts/release.sh` tags the current branch; HACS zip via `.github/workflows/release.yml`. `main` may cut stable or `aN`/`bN`/`rcN`; `release/*` trains are pre-only (script + workflow refuse stable off main). See `DEVELOPMENT.md` and `.github/branch-protection-checklist.md`.
 
 ## Common commands
@@ -21,6 +21,7 @@ uv run poe test                  # pytest (pytest-homeassistant-custom-component
 uv run poe cov                   # coverage report (the 80% threshold is enforced only by the pre-push hook)
 uv run poe patch-cov             # pre-push parity: 80% project + 100% patch vs merge-base origin/main
 uv run poe validate              # fmt + lint + typecheck + security + test
+uv sync --locked --group dev --no-install-project && uv build --no-build-isolation  # wheel + sdist (locked backend)
 ```
 
 CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2026.3.0` (declared minimum — bump together with `hacs.json`/`pyproject.toml`) / `latest` / `dev`. Each workflow ends in an aggregate **gate job** (`CI`, `HA Integration Tests`, `HACS Validation`) that fails if any required job fails; the `protect-main` ruleset requires only these gates, so renaming jobs or matrix legs never requires ruleset changes — keep the gate job names stable. CI uploads `coverage.xml` to Codecov (`codecov-commenter` on PRs; skip Dependabot/Renovate and forks). Patch coverage target is 100% on pull requests only (`only_pulls` in `codecov.yml` — avoids false failures on main merge commits with a bad compare base); project coverage is informational — the 80% floor stays on pre-push via `scripts/check_patch_coverage.sh` (`diff-cover` vs `merge-base origin/main`, same diff basis as Codecov PR patch). `manifest.json` is ignored so release version bumps do not affect patch.

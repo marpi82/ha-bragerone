@@ -69,6 +69,7 @@ dev = [
   "pip-audit>=2.4.0,<3.0.0",
   "bandit>=1.8.4,<2.0.0",
   "hatch>=1.12.0,<2.0.0",
+  "hatch-vcs>=0.4.0",
 ]
 test = [
   "pytest>=8.3.3,<10.0.0",
@@ -161,6 +162,8 @@ validate = ["fmt", "lint", "typecheck", "security", "test"]
 test = { cmd = "pytest -q" }
 cov = { cmd = "pytest -q --cov=custom_components.habragerone --cov-report=term-missing" }
 patch-cov = { shell = "scripts/check_patch_coverage.sh" }
+# Build (locked hatchling/hatch-vcs; avoid floating isolated hatchling)
+build = { shell = "uv sync --locked --group dev --no-install-project && uv build --no-build-isolation" }
 # HA Development
 hass = { shell = "python -m homeassistant --config config --debug" }
 hass-restart = { shell = "pkill -f homeassistant || true && python -m homeassistant --config config --debug" }
