@@ -23,18 +23,18 @@ Commands:
   typecheck     - Type check with mypy
   validate      - Run full validation (lint + type + test)
   pre-commit    - Run pre-commit hooks
-  
+
   hass          - Start Home Assistant (development mode)
   hass-debug    - Start Home Assistant with debugger
   hass-demo     - Start Home Assistant with demo mode
-  
+
   docker-dev    - Build and run development Docker container
   docker-hass   - Run Home Assistant in Docker
   docker-clean  - Clean Docker containers and volumes
-  
+
   build         - Build the package
   clean         - Clean build artifacts and cache files
-  
+
   help          - Show this help message
 
 Examples:
@@ -81,16 +81,16 @@ cmd_validate() {
     echo "🔍 Running full validation..."
     echo "  1/4 Formatting..."
     uv run --group dev ruff format .
-    
+
     echo "  2/4 Linting..."
     uv run --group dev ruff check --fix .
-    
+
     echo "  3/4 Type checking..."
     uv run --group dev mypy
-    
+
     echo "  4/4 Testing..."
     uv run --group test pytest -q
-    
+
     echo "✅ All validations passed!"
 }
 
@@ -141,7 +141,8 @@ cmd_docker_clean() {
 
 cmd_build() {
     echo "📦 Building package..."
-    uv run --group dev hatch build
+    uv sync --locked --group dev --no-install-project
+    uv build --no-build-isolation
     echo "✅ Package built in dist/"
 }
 

@@ -110,11 +110,12 @@ jobs:
 
       - name: Install dependencies
         if: ${{ steps.meta.outputs.tag != '' }}
-        run: uv sync --locked --group dev
+        # Skip editable install so release never isolates against floating hatchling.
+        run: uv sync --locked --group dev --no-install-project
 
       - name: Build package
         if: ${{ steps.meta.outputs.tag != '' }}
-        run: uv run --group dev hatch build
+        run: uv build --no-build-isolation
 
       - name: Verify build artifacts
         if: ${{ steps.meta.outputs.tag != '' }}
