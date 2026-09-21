@@ -36,6 +36,7 @@ from .const import (
     DEVICE_GROUPING_FLAT,
     DOMAIN,
 )
+from .ssl_util import async_ssl_verify_context
 
 LOGGER = logging.getLogger(__name__)
 
@@ -261,7 +262,8 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if self._api is not None:
             return self._api
 
-        self._api = BragerOneApiClient(server=server_for(self._platform))
+        verify = await async_ssl_verify_context(self.hass)
+        self._api = BragerOneApiClient(server=server_for(self._platform), verify=verify)
         return self._api
 
     async def _reset_api_client(self) -> None:
@@ -282,7 +284,8 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return cached
 
         values: dict[str, str] = {}
-        api = BragerOneApiClient(server=server_for(platform))
+        verify = await async_ssl_verify_context(self.hass)
+        api = BragerOneApiClient(server=server_for(platform), verify=verify)
         catalog = LiveAssetsCatalog(api)
         cfg = None
         app_lang_map: dict[str, str] = {}
@@ -680,7 +683,8 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
         password = str(self._config_entry.data.get(CONF_PASSWORD, ""))
         platform = str(self._config_entry.data.get(CONF_BACKEND_PLATFORM, Platform.BRAGERONE.value)).strip().lower()
 
-        api = BragerOneApiClient(server=server_for(platform))
+        verify = await async_ssl_verify_context(self.hass)
+        api = BragerOneApiClient(server=server_for(platform), verify=verify)
         try:
             await api.ensure_auth(email, password)
             objects = await api.get_objects()
@@ -694,7 +698,8 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
         password = str(self._config_entry.data.get(CONF_PASSWORD, ""))
         platform = str(self._config_entry.data.get(CONF_BACKEND_PLATFORM, Platform.BRAGERONE.value)).strip().lower()
 
-        api = BragerOneApiClient(server=server_for(platform))
+        verify = await async_ssl_verify_context(self.hass)
+        api = BragerOneApiClient(server=server_for(platform), verify=verify)
         try:
             await api.ensure_auth(email, password)
             module_payloads = await _safe_module_payloads(api, object_id)

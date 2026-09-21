@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import ssl
 from collections import Counter
 from typing import Any
 
@@ -37,6 +36,7 @@ from .entity_common import (
     collect_resolver_warm_symbols,
 )
 from .runtime import BragerRuntime
+from .ssl_util import async_ssl_verify_context
 
 LOGGER = logging.getLogger(__name__)
 
@@ -60,11 +60,6 @@ def _descriptors_require_refresh(descriptors: Any) -> bool:
     return False
 
 
-def _build_ssl_context() -> ssl.SSLContext:
-    """Create SSL context outside the HA event loop."""
-    return ssl.create_default_context()
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up BragerOne from a config entry."""
     email = str(entry.data[CONF_EMAIL])
@@ -80,7 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:
         raise ConfigEntryNotReady(f"Unsupported backend platform '{platform_raw}'") from err
 
-    verify_context = await hass.async_add_executor_job(_build_ssl_context)
+    verify_context = await async_ssl_verify_context(hass)
     # creds_provider lets the client re-login transparently when the token expires
     # mid-session (e.g. WS reconnect after a long network outage).
     api = BragerOneApiClient(server=server, verify=verify_context, creds_provider=lambda: (email, password))
