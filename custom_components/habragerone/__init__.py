@@ -105,7 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     descriptors = entry.data.get(CONF_ENTITY_DESCRIPTORS)
     if options_changed or missing_cached_payload:
         LOGGER.info(
-            "Refreshing bootstrap for entry %s (options_changed=%s, missing_cached_payload=%s, object_id=%s, modules=%s)",
+            "Refreshing bootstrap for entry %s (options_changed=%s, missing_cached_payload=%s, object_id=%s, modules_count=%s)",
             entry.entry_id,
             options_changed,
             missing_cached_payload,
