@@ -111,6 +111,16 @@ async def test_config_flow_happy_path_creates_entry(hass: HomeAssistant) -> None
     assert result["data"][CONF_MODULES] == ["DEV1"]
     assert result["data"][CONF_ENTITY_DESCRIPTORS]
     assert result["data"][CONF_DEVICE_GROUPING] == DEFAULT_DEVICE_GROUPING
+    from custom_components.habragerone.const import (
+        BOOTSTRAP_VERSION,
+        CONF_BOOTSTRAP_VERSION,
+        CONF_CONNECTION_DESCRIPTORS,
+        CONF_UPSTREAM_ASSETS_FINGERPRINT,
+    )
+
+    assert result["data"][CONF_BOOTSTRAP_VERSION] == BOOTSTRAP_VERSION
+    assert CONF_CONNECTION_DESCRIPTORS in result["data"]
+    assert result["data"][CONF_UPSTREAM_ASSETS_FINGERPRINT] == "1.04.01|index-test.js"
     api.ensure_auth.assert_awaited()
     bootstrap_mock.assert_awaited()
 
@@ -169,6 +179,57 @@ async def test_config_flow_select_modules_handles_bootstrap_failure(hass: HomeAs
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "select_modules"
     assert result["errors"] == {"base": "invalid_response"}
+
+
+@pytest.mark.asyncio
+async def test_config_flow_select_modules_handles_bootstrap_timeout(hass: HomeAssistant) -> None:
+    with patch_config_flow_dependencies(bootstrap_error=TimeoutError()):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_USER},
+            data=_USER_INPUT,
+        )
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_OBJECT_ID: 1})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_MODULES: ["DEV1"]},
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "select_modules"
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+@pytest.mark.asyncio
+async def test_config_flow_omits_non_list_optional_bootstrap_fields(hass: HomeAssistant) -> None:
+    from custom_components.habragerone.const import (
+        CONF_BOOTSTRAP_DEBUG,
+        CONF_CONNECTION_DESCRIPTORS,
+        CONF_UPSTREAM_ASSETS_FINGERPRINT,
+    )
+    from tests.helpers.config_flow import make_bootstrap_payload
+
+    payload = make_bootstrap_payload()
+    payload[CONF_CONNECTION_DESCRIPTORS] = None
+    payload[CONF_BOOTSTRAP_DEBUG] = "not-a-dict"
+    payload[CONF_UPSTREAM_ASSETS_FINGERPRINT] = ""
+
+    with patch_config_flow_dependencies(bootstrap_payload=payload):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_USER},
+            data=_USER_INPUT,
+        )
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_OBJECT_ID: 1})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_MODULES: ["DEV1"]},
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert CONF_CONNECTION_DESCRIPTORS not in result["data"]
+    assert CONF_BOOTSTRAP_DEBUG not in result["data"]
+    assert CONF_UPSTREAM_ASSETS_FINGERPRINT not in result["data"]
 
 
 @pytest.mark.asyncio

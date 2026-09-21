@@ -104,8 +104,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     modules_meta = entry.data.get(CONF_MODULES_META)
     descriptors = entry.data.get(CONF_ENTITY_DESCRIPTORS)
     if options_changed or missing_cached_payload:
-        LOGGER.debug(
-            "Refreshing bootstrap for entry %s (options_changed=%s, missing_cached_payload=%s, object_id=%s, modules=%s)",
+        LOGGER.info(
+            "Refreshing bootstrap for entry %s (options_changed=%s, missing_cached_payload=%s, object_id=%s, modules_count=%s)",
             entry.entry_id,
             options_changed,
             missing_cached_payload,
@@ -122,7 +122,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for descriptor in bootstrap_payload[CONF_ENTITY_DESCRIPTORS]:
             if isinstance(descriptor, dict):
                 platform_counter[str(descriptor.get("platform", "sensor"))] += 1
-        LOGGER.debug(
+        LOGGER.info(
             "Bootstrap refresh completed for entry %s (descriptors_total=%s, platform_breakdown=%s)",
             entry.entry_id,
             len(bootstrap_payload[CONF_ENTITY_DESCRIPTORS]),

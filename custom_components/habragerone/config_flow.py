@@ -19,13 +19,18 @@ from pybragerone.models.catalog import LiveAssetsCatalog
 
 from .bootstrap import async_build_bootstrap_payload
 from .const import (
+    BOOTSTRAP_VERSION,
     CONF_BACKEND_PLATFORM,
+    CONF_BOOTSTRAP_DEBUG,
+    CONF_BOOTSTRAP_VERSION,
+    CONF_CONNECTION_DESCRIPTORS,
     CONF_DEVICE_GROUPING,
     CONF_ENTITY_DESCRIPTORS,
     CONF_LANGUAGE,
     CONF_MODULES,
     CONF_MODULES_META,
     CONF_OBJECT_ID,
+    CONF_UPSTREAM_ASSETS_FINGERPRINT,
     DEFAULT_DEVICE_GROUPING,
     DEVICE_GROUPING_BY_MENU,
     DEVICE_GROUPING_FLAT,
@@ -538,6 +543,11 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._abort_if_unique_id_configured()
 
         try:
+            LOGGER.info(
+                "Building bootstrap payload during config flow (object_id=%s, modules_count=%s)",
+                self._selected_object_id,
+                len(selected_modules),
+            )
             async with asyncio.timeout(_BOOTSTRAP_TIMEOUT_S):
                 bootstrap = await async_build_bootstrap_payload(
                     api=await self._api_client(),
@@ -546,6 +556,12 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     language=self._language,
                 )
         except TimeoutError:
+            LOGGER.warning(
+                "Bootstrap timed out after %ss during config flow (object_id=%s, modules=%s)",
+                _BOOTSTRAP_TIMEOUT_S,
+                self._selected_object_id,
+                selected_modules,
+            )
             return self.async_show_form(
                 step_id="select_modules",
                 errors={"base": "cannot_connect"},
@@ -559,7 +575,15 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=_modules_schema(modules=selected_modules),
             )
 
-        data = {
+        descriptors = bootstrap.get(CONF_ENTITY_DESCRIPTORS, [])
+        descriptor_count = len(descriptors) if isinstance(descriptors, list) else 0
+        LOGGER.info(
+            "Bootstrap payload ready for config entry (object_id=%s, descriptors=%s)",
+            self._selected_object_id,
+            descriptor_count,
+        )
+
+        data: dict[str, Any] = {
             CONF_EMAIL: self._email,
             CONF_PASSWORD: self._password,
             CONF_BACKEND_PLATFORM: self._platform,
@@ -567,9 +591,19 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_DEVICE_GROUPING: self._device_grouping,
             CONF_OBJECT_ID: self._selected_object_id,
             CONF_MODULES: selected_modules,
+            CONF_BOOTSTRAP_VERSION: BOOTSTRAP_VERSION,
             CONF_ENTITY_DESCRIPTORS: bootstrap[CONF_ENTITY_DESCRIPTORS],
             CONF_MODULES_META: bootstrap[CONF_MODULES_META],
         }
+        connection_descriptors = bootstrap.get(CONF_CONNECTION_DESCRIPTORS)
+        if isinstance(connection_descriptors, list):
+            data[CONF_CONNECTION_DESCRIPTORS] = connection_descriptors
+        bootstrap_debug = bootstrap.get(CONF_BOOTSTRAP_DEBUG)
+        if isinstance(bootstrap_debug, dict):
+            data[CONF_BOOTSTRAP_DEBUG] = bootstrap_debug
+        upstream_fingerprint = bootstrap.get(CONF_UPSTREAM_ASSETS_FINGERPRINT)
+        if isinstance(upstream_fingerprint, str) and upstream_fingerprint:
+            data[CONF_UPSTREAM_ASSETS_FINGERPRINT] = upstream_fingerprint
 
         return self.async_create_entry(title=f"{self._email} ({self._platform}, id={self._selected_object_id})", data=data)
 
