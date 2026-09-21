@@ -8,7 +8,7 @@ This directory contains development helper scripts for ha-bragerone.
 Bump the exact `py-bragerone==…` pin in `manifest.json` and `pyproject.toml` (then run `uv lock`). For HassOS field-tests, only pin published PyPI pre-releases — see DEVELOPMENT.md.
 
 ```bash
-./scripts/pin_pybragerone.sh 2026.9.3rc1
+./scripts/pin_pybragerone.sh 2026.9.3rc2
 uv lock
 ```
 
