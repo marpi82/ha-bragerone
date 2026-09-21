@@ -83,7 +83,7 @@ def patch_setup_dependencies(
         patch("custom_components.habragerone.ParamStore", return_value=fake_store),
         patch("custom_components.habragerone.BragerRuntime", return_value=fake_runtime),
         patch("custom_components.habragerone.async_build_bootstrap_payload", bootstrap_mock),
-        patch("custom_components.habragerone._build_ssl_context", _fake_ssl_context),
+        patch("custom_components.habragerone.ssl_util.build_ssl_context", _fake_ssl_context),
     ):
         yield {
             "api": fake_api,

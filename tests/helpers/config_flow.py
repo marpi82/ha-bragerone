@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ssl
 from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any
@@ -71,6 +72,10 @@ def make_bootstrap_payload() -> dict[str, Any]:
     }
 
 
+def _fake_ssl_context() -> ssl.SSLContext:
+    return ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+
 @contextmanager
 def patch_config_flow_dependencies(
     *,
@@ -87,10 +92,23 @@ def patch_config_flow_dependencies(
     catalog.list_language_config = AsyncMock(return_value=make_language_config())
     catalog.get_i18n = AsyncMock(return_value={"lang": {"en": "English", "pl": "Polski"}})
 
+    client_calls: list[dict[str, Any]] = []
+    verify_context = _fake_ssl_context()
+
+    def _api_factory(**kwargs: Any) -> AsyncMock:
+        client_calls.append(kwargs)
+        return fake_api
+
     with (
-        patch("custom_components.habragerone.config_flow.BragerOneApiClient", return_value=fake_api),
+        patch("custom_components.habragerone.config_flow.BragerOneApiClient", side_effect=_api_factory),
+        patch(
+            "custom_components.habragerone.config_flow.async_ssl_verify_context",
+            AsyncMock(return_value=verify_context),
+        ),
         patch("custom_components.habragerone.config_flow.LiveAssetsCatalog", return_value=catalog),
         patch("custom_components.habragerone.config_flow.async_build_bootstrap_payload", bootstrap_mock),
         patch("custom_components.habragerone.config_flow.server_for", return_value=object()),
     ):
+        fake_api.client_calls = client_calls  # type: ignore[attr-defined]
+        fake_api.verify_context = verify_context  # type: ignore[attr-defined]
         yield fake_api, bootstrap_mock

@@ -123,6 +123,10 @@ async def test_config_flow_happy_path_creates_entry(hass: HomeAssistant) -> None
     assert result["data"][CONF_UPSTREAM_ASSETS_FINGERPRINT] == "1.04.01|index-test.js"
     api.ensure_auth.assert_awaited()
     bootstrap_mock.assert_awaited()
+    # Language form + auth client must receive a prebuilt SSLContext (not verify=True).
+    assert api.client_calls
+    for call in api.client_calls:
+        assert call.get("verify") is api.verify_context
 
 
 @pytest.mark.asyncio

@@ -9,9 +9,9 @@ from tests.conftest import install_pybragerone_stubs
 install_pybragerone_stubs()
 
 from custom_components.habragerone.__init__ import (  # noqa: E402
-    _build_ssl_context,
     _descriptors_require_refresh,
 )
+from custom_components.habragerone.ssl_util import build_ssl_context  # noqa: E402
 
 
 def test_descriptors_require_refresh_rejects_non_list() -> None:
@@ -43,5 +43,5 @@ def test_descriptors_require_refresh_accepts_valid_cached_payload() -> None:
 
 
 def test_build_ssl_context_returns_default_context() -> None:
-    context = _build_ssl_context()
+    context = build_ssl_context()
     assert isinstance(context, ssl.SSLContext)
