@@ -111,6 +111,16 @@ async def test_config_flow_happy_path_creates_entry(hass: HomeAssistant) -> None
     assert result["data"][CONF_MODULES] == ["DEV1"]
     assert result["data"][CONF_ENTITY_DESCRIPTORS]
     assert result["data"][CONF_DEVICE_GROUPING] == DEFAULT_DEVICE_GROUPING
+    from custom_components.habragerone.const import (
+        BOOTSTRAP_VERSION,
+        CONF_BOOTSTRAP_VERSION,
+        CONF_CONNECTION_DESCRIPTORS,
+        CONF_UPSTREAM_ASSETS_FINGERPRINT,
+    )
+
+    assert result["data"][CONF_BOOTSTRAP_VERSION] == BOOTSTRAP_VERSION
+    assert CONF_CONNECTION_DESCRIPTORS in result["data"]
+    assert result["data"][CONF_UPSTREAM_ASSETS_FINGERPRINT] == "1.04.01|index-test.js"
     api.ensure_auth.assert_awaited()
     bootstrap_mock.assert_awaited()
 

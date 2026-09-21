@@ -1168,6 +1168,12 @@ async def async_build_bootstrap_payload(
     from pybragerone.models.param_resolver import ParamResolver
 
     selected = set(modules)
+    LOGGER.info(
+        "Starting bootstrap payload build (object_id=%s, modules=%s, language=%s)",
+        object_id,
+        sorted(selected) if selected else "all",
+        language,
+    )
     all_modules = await api.get_modules(object_id)
     effective_modules = [module for module in all_modules if not selected or module.devid in selected]
 
