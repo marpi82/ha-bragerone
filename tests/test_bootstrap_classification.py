@@ -129,6 +129,27 @@ def test_normalize_cached_descriptors_classifies_binary_status_unit_as_binary_se
     assert normalized[0]["platform"] == "binary_sensor"
 
 
+def test_normalize_cached_descriptors_classifies_named_device_state_as_binary_sensor() -> None:
+    descriptors = [
+        {
+            "symbol": "STATUS_P5_14",
+            "devid": "MOD1",
+            "pool": "P5",
+            "chan": "s",
+            "idx": 14,
+            "mapping": {"units_source": "DEVICE_STATE", "command_rules": []},
+            "unit": "DEVICE_STATE",
+            "writable": False,
+            "menu_kinds": ["status"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["platform"] == "binary_sensor"
+
+
 def test_normalize_cached_descriptors_classifies_binary_status_unit_independent_of_labels() -> None:
     descriptors = [
         {
