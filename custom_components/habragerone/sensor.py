@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
@@ -250,6 +251,12 @@ class BragerSymbolSensor(SensorEntity):
                 lowered = unit.casefold()
                 if lowered.startswith(("wn.", "units.", "app.")):
                     return None
+            # Named CustomUnit tokens (``BOILER_STATE``) from newer SPA assets are
+            # enum catalogs, not HA units of measurement. Keeping them as
+            # ``native_unit_of_measurement`` forces numeric states and makes
+            # STATUS_* sensors show as unavailable.
+            if _NAMED_UNIT_TOKEN_RE.fullmatch(unit) is not None:
+                return None
             return _UNIT_ALIASES.get(unit.casefold(), unit)
         if isinstance(value, dict):
             for key in ("en", "pl"):
@@ -306,6 +313,9 @@ def _normalize_text_state(value: Any) -> Any:
         return text
     return f"{head.lower()}{text[1:]}"
 
+
+# SPA CustomUnit names (``BOILER_STATE``, ``DEVICE_STATE``, …) — not HA UoM.
+_NAMED_UNIT_TOKEN_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
 
 _UNIT_ALIASES: dict[str, str] = {
     "°c": UnitOfTemperature.CELSIUS,

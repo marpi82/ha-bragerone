@@ -61,6 +61,7 @@ def test_sensor_normalizes_common_units_to_ha_constants() -> None:
     assert BragerSymbolSensor._normalize_unit("wn.9998") is None
     assert BragerSymbolSensor._normalize_unit("units.foo") is None
     assert BragerSymbolSensor._normalize_unit("app.bar") is None
+    assert BragerSymbolSensor._normalize_unit("BOILER_STATE") is None
     assert BragerSymbolSensor._normalize_unit("   ") is None
     assert BragerSymbolSensor._normalize_unit({"en": "  "}) is None
     assert BragerSymbolSensor._normalize_unit(None) is None

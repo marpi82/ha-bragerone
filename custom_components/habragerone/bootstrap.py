@@ -77,7 +77,9 @@ class EntityDescriptor(TypedDict, total=False):
 
 
 _SWITCHISH_RULE_VALUES = {"0", "1", "true", "false", "on", "off", "enabled", "disabled", "yes", "no"}
+# Numeric CustomUnit codes (legacy index) and named tokens (1.04+ assets).
 _BINARY_UNITS_SOURCE_CODES = {9994, 9995, 9996}
+_BINARY_UNITS_SOURCE_NAMES = {"DEVICE_STATE", "BLOCKADE_STATE", "PUMP_STATE"}
 _NON_ENTITY_COMPONENT_MARKERS = ("password", "menu", "view", "separator", "title")
 _PARAM_KINDS = ("read", "write", "status", "special")
 _SYMBOL_TOKEN_RE = re.compile(r"^(?:COMMAND_|URUCHOMIENIE_|PARAM_|STATUS_)[A-Z0-9_]+$")
@@ -248,6 +250,8 @@ def _is_binary_units_source(mapping: dict[str, Any] | None) -> bool:
             text = text[3:]
         if text.isdigit():
             code = int(text)
+        elif text.upper() in _BINARY_UNITS_SOURCE_NAMES:
+            return True
     return code in _BINARY_UNITS_SOURCE_CODES
 
 

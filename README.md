@@ -54,7 +54,7 @@ The integration can be configured through the Home Assistant UI. You will need:
 - Installation and module selection
 - Device grouping (flat = one HA device per internet module for parameters, connectivity, alarms, and activity; group by menu = parameter entities on child devices per **parent** menu route linked to the parent module, while connectivity/alarms/activity stay on the parent module — remaps device membership when changed).
 
-After upgrading to a release that bumps `BOOTSTRAP_VERSION` (currently **14** for static menu routes / #192), reload the integration or re-add it so entity descriptors pick up new menu metadata.
+After upgrading to a release that bumps `BOOTSTRAP_VERSION` (currently **15** for named CustomUnit STATUS labels / display transforms on BragerOne 1.04+ assets), reload the integration or re-add it so entity descriptors pick up the rebuilt cache.
 
 Every permission-gated parameter becomes an entity — there is no separate UI/permissions filtering mode to choose. Entities that are outside the everyday BragerOne web UI (installer-only panels, or panels the SPA itself hides) are still created, but start **disabled** in the entity registry; enable them manually if you need them. Enable/disable state can be changed per-entity at any time from the entity registry.
 
