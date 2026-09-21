@@ -544,7 +544,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         try:
             LOGGER.info(
-                "Building bootstrap payload during config flow (object_id=%s, modules=%s)",
+                "Building bootstrap payload during config flow (object_id=%s, modules_count=%s)",
                 self._selected_object_id,
                 len(selected_modules),
             )
