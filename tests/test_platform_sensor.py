@@ -595,6 +595,30 @@ async def test_status_sensor_initial_sync_returns_false_without_matching_rules(h
 
 
 @pytest.mark.asyncio
+async def test_status_sensor_initial_sync_returns_false_without_raw(hass: HomeAssistant) -> None:
+    """Cover the STATUS sync branch when pool register is absent (156→165)."""
+    runtime, *_rest = make_runtime(flat_values={})
+    descriptor = sensor_descriptor(
+        symbol="STATUS_P5_0",
+        pool="P5",
+        chan="s",
+        idx=0,
+        unit=None,
+        raw_to_label={"1": "Czyszczenie"},
+        command_rules=[{"logic": "on", "value": "Praca", "conditions": []}],
+    )
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "sensor.status_kotla_no_raw"
+    entity.async_write_ha_state = MagicMock()  # type: ignore[method-assign]
+    entity.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+
+    assert entity._try_apply_initial_state_sync() is False
+    assert entity.native_value is None
+
+
+@pytest.mark.asyncio
 async def test_sensor_dynamic_unit_resolver_skips_unresolved_unit_token(hass: HomeAssistant) -> None:
     store = FakeStore(flat_values={"P10.v2": 33})
     resolve_with_unit = AsyncMock(return_value=(None, "wn.9998"))
