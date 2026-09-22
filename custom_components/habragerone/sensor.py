@@ -144,6 +144,25 @@ class BragerSymbolSensor(SensorEntity):
             has_value=has_value,
             descriptor=self._descriptor,
         )
+        # STATUS_* (e.g. STATUS_P5_0 / BOILER_STATE) is rule-computed: the STATUS pool
+        # register is an input bitfield, not the enum code. Never map it through
+        # ``raw_to_label`` before resolver/rules — that falsely shows Czyszczenie /
+        # Rozpalanie whenever P5.s0 happens to be 1 or 2.
+        if self._is_status_symbol:
+            cached = self._runtime.peek_status_label(self._symbol)
+            if cached is not None:
+                self._attr_native_value = self._display_from_resolved(cached)
+                return True
+            if raw_value is not None:
+                mapped_rule = resolve_rule_display_value(
+                    descriptor=self._descriptor,
+                    flat_values=self._runtime.store.flatten(),
+                    default_actual=raw_value,
+                )
+                if mapped_rule is not None:
+                    self._attr_native_value = self._display_from_resolved(mapped_rule)
+                    return True
+            return False
         if raw_value is not None:
             mapped_by_unit = self._raw_to_label.get(str(raw_value))
             if mapped_by_unit is not None:
@@ -156,11 +175,6 @@ class BragerSymbolSensor(SensorEntity):
             )
             if mapped_rule is not None:
                 self._attr_native_value = _normalize_text_state(mapped_rule)
-                return True
-        if self._is_status_symbol:
-            cached = self._runtime.peek_status_label(self._symbol)
-            if cached is not None:
-                self._attr_native_value = _normalize_text_state(cached)
                 return True
         return False
 
@@ -193,15 +207,18 @@ class BragerSymbolSensor(SensorEntity):
     async def async_update(self) -> None:
         """Fetch latest value from ParamStore (no heavy resolver call)."""
         raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
+        has_value = raw_value is not None
+        if self._is_status_symbol and self._runtime.peek_status_label(self._symbol) is not None:
+            has_value = True
         self._attr_available = entity_is_available(
             self._runtime,
             devid=self._devid,
-            has_value=raw_value is not None,
+            has_value=has_value,
             descriptor=self._descriptor,
         )
-        if raw_value is None:
-            return
         if self._requires_resolver_value:
+            if raw_value is None:
+                return
             resolved_value, resolved_unit = await self._runtime.async_resolve_symbol_with_unit(self._symbol)
             normalized_dynamic_unit = self._normalize_unit(resolved_unit)
             if normalized_dynamic_unit:
@@ -210,13 +227,36 @@ class BragerSymbolSensor(SensorEntity):
             if resolved_value is not None:
                 self._attr_native_value = _normalize_text_state(resolved_value)
                 return
+        if self._is_status_symbol:
+            resolved_status = await self._runtime.async_resolve_status_label(self._symbol)
+            if resolved_status is not None:
+                self._attr_native_value = self._display_from_resolved(resolved_status)
+                self._attr_available = entity_is_available(
+                    self._runtime,
+                    devid=self._devid,
+                    has_value=True,
+                    descriptor=self._descriptor,
+                )
+                return
+            if raw_value is None:
+                return
+            mapped_value = resolve_rule_display_value(
+                descriptor=self._descriptor,
+                flat_values=self._runtime.store.flatten(),
+                default_actual=raw_value,
+            )
+            if mapped_value is not None:
+                self._attr_native_value = self._display_from_resolved(mapped_value)
+                return
+            # Do not map the STATUS pool register through BOILER_STATE / similar
+            # unit catalogs — those catalogs label rule *outputs*, not P5.sN.
+            self._attr_native_value = _normalize_text_state(raw_value)
+            return
+        if raw_value is None:
+            return
         mapped_by_unit = self._raw_to_label.get(str(raw_value))
         if mapped_by_unit is not None:
             self._attr_native_value = _normalize_text_state(mapped_by_unit)
-            return
-        resolved_status = await self._runtime.async_resolve_status_label(self._symbol) if self._is_status_symbol else None
-        if resolved_status is not None:
-            self._attr_native_value = _normalize_text_state(resolved_status)
             return
         mapped_value = resolve_rule_display_value(
             descriptor=self._descriptor,
@@ -227,6 +267,13 @@ class BragerSymbolSensor(SensorEntity):
             self._attr_native_value = _normalize_text_state(mapped_value)
             return
         self._attr_native_value = _normalize_text_state(self._raw_to_label.get(str(raw_value), raw_value))
+
+    def _display_from_resolved(self, resolved: Any) -> Any:
+        """Map resolver/rule output through unit labels when it is still a raw code."""
+        mapped = self._raw_to_label.get(str(resolved))
+        if mapped is not None:
+            return _normalize_text_state(mapped)
+        return _normalize_text_state(resolved)
 
     def _on_runtime_update(self, _update: ParamUpdate) -> None:
         update_key = f"{_update.pool}.{_update.chan}{_update.idx}"
