@@ -78,7 +78,7 @@ test = [
   "aioresponses>=0.7.8,<0.8.0",
   "packaging>=24.1,<27.0.0",
   "pytest-homeassistant-custom-component>=0.13.205",
-  "diff-cover>=10.5.1,<10.6.0",
+  "diff-cover>=10.6.0,<10.7.0",
 ]
 
 # ---------------- Ruff (formatter + linter) ----------------
