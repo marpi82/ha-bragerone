@@ -150,11 +150,11 @@ fix = ["lint", "fmt"]
 typecheck = "mypy"
 all = ["fmt", "lint", "typecheck"]
 # Security
-# cryptography advisories are inherited from Home Assistant's exact pin (currently
-# cryptography==48.0.1 on HA 2026.8.x). Do not override that pin in the integration
-# venv; ignore until core bumps cryptography.
+# PyJWT advisories are inherited from Home Assistant's exact pin
+# (currently PyJWT==2.13.0). Do not override that pin in the integration
+# venv; ignore until core bumps PyJWT.
 bandit = { cmd = "bandit -r custom_components -q -ll" }
-pip-audit = { cmd = "pip-audit --skip-editable --progress-spinner off --ignore-vuln PYSEC-2026-3552 --ignore-vuln PYSEC-2026-3553 --ignore-vuln PYSEC-2026-3554" }
+pip-audit = { cmd = "pip-audit --skip-editable --progress-spinner off --ignore-vuln PYSEC-2026-4140 --ignore-vuln PYSEC-2026-4141 --ignore-vuln PYSEC-2026-4142 --ignore-vuln PYSEC-2026-4143 --ignore-vuln PYSEC-2026-4144 --ignore-vuln PYSEC-2026-4145 --ignore-vuln PYSEC-2026-4146 --ignore-vuln PYSEC-2026-4147 --ignore-vuln PYSEC-2026-4148 --ignore-vuln PYSEC-2026-4149 --ignore-vuln PYSEC-2026-4150 --ignore-vuln PYSEC-2026-4151 --ignore-vuln PYSEC-2026-4152" }
 security = ["bandit", "pip-audit"]
 # Full validation (quality + security + tests)
 validate = ["fmt", "lint", "typecheck", "security", "test"]
