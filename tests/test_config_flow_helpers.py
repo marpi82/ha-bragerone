@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import voluptuous as vol
+import probatio
 
 from tests.conftest import install_pybragerone_stubs
 
@@ -110,6 +110,6 @@ def test_build_modules_step_schema_rejects_invalid_device_grouping() -> None:
                 CONF_DEVICE_GROUPING: "by-area",
             }
         )
-    except vol.Invalid:
+    except probatio.Invalid:
         return
-    raise AssertionError("Expected vol.Invalid for unknown device grouping")
+    raise AssertionError("Expected probatio.Invalid for unknown device grouping")

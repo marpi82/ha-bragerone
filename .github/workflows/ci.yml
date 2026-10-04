@@ -117,6 +117,7 @@ jobs:
 
       - name: Run pip-audit
         run: |
+          # Ignore HA-pinned cryptography/PyJWT advisories until core bumps those pins.
           uv run --group dev pip-audit \
             --format=json \
             --output=pip-audit-results.json \
@@ -124,7 +125,20 @@ jobs:
             --skip-editable \
             --ignore-vuln PYSEC-2026-3552 \
             --ignore-vuln PYSEC-2026-3553 \
-            --ignore-vuln PYSEC-2026-3554
+            --ignore-vuln PYSEC-2026-3554 \
+            --ignore-vuln PYSEC-2026-4140 \
+            --ignore-vuln PYSEC-2026-4141 \
+            --ignore-vuln PYSEC-2026-4142 \
+            --ignore-vuln PYSEC-2026-4143 \
+            --ignore-vuln PYSEC-2026-4144 \
+            --ignore-vuln PYSEC-2026-4145 \
+            --ignore-vuln PYSEC-2026-4146 \
+            --ignore-vuln PYSEC-2026-4147 \
+            --ignore-vuln PYSEC-2026-4148 \
+            --ignore-vuln PYSEC-2026-4149 \
+            --ignore-vuln PYSEC-2026-4150 \
+            --ignore-vuln PYSEC-2026-4151 \
+            --ignore-vuln PYSEC-2026-4152
 
       - name: Upload security artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

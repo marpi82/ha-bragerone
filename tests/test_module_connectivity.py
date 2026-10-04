@@ -7,7 +7,7 @@ import types
 from typing import Any
 
 import pytest
-from homeassistant.components.binary_sensor import BinarySensorDeviceClass
+from homeassistant.components.binary_sensor.const import BinarySensorDeviceClass
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
