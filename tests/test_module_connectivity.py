@@ -7,7 +7,11 @@ import types
 from typing import Any
 
 import pytest
-from homeassistant.components.binary_sensor.const import BinarySensorDeviceClass
+
+try:
+    from homeassistant.components.binary_sensor.const import BinarySensorDeviceClass
+except ImportError:  # pragma: no cover - Home Assistant < 2026.10
+    from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError

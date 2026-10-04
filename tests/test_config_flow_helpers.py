@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-import probatio
+try:
+    import probatio as vol
+except ImportError:  # pragma: no cover - Home Assistant < 2026.9
+    import voluptuous as vol
 
 from tests.conftest import install_pybragerone_stubs
 
@@ -110,6 +113,6 @@ def test_build_modules_step_schema_rejects_invalid_device_grouping() -> None:
                 CONF_DEVICE_GROUPING: "by-area",
             }
         )
-    except probatio.Invalid:
+    except vol.Invalid:
         return
-    raise AssertionError("Expected probatio.Invalid for unknown device grouping")
+    raise AssertionError("Expected vol.Invalid for unknown device grouping")

@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.components.binary_sensor.const import BinarySensorDeviceClass
+
+try:
+    from homeassistant.components.binary_sensor.const import BinarySensorDeviceClass
+except ImportError:  # pragma: no cover - Home Assistant < 2026.10
+    from homeassistant.components.binary_sensor import BinarySensorDeviceClass  # type: ignore[attr-defined]
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant

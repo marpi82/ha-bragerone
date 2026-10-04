@@ -6,7 +6,10 @@ import asyncio
 import logging
 from typing import Any
 
-import probatio
+try:
+    import probatio as vol
+except ImportError:  # pragma: no cover - Home Assistant < 2026.9 (no Probatio)
+    import voluptuous as vol  # type: ignore[no-redef]
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
@@ -141,12 +144,12 @@ def _build_modules_step_schema(
     default_modules: list[str],
     grouping_values: dict[str, str],
     default_grouping: str = DEFAULT_DEVICE_GROUPING,
-) -> probatio.Schema:
+) -> vol.Schema:
     data_schema: dict[Any, Any] = {
-        probatio.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
-        probatio.Required(CONF_DEVICE_GROUPING, default=default_grouping): probatio.In(grouping_values),
+        vol.Required(CONF_MODULES, default=default_modules): cv.multi_select(module_values),
+        vol.Required(CONF_DEVICE_GROUPING, default=default_grouping): vol.In(grouping_values),
     }
-    return probatio.Schema(data_schema)
+    return vol.Schema(data_schema)
 
 
 def _extract_language_label(value: Any, *, lang_id: str) -> str | None:
@@ -344,7 +347,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         default_email: str | None = None,
         default_platform: str | None = None,
         default_language: str | None = None,
-    ) -> probatio.Schema:
+    ) -> vol.Schema:
         platform = (default_platform or self._platform or Platform.BRAGERONE.value).strip().lower()
         ui_language = str(getattr(self.hass.config, "language", "") or "").strip().lower()
         platform_values = self._platform_values()
@@ -359,20 +362,20 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         email_default = (default_email or self._email or "").strip()
         field_labels = _ui_field_labels(ui_language)
         schema: dict[Any, Any] = {
-            probatio.Required(CONF_EMAIL, default=email_default): str,
-            probatio.Required(CONF_PASSWORD): str,
-            probatio.Required(
+            vol.Required(CONF_EMAIL, default=email_default): str,
+            vol.Required(CONF_PASSWORD): str,
+            vol.Required(
                 CONF_BACKEND_PLATFORM,
                 default=platform,
                 description={"name": field_labels[CONF_BACKEND_PLATFORM]},
-            ): probatio.In(platform_values),
-            probatio.Required(
+            ): vol.In(platform_values),
+            vol.Required(
                 CONF_LANGUAGE,
                 default=language_default,
                 description={"name": field_labels[CONF_LANGUAGE]},
-            ): probatio.In(language_values),
+            ): vol.In(language_values),
         }
-        return probatio.Schema(schema)
+        return vol.Schema(schema)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Collect credentials and authenticate."""
@@ -450,9 +453,9 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is None:
             return self.async_show_form(
                 step_id="select_site",
-                data_schema=probatio.Schema(
+                data_schema=vol.Schema(
                     {
-                        probatio.Required(CONF_OBJECT_ID, default=default_object_id): probatio.In(object_values),
+                        vol.Required(CONF_OBJECT_ID, default=default_object_id): vol.In(object_values),
                     }
                 ),
             )
@@ -467,9 +470,9 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_show_form(
                 step_id="select_site",
                 errors={"base": "cannot_connect"},
-                data_schema=probatio.Schema(
+                data_schema=vol.Schema(
                     {
-                        probatio.Required(CONF_OBJECT_ID, default=selected_object_id): probatio.In(object_values),
+                        vol.Required(CONF_OBJECT_ID, default=selected_object_id): vol.In(object_values),
                     }
                 ),
             )
@@ -477,9 +480,9 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_show_form(
                 step_id="select_site",
                 errors={"base": "cannot_connect"},
-                data_schema=probatio.Schema(
+                data_schema=vol.Schema(
                     {
-                        probatio.Required(CONF_OBJECT_ID, default=selected_object_id): probatio.In(object_values),
+                        vol.Required(CONF_OBJECT_ID, default=selected_object_id): vol.In(object_values),
                     }
                 ),
             )
@@ -490,9 +493,9 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_show_form(
                 step_id="select_site",
                 errors={"base": "invalid_response"},
-                data_schema=probatio.Schema(
+                data_schema=vol.Schema(
                     {
-                        probatio.Required(CONF_OBJECT_ID, default=selected_object_id): probatio.In(object_values),
+                        vol.Required(CONF_OBJECT_ID, default=selected_object_id): vol.In(object_values),
                     }
                 ),
             )
@@ -512,7 +515,7 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         grouping_values = _device_grouping_values(ui_language=ui_language)
         default_grouping = _normalize_device_grouping(self._device_grouping)
 
-        def _modules_schema(*, modules: list[str]) -> probatio.Schema:
+        def _modules_schema(*, modules: list[str]) -> vol.Schema:
             return _build_modules_step_schema(
                 module_choices=self._module_choices,
                 module_values=module_values,
@@ -622,10 +625,10 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is None:
             return self.async_show_form(
                 step_id="reauth_confirm",
-                data_schema=probatio.Schema(
+                data_schema=vol.Schema(
                     {
-                        probatio.Required(CONF_EMAIL, default=self._email or ""): str,
-                        probatio.Required(CONF_PASSWORD): str,
+                        vol.Required(CONF_EMAIL, default=self._email or ""): str,
+                        vol.Required(CONF_PASSWORD): str,
                     }
                 ),
             )
@@ -640,10 +643,10 @@ class BragerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_show_form(
                 step_id="reauth_confirm",
                 errors={"base": "auth"},
-                data_schema=probatio.Schema(
+                data_schema=vol.Schema(
                     {
-                        probatio.Required(CONF_EMAIL, default=email): str,
-                        probatio.Required(CONF_PASSWORD): str,
+                        vol.Required(CONF_EMAIL, default=email): str,
+                        vol.Required(CONF_PASSWORD): str,
                     }
                 ),
             )
@@ -727,9 +730,9 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
         if user_input is None:
             return self.async_show_form(
                 step_id="init",
-                data_schema=probatio.Schema(
+                data_schema=vol.Schema(
                     {
-                        probatio.Required(CONF_OBJECT_ID, default=default_object): probatio.In(object_values),
+                        vol.Required(CONF_OBJECT_ID, default=default_object): vol.In(object_values),
                     }
                 ),
             )
@@ -740,9 +743,9 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
             return self.async_show_form(
                 step_id="init",
                 errors={"base": "invalid_response"},
-                data_schema=probatio.Schema(
+                data_schema=vol.Schema(
                     {
-                        probatio.Required(CONF_OBJECT_ID, default=default_object): probatio.In(object_values),
+                        vol.Required(CONF_OBJECT_ID, default=default_object): vol.In(object_values),
                     }
                 ),
             )
@@ -772,7 +775,7 @@ class BragerOptionsFlow(config_entries.OptionsFlow):
             )
         )
 
-        def _modules_schema(*, modules: list[str]) -> probatio.Schema:
+        def _modules_schema(*, modules: list[str]) -> vol.Schema:
             return _build_modules_step_schema(
                 module_choices=self._module_choices,
                 module_values=module_values,
