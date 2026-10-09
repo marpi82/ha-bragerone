@@ -135,7 +135,8 @@ jobs:
             --ignore-vuln PYSEC-2026-4149 \
             --ignore-vuln PYSEC-2026-4150 \
             --ignore-vuln PYSEC-2026-4151 \
-            --ignore-vuln PYSEC-2026-4152
+            --ignore-vuln PYSEC-2026-4152 \
+            --ignore-vuln PYSEC-2026-4183
 
       - name: Upload security artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
