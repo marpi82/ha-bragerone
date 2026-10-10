@@ -16,8 +16,8 @@
     "custom_components.habragerone"
   ],
   "requirements": [
-    "py-bragerone==2026.9.3",
+    "py-bragerone==2026.10.1",
     "tree-sitter==0.26.0"
   ],
-  "version": "2026.9.4rc1"
+  "version": "2026.10.1"
 }
