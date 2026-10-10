@@ -127,10 +127,15 @@ class BragerSymbolSensor(SensorEntity):
             self._runtime,
             schedule_update=lambda: self.async_schedule_update_ha_state(True),
         )
-        if self._try_apply_initial_state_sync():
+        synced = self._try_apply_initial_state_sync()
+        if synced:
             self.async_write_ha_state()
-            return
-        self.async_schedule_update_ha_state(True)
+        # STATUS_* must go through ParamResolver. Local command_rules can match
+        # CLEANING/IGNITING on a partial post-restart store (and logic ``any``), and
+        # a warm-cache hit can be cleared by the first WS dispatch before the entity
+        # is ready — so always schedule an async resolve for STATUS.
+        if self._is_status_symbol or not synced:
+            self.async_schedule_update_ha_state(True)
 
     def _try_apply_initial_state_sync(self) -> bool:
         """Set first state synchronously when rules or pre-warmed labels allow it."""
@@ -148,20 +153,13 @@ class BragerSymbolSensor(SensorEntity):
         # register is an input bitfield, not the enum code. Never map it through
         # ``raw_to_label`` before resolver/rules — that falsely shows Czyszczenie /
         # Rozpalanie whenever P5.s0 happens to be 1 or 2.
+        # Also never commit local rule evaluation here: incomplete flat_values after
+        # restart can match CLEANING until ParamResolver runs in async_update.
         if self._is_status_symbol:
             cached = self._runtime.peek_status_label(self._symbol)
             if cached is not None:
                 self._attr_native_value = self._display_from_resolved(cached)
                 return True
-            if raw_value is not None:
-                mapped_rule = resolve_rule_display_value(
-                    descriptor=self._descriptor,
-                    flat_values=self._runtime.store.flatten(),
-                    default_actual=raw_value,
-                )
-                if mapped_rule is not None:
-                    self._attr_native_value = self._display_from_resolved(mapped_rule)
-                    return True
             return False
         if raw_value is not None:
             mapped_by_unit = self._raw_to_label.get(str(raw_value))
