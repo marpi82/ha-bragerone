@@ -342,7 +342,8 @@ async def test_status_sensor_update_uses_peek_for_availability_without_raw(hass:
 
 
 @pytest.mark.asyncio
-async def test_status_sensor_initial_sync_uses_rules_without_cache(hass: HomeAssistant) -> None:
+async def test_status_sensor_initial_sync_defers_rules_without_cache(hass: HomeAssistant) -> None:
+    """Local STATUS rules must not commit state before ParamResolver runs."""
     runtime, *_rest = make_runtime(flat_values={"P5.s0": 1})
     descriptor = sensor_descriptor(
         symbol="STATUS_P5_0",
@@ -351,7 +352,7 @@ async def test_status_sensor_initial_sync_uses_rules_without_cache(hass: HomeAss
         idx=0,
         unit=None,
         raw_to_label={"1": "Czyszczenie", "11": "Praca"},
-        command_rules=[{"logic": "on", "value": 11, "conditions": []}],
+        command_rules=[{"logic": "on", "value": "Czyszczenie", "conditions": []}],
     )
     entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
     entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)
@@ -362,8 +363,9 @@ async def test_status_sensor_initial_sync_uses_rules_without_cache(hass: HomeAss
 
     await entity.async_added_to_hass()
 
-    assert entity.native_value == "praca"
-    entity.async_write_ha_state.assert_called_once()
+    assert entity.native_value is None
+    entity.async_write_ha_state.assert_not_called()
+    entity.async_schedule_update_ha_state.assert_called_once_with(True)
 
 
 @pytest.mark.asyncio
@@ -389,6 +391,8 @@ async def test_status_sensor_initial_sync_skips_misleading_unit_map(hass: HomeAs
 
     assert entity.native_value == "podtrzymanie"
     entity.async_write_ha_state.assert_called_once()
+    # Warm cache is only a hint — STATUS always schedules ParamResolver.
+    entity.async_schedule_update_ha_state.assert_called_once_with(True)
 
 
 @pytest.mark.asyncio
@@ -406,7 +410,7 @@ async def test_sensor_added_to_hass_uses_prewarmed_status_label(hass: HomeAssist
     await entity.async_added_to_hass()
 
     entity.async_write_ha_state.assert_called_once()
-    entity.async_schedule_update_ha_state.assert_not_called()
+    entity.async_schedule_update_ha_state.assert_called_once_with(True)
     assert entity.native_value == "work"
 
 
@@ -429,7 +433,7 @@ async def test_sensor_initial_sync_uses_raw_to_label_map(hass: HomeAssistant) ->
 
 
 @pytest.mark.asyncio
-async def test_sensor_initial_sync_uses_rule_display_value(hass: HomeAssistant) -> None:
+async def test_sensor_initial_sync_defers_status_rule_display_value(hass: HomeAssistant) -> None:
     runtime, *_rest = make_runtime(flat_values={"P5.s11": 1})
     descriptor = sensor_descriptor(
         symbol="STATUS_P5_11",
@@ -448,9 +452,9 @@ async def test_sensor_initial_sync_uses_rule_display_value(hass: HomeAssistant) 
 
     await entity.async_added_to_hass()
 
-    entity.async_write_ha_state.assert_called_once()
-    entity.async_schedule_update_ha_state.assert_not_called()
-    assert entity.native_value == "on"
+    assert entity.native_value is None
+    entity.async_write_ha_state.assert_not_called()
+    entity.async_schedule_update_ha_state.assert_called_once_with(True)
 
 
 @pytest.mark.asyncio
@@ -468,7 +472,7 @@ async def test_sensor_initial_sync_uses_cache_without_raw_value(hass: HomeAssist
     await entity.async_added_to_hass()
 
     entity.async_write_ha_state.assert_called_once()
-    entity.async_schedule_update_ha_state.assert_not_called()
+    entity.async_schedule_update_ha_state.assert_called_once_with(True)
     assert entity.native_value == "work"
 
 
@@ -595,9 +599,9 @@ async def test_status_sensor_initial_sync_returns_false_without_matching_rules(h
 
 
 @pytest.mark.asyncio
-async def test_status_sensor_initial_sync_returns_false_without_raw(hass: HomeAssistant) -> None:
-    """Cover the STATUS sync branch when pool register is absent (156→165)."""
-    runtime, *_rest = make_runtime(flat_values={})
+async def test_status_sensor_initial_sync_returns_false_without_warm_cache(hass: HomeAssistant) -> None:
+    """STATUS sync commits only from warm cache; otherwise defer to async_update."""
+    runtime, *_rest = make_runtime(flat_values={"P5.s0": 1})
     descriptor = sensor_descriptor(
         symbol="STATUS_P5_0",
         pool="P5",
@@ -610,9 +614,7 @@ async def test_status_sensor_initial_sync_returns_false_without_raw(hass: HomeAs
     entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
     entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)
     entity.hass = hass
-    entity.entity_id = "sensor.status_kotla_no_raw"
-    entity.async_write_ha_state = MagicMock()  # type: ignore[method-assign]
-    entity.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+    entity.entity_id = "sensor.status_kotla_no_cache"
 
     assert entity._try_apply_initial_state_sync() is False
     assert entity.native_value is None
