@@ -101,17 +101,31 @@ async def test_make_runtime_with_explicit_gateway_bus_channels_flag() -> None:
 
 @pytest.mark.asyncio
 async def test_bus_channel_live_push_routes_to_listeners() -> None:
-    """LIVE_PUSH channel events reach live-push listeners."""
+    """LIVE_PUSH channel: unhealthy/recover notify; changed=False updates cache only."""
     runtime, _api, gateway, _store = make_runtime(bus_channels=True)
     hits: list[int] = []
     runtime.add_live_push_listener(lambda: hits.append(1))
     await runtime.start()
     await asyncio.sleep(0)
-    gateway.emit_live_push(healthy=False, live_stale_for_s=12.0)
+
+    gateway.emit_live_push(healthy=False, live_stale_for_s=12.0, changed=True)
     for _ in range(10):
         await asyncio.sleep(0)
     assert hits == [1]
     assert runtime.live_push_health().get("push_healthy") is False
+    assert runtime.live_push_health().get("live_stale_for_s") == 12.0
+
+    gateway.emit_live_push(healthy=True, last_resumed_after_s=12.0, changed=True)
+    for _ in range(10):
+        await asyncio.sleep(0)
+    assert hits == [1, 1]
+    assert runtime.live_push_health().get("push_healthy") is True
+
+    gateway.emit_live_push(healthy=True, live_stale_for_s=None, changed=False)
+    for _ in range(10):
+        await asyncio.sleep(0)
+    assert hits == [1, 1]
+    assert runtime.live_push_health().get("push_healthy") is True
     await runtime.stop()
 
 
