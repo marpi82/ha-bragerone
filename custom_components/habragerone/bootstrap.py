@@ -1584,6 +1584,9 @@ async def async_build_bootstrap_payload(
             "module_address": module.moduleAddress,
             "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
             # Lightweight manuf/dev/fw refs for REST menu construction (#438).
+            # Existing entries keep BOOTSTRAP_VERSION=15 caches until the enabling
+            # py-bragerone pin lands — bump BOOTSTRAP_VERSION in that same PR so
+            # descriptors/modules_meta rebuild with non-empty devices.
             "devices": (
                 [{"manuf_code": r.manuf_code, "dev_code": r.dev_code, "fw": r.fw} for r in menu_refs] if menu_refs else []
             ),

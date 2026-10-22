@@ -51,19 +51,32 @@ def test_device_menu_refs_from_module_none_without_devices() -> None:
     assert _device_menu_refs_from_module(SimpleNamespace(devices=[])) is None
 
 
-def test_device_menu_refs_from_module_parses_when_library_present() -> None:
-    """When pybragerone exposes the helper, refs are built from Module.devices."""
-    module = SimpleNamespace(
-        devices=[{"manuf_code": 67, "dev_code": 7, "sw_ver_num": "2.08"}],
-    )
-    refs = _device_menu_refs_from_module(module)
-    # Soft-compat: if the installed wheel lacks the helper, skip.
-    if refs is None:
-        return
+def test_device_menu_refs_from_module_parses_when_helper_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the library helper is available, refs are built from Module.devices."""
+    devices = [{"manuf_code": 67, "dev_code": 7, "sw_ver_num": "2.08"}]
+    seen: list[object] = []
+
+    class _Ref:
+        def __init__(self, manuf_code: int, dev_code: int, fw: str) -> None:
+            self.manuf_code = manuf_code
+            self.dev_code = dev_code
+            self.fw = fw
+
+    def _helper(raw: object) -> list[_Ref]:
+        seen.append(raw)
+        assert raw is devices
+        return [_Ref(67, 7, "2.08")]
+
+    _install_modules_helper(monkeypatch, _helper)
+    refs = _device_menu_refs_from_module(SimpleNamespace(devices=devices))
+    assert refs is not None
     assert len(refs) == 1
     assert refs[0].manuf_code == 67
     assert refs[0].dev_code == 7
     assert refs[0].fw == "2.08"
+    assert seen == [devices]
 
 
 def test_device_menu_refs_import_error_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
