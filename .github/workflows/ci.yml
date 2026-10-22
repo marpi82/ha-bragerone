@@ -108,27 +108,8 @@ jobs:
         run: uv run --group dev bandit -r custom_components -q -ll -f json -o bandit-report.json
 
       - name: Run pip-audit
-        run: |
-          # Ignore HA-pinned PyJWT advisories until core bumps that pin.
-          uv run --group dev pip-audit \
-            --format=json \
-            --output=pip-audit-results.json \
-            --progress-spinner=off \
-            --skip-editable \
-            --ignore-vuln PYSEC-2026-4140 \
-            --ignore-vuln PYSEC-2026-4141 \
-            --ignore-vuln PYSEC-2026-4142 \
-            --ignore-vuln PYSEC-2026-4143 \
-            --ignore-vuln PYSEC-2026-4144 \
-            --ignore-vuln PYSEC-2026-4145 \
-            --ignore-vuln PYSEC-2026-4146 \
-            --ignore-vuln PYSEC-2026-4147 \
-            --ignore-vuln PYSEC-2026-4148 \
-            --ignore-vuln PYSEC-2026-4149 \
-            --ignore-vuln PYSEC-2026-4150 \
-            --ignore-vuln PYSEC-2026-4151 \
-            --ignore-vuln PYSEC-2026-4152 \
-            --ignore-vuln PYSEC-2026-4183
+        # HA-pinned Pillow/uv/PyJWT ignores live in scripts/run_pip_audit.sh
+        run: bash scripts/run_pip_audit.sh
 
       - name: Upload security artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

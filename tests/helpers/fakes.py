@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 import types
 from collections.abc import AsyncIterator
@@ -23,10 +24,19 @@ class FakeParamUpdate:
 
 
 class FakeBus:
-    """Async bus that yields pushed updates until closed."""
+    """Async bus that yields pushed updates until closed.
 
-    def __init__(self) -> None:
+    When ``channels_enabled`` is true, exposes ``subscribe_channel`` so runtime
+    prefers the multi-event bridge (#285). Default false keeps unit tests on the
+    synchronous callback path; opt in for channel-bridge coverage.
+    """
+
+    def __init__(self, *, channels_enabled: bool = False) -> None:
         self._queue: asyncio.Queue[FakeParamUpdate | None] = asyncio.Queue()
+        self._channel_queues: list[asyncio.Queue[Any]] = []
+        self._channels_enabled = channels_enabled
+        if channels_enabled:
+            self.subscribe_channel = self._subscribe_channel
 
     async def subscribe(self) -> AsyncIterator[FakeParamUpdate]:
         while True:
@@ -35,11 +45,32 @@ class FakeBus:
                 break
             yield update
 
+    async def _subscribe_channel(self, *_channels: object) -> AsyncIterator[Any]:
+        """Yield non-ParamUpdate channel events until closed with ``None``."""
+        q: asyncio.Queue[Any] = asyncio.Queue()
+        self._channel_queues.append(q)
+        try:
+            while True:
+                item = await q.get()
+                if item is None:
+                    break
+                yield item
+        finally:
+            with contextlib.suppress(ValueError):
+                self._channel_queues.remove(q)
+
     def push(self, update: FakeParamUpdate) -> None:
         self._queue.put_nowait(update)
 
+    def publish_event(self, event: Any) -> None:
+        """Fan out a non-ParamUpdate event to channel subscribers."""
+        for q in list(self._channel_queues):
+            q.put_nowait(event)
+
     def close(self) -> None:
         self._queue.put_nowait(None)
+        for q in list(self._channel_queues):
+            q.put_nowait(None)
 
 
 class FakeApi:
@@ -66,8 +97,9 @@ class FakeGateway:
         start_error: Exception | None = None,
         start_delay: bool = False,
         modules: list[str] | None = None,
+        bus_channels: bool = False,
     ) -> None:
-        self.bus = FakeBus()
+        self.bus = FakeBus(channels_enabled=bus_channels)
         self.modules: list[str] = list(modules) if modules is not None else ["DEV1"]
         self._online: dict[str, bool] = {}
         self._connected_at: dict[str, int] = {}
@@ -232,6 +264,7 @@ class FakeGateway:
             last_down_for_s=outage.get("last_down_for_s"),
             last_reason=outage.get("last_reason"),
         )
+        self._publish_bus_event(event)
         for callback in list(self._connectivity_callbacks):
             callback(event)
 
@@ -282,6 +315,7 @@ class FakeGateway:
             last_down_for_s=self._cloud_outage.get("last_down_for_s"),
             last_reason=self._cloud_outage.get("last_reason"),
         )
+        self._publish_bus_event(event)
         for callback in list(self._cloud_session_callbacks):
             callback(event)
 
@@ -307,8 +341,43 @@ class FakeGateway:
             last_resumed_after_s=self._live_push.get("last_resumed_after_s"),
             changed=changed,
         )
+        self._publish_bus_event(event)
         for callback in list(self._live_push_callbacks):
             callback(event)
+
+    def emit_alarm_quantity(
+        self,
+        devid: str,
+        quantity: int | None,
+        *,
+        source: str = "ws",
+        changed: bool = True,
+    ) -> None:
+        """Notify alarm-quantity callbacks / bus channel."""
+        event = types.SimpleNamespace(devid=devid, quantity=quantity, source=source, changed=changed)
+        self._publish_bus_event(event)
+        for callback in list(self._alarm_quantity_callbacks):
+            callback(event)
+
+    def emit_alarm_feed_invalidate(self, devid: str, *, reason: str = "change") -> None:
+        """Notify alarm-feed invalidate callbacks / bus channel."""
+        event = types.SimpleNamespace(devid=devid, reason=reason, source="ws")
+        self._publish_bus_event(event)
+        for callback in list(self._alarm_feed_invalidate_callbacks):
+            callback(event)
+
+    def emit_activity_feed_invalidate(self, devid: str, *, reason: str = "task") -> None:
+        """Notify activity-feed invalidate callbacks / bus channel."""
+        event = types.SimpleNamespace(devid=devid, reason=reason, source="ws")
+        self._publish_bus_event(event)
+        for callback in list(self._activity_feed_invalidate_callbacks):
+            callback(event)
+
+    def _publish_bus_event(self, event: Any) -> None:
+        """Dual-write to FakeBus channels when enabled."""
+        publish = getattr(self.bus, "publish_event", None)
+        if callable(publish):
+            publish(event)
 
 
 class FakeStore:
@@ -372,12 +441,17 @@ def make_runtime(
     modules_meta: dict[str, dict[str, Any]] | None = None,
     start_error: Exception | None = None,
     start_delay: bool = False,
+    bus_channels: bool = False,
 ) -> tuple[Any, FakeApi, FakeGateway, FakeStore]:
     """Build a BragerRuntime wired to fake collaborators."""
     from custom_components.habragerone.runtime import BragerRuntime
 
     fake_api = api or FakeApi()
-    fake_gateway = gateway or FakeGateway(start_error=start_error, start_delay=start_delay)
+    fake_gateway = gateway or FakeGateway(
+        start_error=start_error,
+        start_delay=start_delay,
+        bus_channels=bus_channels,
+    )
     fake_store = store or FakeStore(flat_values=flat_values)
     runtime = BragerRuntime(
         api=fake_api,  # type: ignore[arg-type]
