@@ -97,3 +97,47 @@ async def test_make_runtime_with_explicit_gateway_bus_channels_flag() -> None:
     assert runtime.supports_bus_channels is True
     assert gateway._connectivity_callbacks == []
     await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_bus_channel_live_push_routes_to_listeners() -> None:
+    """LIVE_PUSH channel events reach live-push listeners."""
+    runtime, _api, gateway, _store = make_runtime(bus_channels=True)
+    hits: list[int] = []
+    runtime.add_live_push_listener(lambda: hits.append(1))
+    await runtime.start()
+    await asyncio.sleep(0)
+    gateway.emit_live_push(healthy=False, live_stale_for_s=12.0)
+    for _ in range(10):
+        await asyncio.sleep(0)
+    assert hits == [1]
+    assert runtime.live_push_health().get("push_healthy") is False
+    await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_bus_channel_handler_exception_is_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Exceptions inside channel routing do not kill the dispatcher."""
+    runtime, _api, gateway, _store = make_runtime(bus_channels=True)
+
+    def _boom(_event: object) -> None:
+        raise RuntimeError("channel boom")
+
+    with patch.object(BragerRuntime, "_on_gateway_connectivity", _boom):
+        await runtime.start()
+        await asyncio.sleep(0)
+        with caplog.at_level("ERROR"):
+            gateway.emit_connectivity("DEV1", False, source="ws")
+            for _ in range(10):
+                await asyncio.sleep(0)
+        assert "Bus channel event handler failed" in caplog.text
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_bus_channels_noop_without_subscribe_channel() -> None:
+    """Defensive early-return when subscribe_channel disappears."""
+    runtime, _api, _gateway, _store = make_runtime(bus_channels=False)
+    await runtime._dispatch_bus_channels()
