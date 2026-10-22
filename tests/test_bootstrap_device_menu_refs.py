@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import inspect
+import types
 from types import SimpleNamespace
+from typing import Any
+
+import pytest
 
 from custom_components.habragerone.bootstrap import (
     _call_kwargs_with_optional_devices,
     _device_menu_refs_from_module,
 )
+from tests.conftest import install_pybragerone_stubs
+
+install_pybragerone_stubs()
+
+from tests.helpers.fakes import make_runtime  # noqa: E402
 
 
 def test_call_kwargs_with_optional_devices_only_when_supported() -> None:
@@ -55,3 +64,131 @@ def test_device_menu_refs_from_module_parses_when_library_present() -> None:
     assert refs[0].manuf_code == 67
     assert refs[0].dev_code == 7
     assert refs[0].fw == "2.08"
+
+
+def test_device_menu_refs_import_error_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ImportError from missing modules package is treated as unsupported."""
+
+    def _boom(_name: str) -> Any:
+        raise ImportError("no package")
+
+    monkeypatch.setattr("importlib.import_module", _boom)
+    assert _device_menu_refs_from_module(SimpleNamespace(devices=[{"manuf_code": 1, "dev_code": 2}])) is None
+
+
+def test_device_menu_refs_non_callable_helper_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Older modules module without the helper attribute yields None."""
+    fake = types.ModuleType("pybragerone.models.api.modules")
+    monkeypatch.setattr("importlib.import_module", lambda _name: fake)
+    assert _device_menu_refs_from_module(SimpleNamespace(devices=[{"manuf_code": 1, "dev_code": 2}])) is None
+
+
+def test_device_menu_refs_empty_helper_result_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Helper returning [] is normalized to None."""
+    fake = types.ModuleType("pybragerone.models.api.modules")
+    fake.device_menu_refs_from_module = lambda _devices: []  # type: ignore[attr-defined]
+    monkeypatch.setattr("importlib.import_module", lambda _name: fake)
+    assert _device_menu_refs_from_module(SimpleNamespace(devices=[{"manuf_code": 1, "dev_code": 2}])) is None
+
+
+def _install_modules_helper(monkeypatch: pytest.MonkeyPatch, helper: Any) -> None:
+    """Inject ``pybragerone.models.api.modules`` for soft-compat unit tests."""
+    fake = types.ModuleType("pybragerone.models.api.modules")
+    fake.device_menu_refs_from_module = helper  # type: ignore[attr-defined]
+    monkeypatch.setattr("importlib.import_module", lambda _name: fake)
+
+
+@pytest.mark.asyncio
+async def test_runtime_menu_for_devid_passes_devices_when_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime route-visibility menu fetch forwards devices= when signature allows."""
+    refs = [SimpleNamespace(manuf_code=67, dev_code=7, fw="2.08")]
+    _install_modules_helper(monkeypatch, lambda _devices: refs)
+
+    runtime, _api, _gateway, _store = make_runtime()
+    runtime.modules_meta = {
+        "DEV1": {
+            "device_menu": 0,
+            "permissions": ["READ"],
+            "devices": [{"manuf_code": 67, "dev_code": 7, "fw": "2.08"}],
+        }
+    }
+    seen: dict[str, Any] = {}
+
+    class _Resolver:
+        async def get_module_menu(
+            self,
+            *,
+            device_menu: int,
+            permissions: list[str],
+            devices: object | None = None,
+        ) -> object:
+            seen["device_menu"] = device_menu
+            seen["permissions"] = permissions
+            seen["devices"] = devices
+            return SimpleNamespace(routes=[])
+
+    menu = await runtime._menu_for_devid("DEV1", _Resolver())  # type: ignore[arg-type]
+    assert menu is not None
+    assert seen["device_menu"] == 0
+    assert seen["devices"] is refs
+
+
+@pytest.mark.asyncio
+async def test_runtime_menu_for_devid_skips_devices_without_signature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy get_module_menu without devices= keeps kwargs unchanged."""
+    refs = [SimpleNamespace(manuf_code=1, dev_code=2, fw="1.0")]
+    _install_modules_helper(monkeypatch, lambda _devices: refs)
+
+    runtime, _api, _gateway, _store = make_runtime()
+    runtime.modules_meta = {
+        "DEV1": {
+            "device_menu": 4,
+            "permissions": [],
+            "devices": [{"manuf_code": 1, "dev_code": 2, "fw": "1.0"}],
+        }
+    }
+    seen: dict[str, Any] = {}
+
+    class _Resolver:
+        async def get_module_menu(self, *, device_menu: int, permissions: list[str]) -> object:
+            seen.update({"device_menu": device_menu, "permissions": permissions})
+            return SimpleNamespace(routes=[])
+
+    menu = await runtime._menu_for_devid("DEV1", _Resolver())  # type: ignore[arg-type]
+    assert menu is not None
+    assert "devices" not in seen
+
+
+@pytest.mark.asyncio
+async def test_runtime_menu_for_devid_tolerates_helper_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Helper/import failures still fetch the menu without devices=."""
+    runtime, _api, _gateway, _store = make_runtime()
+    runtime.modules_meta = {
+        "DEV1": {
+            "device_menu": 4,
+            "permissions": [],
+            "devices": [{"manuf_code": 1, "dev_code": 2, "fw": "1.0"}],
+        }
+    }
+
+    def _boom(_name: str) -> Any:
+        raise RuntimeError("import failed")
+
+    monkeypatch.setattr("importlib.import_module", _boom)
+
+    class _Resolver:
+        async def get_module_menu(self, **kwargs: Any) -> object:
+            assert "devices" not in kwargs
+            return SimpleNamespace(routes=[])
+
+    with caplog.at_level("DEBUG"):
+        menu = await runtime._menu_for_devid("DEV1", _Resolver())  # type: ignore[arg-type]
+    assert menu is not None
+    assert "Device menu refs unavailable" in caplog.text
