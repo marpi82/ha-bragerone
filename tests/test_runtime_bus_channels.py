@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -155,3 +156,26 @@ async def test_dispatch_bus_channels_noop_without_subscribe_channel() -> None:
     """Defensive early-return when subscribe_channel disappears."""
     runtime, _api, _gateway, _store = make_runtime(bus_channels=False)
     await runtime._dispatch_bus_channels()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_bus_channels_finally_without_aclose() -> None:
+    """Dispatcher finally-block tolerates async iterators that lack ``aclose``."""
+
+    class _NoAclose:
+        def __aiter__(self) -> _NoAclose:
+            return self
+
+        async def __anext__(self) -> object:
+            raise StopAsyncIteration
+
+    runtime, _api, gateway, _store = make_runtime(bus_channels=True)
+    gateway.bus.subscribe_channel = lambda *_channels: _NoAclose()  # type: ignore[method-assign]
+    await runtime._dispatch_bus_channels()
+
+
+def test_route_bus_channel_event_ignores_unknown_shapes() -> None:
+    """Unrecognised channel payloads are dropped (no handler crash)."""
+    runtime, _api, _gateway, _store = make_runtime(bus_channels=True)
+    runtime._route_bus_channel_event(object())
+    runtime._route_bus_channel_event(SimpleNamespace(foo="bar"))
