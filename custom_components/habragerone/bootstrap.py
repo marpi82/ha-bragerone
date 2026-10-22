@@ -37,6 +37,36 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
+def _device_menu_refs_from_module(module: Any) -> list[Any] | None:
+    """Build ``DeviceMenuRef`` list from ``Module.devices`` when the library supports it (#438)."""
+    devices_raw = getattr(module, "devices", None)
+    if not devices_raw:
+        return None
+    try:
+        from importlib import import_module
+
+        modules_api = import_module("pybragerone.models.api.modules")
+    except ImportError:
+        return None
+    helper = getattr(modules_api, "device_menu_refs_from_module", None)
+    if not callable(helper):
+        return None
+    refs = helper(devices_raw)
+    return refs or None
+
+
+def _call_kwargs_with_optional_devices(
+    signature: inspect.Signature,
+    kwargs: dict[str, Any],
+    devices: list[Any] | None,
+) -> dict[str, Any]:
+    """Include ``devices=`` only when the callable accepts it (soft-compat with older pins)."""
+    out = dict(kwargs)
+    if devices is not None and "devices" in signature.parameters:
+        out["devices"] = devices
+    return out
+
+
 class EntityDescriptor(TypedDict, total=False):
     """Serialized descriptor for one HA entity candidate."""
 
@@ -1001,6 +1031,7 @@ async def _build_permission_gated_panel_groups(
     warn_if_empty: bool = True,
     flat_values: Mapping[str, Any] | None = None,
     use_store_flat_values: bool = True,
+    devices: list[Any] | None = None,
 ) -> dict[str, list[str]]:
     """Build panel groups for *permissions* only — never retry with ``permissions=None``.
 
@@ -1025,6 +1056,7 @@ async def _build_permission_gated_panel_groups(
             during panel group construction (#192).
         use_store_flat_values: When ``False``, omit implicit ParamStore flattening so
             ``displayDropdown`` gates stay unprimed (structural route membership).
+        devices: Optional ``DeviceMenuRef`` list from ``Module.devices`` (#438).
 
     Returns:
         Mapping of panel name to symbols (possibly empty).
@@ -1047,7 +1079,12 @@ async def _build_permission_gated_panel_groups(
         elif callable(getattr(resolver, "get_module_menu", None)):
             from pybragerone.models.param_resolver import ParamResolver
 
-            menu = await resolver.get_module_menu(device_menu=device_menu, permissions=permissions)
+            menu_kwargs = _call_kwargs_with_optional_devices(
+                inspect.signature(resolver.get_module_menu),
+                {"device_menu": device_menu, "permissions": permissions},
+                devices,
+            )
+            menu = await resolver.get_module_menu(**menu_kwargs)
             routes_i18n = await resolver._panel_title_i18n(menu)
             static_route_symbols = await resolver._static_route_symbols_for_menu(menu)
             return ParamResolver.build_panel_groups_from_menu(
@@ -1062,6 +1099,7 @@ async def _build_permission_gated_panel_groups(
             build_kwargs["flat_values"] = None
     elif "use_store_flat_values" in signature.parameters:
         build_kwargs["use_store_flat_values"] = use_store_flat_values
+    build_kwargs = _call_kwargs_with_optional_devices(signature, build_kwargs, devices)
     groups = cast(dict[str, list[str]], await build_panel_groups(**build_kwargs))
     if warn_if_empty and not _panel_group_symbols(groups):
         LOGGER.warning(
@@ -1204,6 +1242,7 @@ async def async_build_bootstrap_payload(
     for module in effective_modules:
         module_permissions = [str(perm) for perm in getattr(module, "permissions", []) or []]
         panel_paths: dict[str, str] = {}
+        menu_devices = _device_menu_refs_from_module(module)
 
         # Full permission-gated set: every panel the account can see, regardless of
         # whether it is reachable from the everyday web UI (#212).
@@ -1214,6 +1253,7 @@ async def async_build_bootstrap_payload(
             devid=str(module.devid),
             web_ui_only=False,
             use_store_flat_values=False,
+            devices=menu_devices,
         )
         symbols = _panel_group_symbols(groups)
         for panel_name, panel_symbols in groups.items():
@@ -1237,6 +1277,7 @@ async def async_build_bootstrap_payload(
             web_ui_only=True,
             warn_if_empty=False,
             use_store_flat_values=False,
+            devices=menu_devices,
         )
         per_module_ui_route_symbols[module.devid] = _panel_group_symbols(ui_groups)
 
@@ -1249,7 +1290,12 @@ async def async_build_bootstrap_payload(
         assets = getattr(resolver, "_assets", None)
         if assets is not None and hasattr(assets, "get_module_menu"):
             try:
-                menu = await assets.get_module_menu(device_menu=module.deviceMenu, permissions=module_permissions)
+                menu_kwargs = _call_kwargs_with_optional_devices(
+                    inspect.signature(assets.get_module_menu),
+                    {"device_menu": module.deviceMenu, "permissions": module_permissions},
+                    menu_devices,
+                )
+                menu = await assets.get_module_menu(**menu_kwargs)
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu)
                 per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu)
                 module_route_dep_index = _route_dep_index_from_menu(menu)
@@ -1276,10 +1322,12 @@ async def async_build_bootstrap_payload(
         if not per_module_symbol_kinds[module.devid] and assets is not None and hasattr(assets, "get_module_menu"):
             # Retry menu metadata with the same permission set only — never ungate.
             try:
-                menu_retry = await assets.get_module_menu(
-                    device_menu=module.deviceMenu,
-                    permissions=module_permissions,
+                menu_retry_kwargs = _call_kwargs_with_optional_devices(
+                    inspect.signature(assets.get_module_menu),
+                    {"device_menu": module.deviceMenu, "permissions": module_permissions},
+                    menu_devices,
                 )
+                menu_retry = await assets.get_module_menu(**menu_retry_kwargs)
                 per_module_symbol_kinds[module.devid] = _collect_symbol_kinds_from_menu(menu_retry)
                 per_module_symbol_routes[module.devid] = _collect_symbol_route_meta_from_menu(menu_retry)
                 module_route_dep_index = _route_dep_index_from_menu(menu_retry)
@@ -1525,6 +1573,7 @@ async def async_build_bootstrap_payload(
 
     for module in effective_modules:
         module_enabled_by_default = per_module_enabled_by_default.get(module.devid, {})
+        menu_refs = _device_menu_refs_from_module(module)
         modules_meta[module.devid] = {
             "name": module.name,
             "title": module.moduleTitle,
@@ -1534,6 +1583,10 @@ async def async_build_bootstrap_payload(
             "module_interface": module.moduleInterface,
             "module_address": module.moduleAddress,
             "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
+            # Lightweight manuf/dev/fw refs for REST menu construction (#438).
+            "devices": (
+                [{"manuf_code": r.manuf_code, "dev_code": r.dev_code, "fw": r.fw} for r in menu_refs] if menu_refs else []
+            ),
         }
 
         routes_map = per_module_symbol_routes.get(module.devid, {})
