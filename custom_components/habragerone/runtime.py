@@ -276,8 +276,21 @@ class BragerRuntime:
             return None
         perms_raw = meta.get("permissions")
         permissions = [str(perm) for perm in perms_raw] if isinstance(perms_raw, list) else []
+        menu_kwargs: dict[str, Any] = {"device_menu": device_menu, "permissions": permissions}
+        devices_raw = meta.get("devices")
+        if isinstance(devices_raw, list) and devices_raw:
+            try:
+                from importlib import import_module
+
+                modules_api = import_module("pybragerone.models.api.modules")
+                helper = getattr(modules_api, "device_menu_refs_from_module", None)
+                refs = helper(devices_raw) if callable(helper) else None
+                if refs and "devices" in inspect.signature(resolver.get_module_menu).parameters:
+                    menu_kwargs["devices"] = refs
+            except Exception:
+                LOGGER.debug("Device menu refs unavailable for devid=%s", devid, exc_info=True)
         try:
-            menu = await resolver.get_module_menu(device_menu=device_menu, permissions=permissions)
+            menu = await resolver.get_module_menu(**menu_kwargs)
         except Exception:
             LOGGER.debug("Menu fetch failed for route visibility devid=%s", devid, exc_info=True)
             return None
