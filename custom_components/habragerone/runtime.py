@@ -119,24 +119,10 @@ class BragerRuntime:
         self._first_update_logged = False
         self._tasks.append(asyncio.create_task(self.store.run_with_bus(self.gateway.bus), name="habragerone-store-sync"))
         self._tasks.append(asyncio.create_task(self._dispatch_updates(), name="habragerone-update-dispatch"))
-        register = getattr(self.gateway, "on_module_connectivity", None)
-        if self.supports_module_connectivity and callable(register):
-            register(self._on_gateway_connectivity)
-        register_session = getattr(self.gateway, "on_cloud_session", None)
-        if self.supports_cloud_session and callable(register_session):
-            register_session(self._on_gateway_cloud_session)
-        register_live_push = getattr(self.gateway, "on_live_push", None)
-        if self.supports_live_push and callable(register_live_push):
-            register_live_push(self._on_gateway_live_push)
-        register_alarm_qty = getattr(self.gateway, "on_alarm_quantity", None)
-        if self.supports_alarm_quantity and callable(register_alarm_qty):
-            register_alarm_qty(self._on_gateway_alarm_quantity)
-        register_alarm_feed = getattr(self.gateway, "on_alarm_feed_invalidate", None)
-        if self.supports_alarm_feed_invalidate and callable(register_alarm_feed):
-            register_alarm_feed(self._on_gateway_alarm_feed_invalidate)
-        register_activity_feed = getattr(self.gateway, "on_activity_feed_invalidate", None)
-        if self.supports_activity_feed_invalidate and callable(register_activity_feed):
-            register_activity_feed(self._on_gateway_activity_feed_invalidate)
+        self._register_gateway_signal_bridge()
+        # Let ``_dispatch_bus_channels`` register its subscribe_channel queue before
+        # ``gateway.start()`` seeds session / connectivity events.
+        await asyncio.sleep(0)
         try:
             await self.gateway.start()
         except Exception:
@@ -431,6 +417,92 @@ class BragerRuntime:
     def supports_module_alarms(self) -> bool:
         """Return whether the API client exposes module alarms list helpers (#222)."""
         return callable(getattr(self.api, "modules_alarms", None)) and callable(getattr(self.api, "modules_alarms_history", None))
+
+    @property
+    def supports_bus_channels(self) -> bool:
+        """Return whether ``gateway.bus`` exposes typed multi-event channels (#285 / #409)."""
+        bus = getattr(self.gateway, "bus", None)
+        return bus is not None and callable(getattr(bus, "subscribe_channel", None))
+
+    def _register_gateway_signal_bridge(self) -> None:
+        """Wire non-ParamUpdate gateway signals via bus channels or callback fallback.
+
+        Prefer ``subscribe_channel`` when the library supports it (single dispatcher
+        task). Fall back to ``on_*`` callbacks on older pins so entity behavior stays
+        unchanged either way.
+        """
+        if self.supports_bus_channels:
+            self._tasks.append(asyncio.create_task(self._dispatch_bus_channels(), name="habragerone-bus-channels"))
+            return
+        register = getattr(self.gateway, "on_module_connectivity", None)
+        if self.supports_module_connectivity and callable(register):
+            register(self._on_gateway_connectivity)
+        register_session = getattr(self.gateway, "on_cloud_session", None)
+        if self.supports_cloud_session and callable(register_session):
+            register_session(self._on_gateway_cloud_session)
+        register_live_push = getattr(self.gateway, "on_live_push", None)
+        if self.supports_live_push and callable(register_live_push):
+            register_live_push(self._on_gateway_live_push)
+        register_alarm_qty = getattr(self.gateway, "on_alarm_quantity", None)
+        if self.supports_alarm_quantity and callable(register_alarm_qty):
+            register_alarm_qty(self._on_gateway_alarm_quantity)
+        register_alarm_feed = getattr(self.gateway, "on_alarm_feed_invalidate", None)
+        if self.supports_alarm_feed_invalidate and callable(register_alarm_feed):
+            register_alarm_feed(self._on_gateway_alarm_feed_invalidate)
+        register_activity_feed = getattr(self.gateway, "on_activity_feed_invalidate", None)
+        if self.supports_activity_feed_invalidate and callable(register_activity_feed):
+            register_activity_feed(self._on_gateway_activity_feed_invalidate)
+
+    async def _dispatch_bus_channels(self) -> None:
+        """Fan out non-ParamUpdate bus channels into existing gateway handlers (#285)."""
+        bus = self.gateway.bus
+        subscribe_channel = getattr(bus, "subscribe_channel", None)
+        if not callable(subscribe_channel):
+            return
+        # StrEnum channel values (py-bragerone #409). Avoid importing BusChannel so
+        # mypy / older installed wheels without the symbol stay soft-compatible.
+        agen = subscribe_channel(
+            "module_connectivity",
+            "cloud_session",
+            "live_push",
+            "alarm_quantity",
+            "alarm_feed",
+            "activity_feed",
+        )
+        try:
+            async for event in agen:
+                try:
+                    self._route_bus_channel_event(event)
+                except Exception:
+                    LOGGER.exception("Bus channel event handler failed")
+        except asyncio.CancelledError:
+            raise
+        finally:
+            aclose = getattr(agen, "aclose", None)
+            if callable(aclose):
+                with contextlib.suppress(Exception):
+                    await aclose()
+
+    def _route_bus_channel_event(self, event: Any) -> None:
+        """Dispatch one channel event to the matching gateway handler (duck-typed)."""
+        if hasattr(event, "quantity") and hasattr(event, "devid"):
+            self._on_gateway_alarm_quantity(event)
+            return
+        reason = getattr(event, "reason", None)
+        if reason in ("change", "received"):
+            self._on_gateway_alarm_feed_invalidate(event)
+            return
+        if reason in ("quantity", "task") and hasattr(event, "devid"):
+            self._on_gateway_activity_feed_invalidate(event)
+            return
+        if hasattr(event, "healthy") and not hasattr(event, "devid"):
+            self._on_gateway_live_push(event)
+            return
+        if hasattr(event, "up") and not hasattr(event, "devid"):
+            self._on_gateway_cloud_session(event)
+            return
+        if hasattr(event, "online") and hasattr(event, "devid"):
+            self._on_gateway_connectivity(event)
 
     def alarms_current(self, devid: str) -> list[dict[str, Any]]:
         """Return cached active alarms for *devid* (empty when unknown)."""

@@ -224,9 +224,21 @@ def install_pybragerone_stubs() -> None:
     pybragerone_models_param_resolver_stub.ParamResolver = _ParamResolverStub
     sys.modules["pybragerone.models.param_resolver"] = pybragerone_models_param_resolver_stub
 
+    class _BusChannelStub:
+        """Minimal BusChannel stand-in for multi-event bus tests (#285)."""
+
+        PARAM = "param"
+        MODULE_CONNECTIVITY = "module_connectivity"
+        CLOUD_SESSION = "cloud_session"
+        LIVE_PUSH = "live_push"
+        ALARM_QUANTITY = "alarm_quantity"
+        ALARM_FEED = "alarm_feed"
+        ACTIVITY_FEED = "activity_feed"
+
     pybragerone_models_events_stub = types.ModuleType("pybragerone.models.events")
     pybragerone_models_events_stub.ParamUpdate = object
     pybragerone_models_events_stub.ModuleConnectivity = _ModuleConnectivityStub
+    pybragerone_models_events_stub.BusChannel = _BusChannelStub
     sys.modules["pybragerone.models.events"] = pybragerone_models_events_stub
 
     pybragerone_models_catalog_stub = types.ModuleType("pybragerone.models.catalog")
