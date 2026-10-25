@@ -150,8 +150,9 @@ fix = ["lint", "fmt"]
 typecheck = "mypy"
 all = ["fmt", "lint", "typecheck"]
 # Security
-# HA-pinned transitive advisories (Pillow/uv/setuptools/PyJWT/filelock) live in
-# scripts/run_pip_audit.sh — keep poe and CI on the same ignore list.
+# HA-pinned advisories (Pillow/uv/PyJWT) live in scripts/run_pip_audit.sh —
+# keep poe and CI on the same ignore list. Unpinned transitive/build deps
+# (filelock, setuptools) are bumped in the lockfile instead.
 bandit = { cmd = "bandit -r custom_components -q -ll" }
 pip-audit = { shell = "bash scripts/run_pip_audit.sh" }
 security = ["bandit", "pip-audit"]

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run pip-audit with ignores for Home Assistant–pinned transitive advisories.
-# HA 2026.10.x still pins Pillow==12.3.0, uv==0.12.23, setuptools==84.0.0
-# (and older PyJWT). Bump unpinned transitive deps (e.g. filelock) in the
-# lockfile instead of ignoring them.
+# HA 2026.10.x still pins Pillow==12.3.0 and uv==0.12.23 (and older PyJWT).
+# Bump unpinned transitive/build deps (filelock, setuptools via hatch-vcs) in
+# the lockfile instead of ignoring them.
 set -euo pipefail
 
 uv run --group dev pip-audit \
@@ -61,5 +61,4 @@ uv run --group dev pip-audit \
   --ignore-vuln CVE-2026-96644 \
   --ignore-vuln CVE-2026-96778 \
   --ignore-vuln CVE-2026-114501 \
-  --ignore-vuln GHSA-78g4-xqwv-q3g8 \
-  --ignore-vuln GHSA-xmj3-9gf7-h52w
+  --ignore-vuln GHSA-78g4-xqwv-q3g8
