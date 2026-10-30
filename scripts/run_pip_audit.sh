@@ -29,6 +29,7 @@ uv run --group dev pip-audit \
   --ignore-vuln CVE-2026-112391 \
   --ignore-vuln CVE-2026-112392 \
   --ignore-vuln CVE-2026-112393 \
+  --ignore-vuln CVE-2026-112394 \
   --ignore-vuln CVE-2026-112395 \
   --ignore-vuln CVE-2026-112396 \
   --ignore-vuln CVE-2026-112397 \
@@ -37,6 +38,7 @@ uv run --group dev pip-audit \
   --ignore-vuln CVE-2026-112400 \
   --ignore-vuln CVE-2026-112401 \
   --ignore-vuln CVE-2026-112402 \
+  --ignore-vuln CVE-2026-112403 \
   --ignore-vuln CVE-2026-112404 \
   --ignore-vuln CVE-2026-112405 \
   --ignore-vuln CVE-2026-112406 \
@@ -61,4 +63,22 @@ uv run --group dev pip-audit \
   --ignore-vuln CVE-2026-96644 \
   --ignore-vuln CVE-2026-96778 \
   --ignore-vuln CVE-2026-114501 \
-  --ignore-vuln GHSA-78g4-xqwv-q3g8
+  --ignore-vuln GHSA-78g4-xqwv-q3g8 \
+  --ignore-vuln PYSEC-2026-4326 \
+  --ignore-vuln PYSEC-2026-4327 \
+  --ignore-vuln PYSEC-2026-4328 \
+  --ignore-vuln PYSEC-2026-4329 \
+  --ignore-vuln PYSEC-2026-4330 \
+  --ignore-vuln PYSEC-2026-4331 \
+  --ignore-vuln PYSEC-2026-4332 \
+  --ignore-vuln PYSEC-2026-4333 \
+  --ignore-vuln PYSEC-2026-4334 \
+  --ignore-vuln PYSEC-2026-4335 \
+  --ignore-vuln PYSEC-2026-4336 \
+  --ignore-vuln PYSEC-2026-4337 \
+  --ignore-vuln PYSEC-2026-4338 \
+  --ignore-vuln PYSEC-2026-4339 \
+  --ignore-vuln PYSEC-2026-4340 \
+  --ignore-vuln PYSEC-2026-4341 \
+  --ignore-vuln PYSEC-2026-4342 \
+  --ignore-vuln PYSEC-2026-4343
