@@ -197,13 +197,11 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
     )
 
     descriptors = {(item["devid"], item["symbol"]): item for item in payload["entity_descriptors"]}
-    # Both modules' permission-gated symbols are created, unlike the old UI-filter behavior
-    # that dropped M1 entirely.
-    assert set(descriptors) == {("M1", "SYM_M1"), ("M2", "SYM_M2")}
-    # M1's symbol fails the SPA visibility check (fake resolver ties visibility to devid),
-    # so it is created but disabled by default; M2's passes and stays enabled.
-    assert descriptors[("M1", "SYM_M1")]["enabled_by_default"] is False
+    # Everyday-UI symbols that fail SPA visibility are not materialised (#341).
+    # M1's fake resolver returns not-visible; M2's passes and is created enabled.
+    assert set(descriptors) == {("M2", "SYM_M2")}
     assert descriptors[("M2", "SYM_M2")]["enabled_by_default"] is True
+    assert payload["bootstrap_debug"]["modules"]["M1"]["rejection_count"] >= 1
 
 
 def test_async_build_bootstrap_payload_includes_non_panel_actions_disabled_by_default(
@@ -998,7 +996,7 @@ def test_ui_route_index_ignores_bootstrap_flat_values(monkeypatch: pytest.Monkey
             flat_values: dict[str, object],
         ) -> tuple[bool, dict[str, object]]:
             _ = desc, resolved, flat_values
-            return False, {}
+            return True, {"reason": "visible:default"}
 
         def panel_route_diagnostics_from_menu(self, *args: object, **kwargs: object) -> list[dict[str, object]]:
             _ = args, kwargs
@@ -1049,4 +1047,4 @@ def test_ui_route_index_ignores_bootstrap_flat_values(monkeypatch: pytest.Monkey
     descriptor = next(item for item in payload["entity_descriptors"] if item["symbol"] == "SYM_DROPDOWN")
     assert structural_calls == [(False, False), (True, False)]
     assert descriptor[CONF_UI_ROUTE_SYMBOL] is True
-    assert descriptor["enabled_by_default"] is False
+    assert descriptor["enabled_by_default"] is True
