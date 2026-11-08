@@ -479,7 +479,7 @@ def test_async_build_bootstrap_payload_discovers_status_bar_and_dedupes_rules(
 def test_async_build_bootstrap_payload_tolerates_status_bar_discovery_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Status-bar discovery errors stay non-fatal and leave candidate sets unchanged."""
+    """Status-bar discovery errors / non-set results stay non-fatal."""
 
     class _FakeParamStore:
         def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
@@ -487,6 +487,127 @@ def test_async_build_bootstrap_payload_tolerates_status_bar_discovery_failure(
 
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 1}
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    def _run_with_discover(discover) -> dict[str, object]:
+        class _FakeResolver(_BootstrapResolverRouteStubMixin):
+            @classmethod
+            def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+                _ = api, store, lang
+                return cls()
+
+            async def build_panel_groups(
+                self,
+                *,
+                device_menu: str,
+                permissions: list[str] | None,
+                all_panels: bool,
+                web_ui_only: bool = False,
+                flat_values: object | None = None,
+            ) -> dict[str, list[str]]:
+                _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+                return {"panel": ["PARAM_1"]}
+
+            async def discover_status_bar_parameter_tokens(self) -> object:
+                return await discover()
+
+            async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+                return {
+                    "PARAM_1": {
+                        "label": "Param",
+                        "pool": "P4",
+                        "chan": "v",
+                        "idx": 1,
+                        "mapping": {},
+                        "min": None,
+                        "max": None,
+                        "unit": None,
+                    }
+                }
+
+            def set_runtime_context(self, context: dict[str, object] | None) -> None:
+                _ = context
+
+            async def resolve_value(self, symbol: str) -> SimpleNamespace:
+                _ = symbol
+                return SimpleNamespace(value=1, value_label=None)
+
+            def parameter_visibility_diagnostics(
+                self,
+                *,
+                desc: dict[str, object],
+                resolved: object,
+                flat_values: dict[str, object],
+            ) -> tuple[bool, dict[str, object]]:
+                _ = desc, resolved, flat_values
+                return True, {}
+
+        monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+        monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+        return asyncio.run(
+            async_build_bootstrap_payload(
+                api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+                object_id=1,
+                modules=["M1"],
+                language="en",
+            )
+        )
+
+    async def _raise() -> set[str]:
+        raise RuntimeError("offline assets")
+
+    async def _list_result() -> list[str]:
+        return ["STATUS_BAR_PUMP"]
+
+    for discover in (_raise, _list_result):
+        payload = _run_with_discover(discover)
+        assert "status_bar_tokens" not in payload["bootstrap_debug"]
+        assert {item["symbol"] for item in payload["entity_descriptors"]} == {"PARAM_1"}
+
+
+def test_async_build_bootstrap_payload_skips_duplicate_sample_when_rejections_full(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Duplicate address+rule still drops the twin after the 500-row rejection sample fills."""
+
+    hidden = [f"SYM_HIDDEN_{idx}" for idx in range(500)]
+    rules = [{"else": "OFF"}]
+    mapping = {"paths": {"value": rules}, "component_type": "STATUS"}
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P0.s1": 0}
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -504,31 +625,57 @@ def test_async_build_bootstrap_payload_tolerates_status_bar_discovery_failure(
             flat_values: object | None = None,
         ) -> dict[str, list[str]]:
             _ = device_menu, permissions, all_panels, web_ui_only, flat_values
-            return {"panel": ["PARAM_1"]}
+            # Hidden first so rejection sample fills before address dedupe.
+            return {"panel": [*hidden, "STATUS_PUMP"]}
 
         async def discover_status_bar_parameter_tokens(self) -> set[str]:
-            raise RuntimeError("offline assets")
+            return {"STATUS_BAR_PUMP"}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
-            return {
-                "PARAM_1": {
-                    "label": "Param",
-                    "pool": "P4",
-                    "chan": "v",
+            payload: dict[str, dict[str, object]] = {
+                "STATUS_PUMP": {
+                    "symbol": "STATUS_PUMP",
+                    "label": "Pump",
+                    "pool": "P0",
+                    "chan": "s",
                     "idx": 1,
+                    "mapping": mapping,
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+                "STATUS_BAR_PUMP": {
+                    "symbol": "STATUS_BAR_PUMP",
+                    "label": "Footer pump",
+                    "pool": "P0",
+                    "chan": "s",
+                    "idx": 1,
+                    "mapping": mapping,
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+            }
+            for symbol in hidden:
+                payload[symbol] = {
+                    "symbol": symbol,
+                    "label": symbol,
+                    "pool": "P9",
+                    "chan": "v",
+                    "idx": 0,
                     "mapping": {},
                     "min": None,
                     "max": None,
                     "unit": None,
                 }
-            }
+            return {symbol: payload[symbol] for symbol in symbols if symbol in payload}
 
         def set_runtime_context(self, context: dict[str, object] | None) -> None:
             _ = context
 
         async def resolve_value(self, symbol: str) -> SimpleNamespace:
             _ = symbol
-            return SimpleNamespace(value=1, value_label=None)
+            return SimpleNamespace(value=0, value_label="Off")
 
         def parameter_visibility_diagnostics(
             self,
@@ -537,7 +684,10 @@ def test_async_build_bootstrap_payload_tolerates_status_bar_discovery_failure(
             resolved: object,
             flat_values: dict[str, object],
         ) -> tuple[bool, dict[str, object]]:
-            _ = desc, resolved, flat_values
+            _ = resolved, flat_values
+            symbol = str(desc.get("symbol") or desc.get("label") or "")
+            if symbol.startswith("SYM_HIDDEN_"):
+                return False, {"reason": "hidden:test"}
             return True, {}
 
     class _FakeGateway:
@@ -580,8 +730,10 @@ def test_async_build_bootstrap_payload_tolerates_status_bar_discovery_failure(
             language="en",
         )
     )
-    assert "status_bar_tokens" not in payload["bootstrap_debug"]
-    assert {item["symbol"] for item in payload["entity_descriptors"]} == {"PARAM_1"}
+    assert {item["symbol"] for item in payload["entity_descriptors"]} == {"STATUS_PUMP"}
+    rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
+    assert len(rejections) == 500
+    assert all(row.get("reason") != "duplicate_address_rule" for row in rejections)
 
 
 def test_async_build_bootstrap_payload_caps_spa_visibility_rejection_samples(
