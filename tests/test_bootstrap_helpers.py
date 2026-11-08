@@ -349,3 +349,20 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
     finalized = _finalize_slot_descriptor(companion)
     assert finalized is not None
     assert finalized["platform"] == "sensor"
+
+
+def test_finalize_slot_descriptor_returns_none_when_not_exposable() -> None:
+    """Slot clones without a direct address / write capability are dropped."""
+    assert (
+        _finalize_slot_descriptor(
+            {
+                "symbol": "STATUS_POMPY#value2",
+                "writable": False,
+                "pool": None,
+                "chan": None,
+                "idx": None,
+                "mapping": {},
+            }
+        )
+        is None
+    )
