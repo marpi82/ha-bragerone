@@ -1198,12 +1198,11 @@ async def async_build_bootstrap_payload(
 ) -> BootstrapPayload:
     """Build one-time cached descriptors from menu/assets + prime snapshot.
 
-    Every permission-gated symbol with a display value becomes an entity (#212).
-    ``entity_filter_mode``/``module_filter_modes`` are accepted only for call-site
-    compatibility with old callers/tests and are otherwise ignored: they no longer
-    change which entities are created. Whether a created entity starts enabled is
-    controlled by ``EntityDescriptor.enabled_by_default``, computed per symbol from
-    the everyday-UI route set and SPA visibility (see the accept loop below).
+    Permission-gated symbols with a display value become entities (#212), except
+    everyday-UI route symbols that fail SPA ``isParameterVisible`` at bootstrap —
+    those are omitted entirely (#341). Installer-only symbols stay created but
+    disabled by default. ``entity_filter_mode``/``module_filter_modes`` are accepted
+    only for call-site compatibility and are otherwise ignored.
     """
     _ = entity_filter_mode, module_filter_modes
     from pybragerone.models.param import ParamStore
@@ -1359,6 +1358,7 @@ async def async_build_bootstrap_payload(
 
     for module in effective_modules:
         module_symbols: set[str] = set()
+        spa_visibility_rejected: set[str] = set()
         devid_text = str(module.devid)
         module_rejections: list[dict[str, Any]] = []
         module_accepts: list[dict[str, Any]] = []
@@ -1448,9 +1448,10 @@ async def async_build_bootstrap_payload(
                     continue
                 has_runtime_raw = _has_runtime_raw_value(payload=payload, mapping=mapping_dict, flat_values=flat_values)
 
-                # Everyday-UI route + SPA-visible now decides ``enabled_by_default``, never
-                # whether the entity is created at all (#212): every permission-gated symbol
-                # with a display value is accepted.
+                # Everyday-UI route symbols: SPA ``isParameterVisible`` gates both
+                # ``enabled_by_default`` and entity creation (#341 / py#468). Installer-
+                # only symbols (outside the everyday route set) still become entities
+                # disabled by default (#212) without a device-type denylist.
                 if is_ui_route_symbol:
                     try:
                         visible, visible_diag = resolver.parameter_visibility_diagnostics(
@@ -1458,7 +1459,20 @@ async def async_build_bootstrap_payload(
                             resolved=resolved,
                             flat_values=flat_values,
                         )
-                        enabled_by_default = bool(visible)
+                        if not visible:
+                            spa_visibility_rejected.add(symbol)
+                            if len(module_rejections) < 500:
+                                module_rejections.append(
+                                    {
+                                        "symbol": symbol,
+                                        "reason": "hidden:spa_visibility",
+                                        "visibility": visible_diag,
+                                        "menu_kinds": sorted(symbol_kinds),
+                                        "panel_path": panel_path,
+                                    }
+                                )
+                            continue
+                        enabled_by_default = True
                     except Exception:
                         LOGGER.debug("Visibility diagnostics failed for %s/%s", module.devid, symbol, exc_info=True)
                         enabled_by_default = True
@@ -1499,12 +1513,18 @@ async def async_build_bootstrap_payload(
 
         # Secondary pass: include command-like/special actions that are outside panel groups
         # (permissions-only extras, e.g. module restart commands). These are always disabled
-        # by default — they are never part of the everyday web UI.
+        # by default — they are never part of the everyday web UI. Symbols rejected by SPA
+        # visibility in the primary loop must not reappear here (#341).
         extra_candidates = per_module_symbol_kinds.get(module.devid, {})
         symbols_to_resolve: list[str] = [
             symbol
             for symbol, kinds in extra_candidates.items()
-            if symbol not in module_symbols and ("write" in kinds or "special" in kinds) and symbol not in details
+            if (
+                symbol not in module_symbols
+                and symbol not in spa_visibility_rejected
+                and ("write" in kinds or "special" in kinds)
+                and symbol not in details
+            )
         ]
         if symbols_to_resolve:
             try:
@@ -1518,7 +1538,7 @@ async def async_build_bootstrap_payload(
                     exc_info=True,
                 )
         for symbol, kinds in extra_candidates.items():
-            if symbol in module_symbols:
+            if symbol in module_symbols or symbol in spa_visibility_rejected:
                 continue
             if "write" not in kinds and "special" not in kinds:
                 continue
