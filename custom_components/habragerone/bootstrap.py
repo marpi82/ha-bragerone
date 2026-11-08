@@ -1358,6 +1358,7 @@ async def async_build_bootstrap_payload(
 
     for module in effective_modules:
         module_symbols: set[str] = set()
+        spa_visibility_rejected: set[str] = set()
         devid_text = str(module.devid)
         module_rejections: list[dict[str, Any]] = []
         module_accepts: list[dict[str, Any]] = []
@@ -1459,6 +1460,7 @@ async def async_build_bootstrap_payload(
                             flat_values=flat_values,
                         )
                         if not visible:
+                            spa_visibility_rejected.add(symbol)
                             module_rejections.append(
                                 {
                                     "symbol": symbol,
@@ -1510,12 +1512,18 @@ async def async_build_bootstrap_payload(
 
         # Secondary pass: include command-like/special actions that are outside panel groups
         # (permissions-only extras, e.g. module restart commands). These are always disabled
-        # by default — they are never part of the everyday web UI.
+        # by default — they are never part of the everyday web UI. Symbols rejected by SPA
+        # visibility in the primary loop must not reappear here (#341).
         extra_candidates = per_module_symbol_kinds.get(module.devid, {})
         symbols_to_resolve: list[str] = [
             symbol
             for symbol, kinds in extra_candidates.items()
-            if symbol not in module_symbols and ("write" in kinds or "special" in kinds) and symbol not in details
+            if (
+                symbol not in module_symbols
+                and symbol not in spa_visibility_rejected
+                and ("write" in kinds or "special" in kinds)
+                and symbol not in details
+            )
         ]
         if symbols_to_resolve:
             try:
@@ -1529,7 +1537,7 @@ async def async_build_bootstrap_payload(
                     exc_info=True,
                 )
         for symbol, kinds in extra_candidates.items():
-            if symbol in module_symbols:
+            if symbol in module_symbols or symbol in spa_visibility_rejected:
                 continue
             if "write" not in kinds and "special" not in kinds:
                 continue
