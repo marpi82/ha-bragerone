@@ -1459,16 +1459,15 @@ async def async_build_bootstrap_payload(
                             flat_values=flat_values,
                         )
                         if not visible:
-                            if len(module_rejections) < 500:
-                                module_rejections.append(
-                                    {
-                                        "symbol": symbol,
-                                        "reason": "hidden:spa_visibility",
-                                        "visibility": visible_diag,
-                                        "menu_kinds": sorted(symbol_kinds),
-                                        "panel_path": panel_path,
-                                    }
-                                )
+                            module_rejections.append(
+                                {
+                                    "symbol": symbol,
+                                    "reason": "hidden:spa_visibility",
+                                    "visibility": visible_diag,
+                                    "menu_kinds": sorted(symbol_kinds),
+                                    "panel_path": panel_path,
+                                }
+                            )
                             continue
                         enabled_by_default = True
                     except Exception:

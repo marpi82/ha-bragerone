@@ -201,7 +201,8 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
     # M1's fake resolver returns not-visible; M2's passes and is created enabled.
     assert set(descriptors) == {("M2", "SYM_M2")}
     assert descriptors[("M2", "SYM_M2")]["enabled_by_default"] is True
-    assert payload["bootstrap_debug"]["modules"]["M1"]["rejection_count"] >= 1
+    m1_rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
+    assert any(row.get("reason") == "hidden:spa_visibility" for row in m1_rejections)
 
 
 def test_async_build_bootstrap_payload_includes_non_panel_actions_disabled_by_default(
