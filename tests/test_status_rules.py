@@ -513,6 +513,49 @@ def test_library_evaluator_available_handles_import_error(monkeypatch: pytest.Mo
     assert status_rules_mod._library_evaluator_available() is False
 
 
+def test_library_and_local_evaluators_skip_non_matching_selectors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cover for-loop continues: bad flat keys and multi-selector equalTo miss→hit."""
+    from custom_components.habragerone import status_rules as status_rules_mod
+    from custom_components.habragerone.status_rules import evaluate_status_value_rules
+
+    # Non-string / empty keys are ignored when seeding ParamStore for the library path.
+    assert (
+        status_rules_mod._evaluate_rules_via_library(
+            [{"else": "OFF"}],
+            flat_values={"": 1, 12: 2, "P1.v0": 0},
+        )
+        == "OFF"
+    )
+
+    # First selector misses, second hits (local fallback for-loop continue).
+    monkeypatch.setattr(status_rules_mod, "_library_evaluator_available", lambda: False)
+    assert (
+        evaluate_status_value_rules(
+            mapping={
+                "paths": {
+                    "value": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 1,
+                                    "operation": "equalTo",
+                                    "value": [
+                                        {"group": "P1", "number": 0, "use": "v"},
+                                        {"group": "P1", "number": 1, "use": "v"},
+                                    ],
+                                }
+                            ],
+                            "then": "ON",
+                        }
+                    ]
+                }
+            },
+            flat_values={"P1.v0": 0, "P1.v1": 1},
+        )
+        == "ON"
+    )
+
+
 def test_compare_condition_supports_prefixed_and_not_equal_operations() -> None:
     assert compare_condition(operation="xa.notEqualTo", actual=1, expected=2) is True
     assert compare_condition(operation="equalTo", actual=1, expected=1) is True
