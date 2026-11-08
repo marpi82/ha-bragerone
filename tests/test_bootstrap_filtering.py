@@ -205,6 +205,123 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
     assert any(row.get("reason") == "hidden:spa_visibility" for row in m1_rejections)
 
 
+def test_async_build_bootstrap_payload_caps_spa_visibility_rejection_samples(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SPA-hidden rejects keep excluding symbols after the 500-row diagnostic sample fills (#341)."""
+
+    hidden_symbols = [f"SYM_HIDDEN_{idx}" for idx in range(501)]
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P4.v1": 42}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        def __init__(self) -> None:
+            self._current_devid = ""
+
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": list(hidden_symbols)}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                symbol: {
+                    "label": symbol,
+                    "pool": "P4",
+                    "chan": "v",
+                    "idx": 1,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+                for symbol in symbols
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            if not isinstance(context, dict):
+                self._current_devid = ""
+                return
+            self._current_devid = str(context.get("devid", ""))
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=1, value_label="1")
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return False, {"reason": "spa_hidden"}
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+
+    assert payload["entity_descriptors"] == []
+    rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
+    assert len(rejections) == 500
+    assert all(row.get("reason") == "hidden:spa_visibility" for row in rejections)
+
+
 def test_async_build_bootstrap_payload_does_not_recreate_spa_hidden_ui_write_as_extra(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
