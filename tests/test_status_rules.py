@@ -234,6 +234,12 @@ def test_status_binary_has_sync_path() -> None:
 
     assert status_value_rules_fingerprint(None) is None
     assert status_value_rules_fingerprint({"paths": {"value": [{"else": "OFF"}]}}) == repr([{"else": "OFF"}])
+    # Equivalent trees fingerprint identically regardless of dict key insertion order.
+    assert status_value_rules_fingerprint(
+        {"paths": {"value": [{"then": "ON", "if": [{"expected": 1, "operation": "equalTo", "value": []}]}]}}
+    ) == status_value_rules_fingerprint(
+        {"paths": {"value": [{"if": [{"operation": "equalTo", "value": [], "expected": 1}], "then": "ON"}]}}
+    )
     assert status_rule_selector_addresses(None) == set()
     assert status_rule_selector_addresses({"paths": {}}) == set()
 
@@ -287,33 +293,48 @@ def test_status_binary_has_sync_path() -> None:
         ]
     ) == {"P8.v3"}
 
-    # Unmatched SPA rules can still resolve via command_rules without a second evaluate.
-    spa_then_command = {
+    # Matched then:null / unmatched SPA rules must not fall through to raw bit coerce.
+    spa_then_null = {
         "mapping": {
             "paths": {
                 "value": [
                     {
                         "if": [
                             {
-                                "expected": 99,
+                                "expected": None,
                                 "operation": "equalTo",
-                                "value": [{"group": "P1", "number": 0, "use": "v"}],
+                                "value": [{"group": "P31", "number": 50, "use": "s"}],
                             }
                         ],
-                        "then": "AUTO",
-                    }
+                        "then": None,
+                    },
+                    {"else": "OFF"},
                 ]
             },
-            "command_rules": [
-                {"value": "On", "conditions": [{"operation": "equalTo", "expected": 1, "targets": []}]},
-            ],
+            "inputs": [{"address": "P31.s12", "bit": 0, "mask": 1}],
         }
     }
-    assert try_resolve_status_binary_sync(descriptor=spa_then_command, flat_values={"P1.v0": 1}, default_actual=1) is True
+    assert (
+        try_resolve_status_binary_sync(
+            descriptor=spa_then_null,
+            flat_values={"P31.s12": 1},
+            default_actual=1,
+        )
+        is None
+    )
+    assert status_binary_has_sync_path(descriptor=spa_then_null, flat_values={"P31.s12": 1}, default_actual=1) is False
 
     # Preferred bit/mask with a non-numeric actual falls back to coerce_status_bool.
     bit_bool = {"mapping": {"inputs": [{"address": "P5.s11", "bit": 1}]}}
     assert try_resolve_status_binary_sync(descriptor=bit_bool, flat_values={"P5.s11": True}, default_actual=1) is True
+    assert (
+        try_resolve_status_binary_sync(
+            descriptor={"mapping": {"inputs": [{"address": "P5.s11"}]}},
+            flat_values={"P5.s11": 1},
+            default_actual=1,
+        )
+        is None
+    )
 
 
 def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:

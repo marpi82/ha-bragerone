@@ -57,11 +57,24 @@ def mapping_has_status_value_rules(mapping: Mapping[str, Any] | None) -> bool:
 
 
 def status_value_rules_fingerprint(mapping: Mapping[str, Any] | None) -> str | None:
-    """Stable fingerprint of the SPA rule list used for evaluation / address dedupe."""
+    """Stable fingerprint of the SPA rule list used for evaluation / address dedupe.
+
+    Dictionary keys are sorted so equivalent rule trees fingerprint identically
+    regardless of insertion order; list order is preserved.
+    """
     rules = _status_value_rule_list(mapping)
     if rules is None:
         return None
-    return repr(rules)
+    return repr(_canonicalize_for_fingerprint(rules))
+
+
+def _canonicalize_for_fingerprint(value: Any) -> Any:
+    """Return a deep copy with mapping keys sorted for stable ``repr`` fingerprints."""
+    if isinstance(value, Mapping):
+        return {key: _canonicalize_for_fingerprint(value[key]) for key in sorted(value.keys(), key=str)}
+    if isinstance(value, list):
+        return [_canonicalize_for_fingerprint(item) for item in value]
+    return value
 
 
 def status_rule_selector_addresses(mapping: Mapping[str, Any] | None) -> set[str]:
@@ -293,23 +306,13 @@ def try_resolve_status_binary_sync(
     mapping: Mapping[str, Any] | None = mapping_raw if isinstance(mapping_raw, Mapping) else None
     if mapping is not None and mapping_has_status_value_rules(mapping):
         # Only claim a sync path when the rule list yields an on/off label.
-        # Unsupported / undefined results keep the async library resolver fallback.
+        # Matched ``then: null``, unmatched rules, and non-bool labels all defer to
+        # the async library resolver — do not fall through to raw/bit coercion.
         display = evaluate_status_value_rules(mapping=mapping, flat_values=flat_values)
-        resolved = status_label_to_bool(display)
-        if resolved is not None:
-            return resolved
-        if display is not None:
-            return None
-        # Unmatched SPA rules: try command_rules without re-running the evaluator.
-        command_bool = status_label_to_bool(
-            _command_rules_display_value(mapping=mapping, flat_values=flat_values, default_actual=default_actual)
-        )
-        if command_bool is not None:
-            return command_bool
-    else:
-        rule_value = resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
-        if rule_value is not None:
-            return rule_value
+        return status_label_to_bool(display)
+    rule_value = resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
+    if rule_value is not None:
+        return rule_value
     if mapping is None:
         return None
     inputs = mapping.get("inputs")

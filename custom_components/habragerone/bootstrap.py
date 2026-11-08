@@ -415,7 +415,19 @@ def _isolate_composite_companion(descriptor: EntityDescriptor) -> None:
 
     mapping = descriptor.get("mapping")
     if isinstance(mapping, dict):
-        descriptor["mapping"] = {key: value for key, value in mapping.items() if key not in {"command_rules", "inputs"}}
+        # Keep component_type / enum hints, but drop parent write metadata and the
+        # primary card's SPA value rules — companions bind a different register.
+        cleaned: dict[str, Any] = {key: value for key, value in mapping.items() if key not in {"command_rules", "inputs"}}
+        for container_name in ("paths", "raw"):
+            container = cleaned.get(container_name)
+            if not isinstance(container, dict):
+                continue
+            stripped = {key: value for key, value in container.items() if key not in {"value", "any"}}
+            if stripped:
+                cleaned[container_name] = stripped
+            else:
+                cleaned.pop(container_name, None)
+        descriptor["mapping"] = cleaned
 
 
 def _descriptor_for_value_slot(

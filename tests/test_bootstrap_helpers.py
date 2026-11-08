@@ -227,11 +227,13 @@ def test_rule_address_dedupe_key_and_measurement_unit_helpers() -> None:
     """Footer diodes share address+rule fingerprint; measurement units keep companions."""
     rules = [{"else": "OFF"}]
     mapping = {"paths": {"value": rules}}
+    from custom_components.habragerone.status_rules import status_value_rules_fingerprint
+
     assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": 1}, mapping=mapping) == (
         "P0",
         "s",
         1,
-        repr(rules),
+        status_value_rules_fingerprint(mapping),
     )
     assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": "x"}, mapping=mapping) is None
     assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": 1}, mapping={"paths": {}}) is None
@@ -426,6 +428,11 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
                 "component_type": "STATUS",
                 "command_rules": [{"command": "BOILER_START", "value": "ON"}],
                 "inputs": [{"address": "P5.s0"}],
+                "paths": {
+                    "value": [{"else": "ON"}],
+                    "unit": [{"group": "P5", "number": 0, "use": "u"}],
+                },
+                "raw": {"any": [{"else": "OFF"}], "meta": 1},
             },
         },
         slot={"slot": "value3", "pool": "P32", "chan": "s", "idx": 1},
@@ -434,11 +441,41 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
     assert status_companion["symbol"] == "STATUS_POMPY#value3"
     assert status_companion["chan"] == "s"
     assert status_companion["writable"] is False
-    # Status companions keep parent enum maps / unit, but drop write/command metadata.
+    # Status companions keep parent enum maps / unit, but drop write/command metadata
+    # and the primary card's SPA value rules (paths.value / raw.any).
     assert status_companion["options"] == ["Off", "On"]
     assert status_companion["enum_map"] == {"Off": 0, "On": 1}
     assert status_companion.get("unit") == {"0": "Off", "1": "On"}
-    assert status_companion["mapping"] == {"component_type": "STATUS"}
+    assert status_companion["mapping"] == {
+        "component_type": "STATUS",
+        "paths": {"unit": [{"group": "P5", "number": 0, "use": "u"}]},
+        "raw": {"meta": 1},
+    }
+
+    # Value-only paths/raw containers are dropped entirely after stripping rules.
+    value_only_companion = _descriptor_for_value_slot(
+        {
+            **base,
+            "mapping": {
+                "component_type": "STATUS",
+                "paths": {"value": [{"else": "ON"}]},
+                "raw": {"any": [{"else": "OFF"}]},
+            },
+        },
+        slot={"slot": "value3", "pool": "P32", "chan": "s", "idx": 2},
+        parent_label="Heat pump status",
+    )
+    assert value_only_companion["mapping"] == {"component_type": "STATUS"}
+    # Non-dict paths/raw entries are left untouched.
+    weird_container = _descriptor_for_value_slot(
+        {
+            **base,
+            "mapping": {"component_type": "STATUS", "paths": "bad", "raw": ["x"]},
+        },
+        slot={"slot": "value3", "pool": "P32", "chan": "s", "idx": 3},
+        parent_label="Heat pump status",
+    )
+    assert weird_container["mapping"] == {"component_type": "STATUS", "paths": "bad", "raw": ["x"]}
 
     status_without_mapping = _descriptor_for_value_slot(
         {**base, "mapping": None},
