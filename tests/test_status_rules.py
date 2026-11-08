@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import builtins
+
+import pytest
+
 from custom_components.habragerone.status_rules import (
     compare_condition,
     normalize_rule_value,
@@ -414,6 +418,99 @@ def test_resolve_entity_bool_evaluates_paths_value_mask_rules() -> None:
         {"else": {"value": "OFF"}},
     ]
     assert status_rules_mod._eval_spa_value_rules(junk_rules, flat_values={}) == "OFF"
+
+
+def test_status_value_rules_local_fallback_when_library_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cover the offline equalTo/notEqualTo evaluator used without ComputedValueEvaluator."""
+    from custom_components.habragerone import status_rules as status_rules_mod
+    from custom_components.habragerone.status_rules import evaluate_status_value_rules
+
+    monkeypatch.setattr(status_rules_mod, "_library_evaluator_available", lambda: False)
+    assert status_rules_mod._evaluate_rules_via_library([{"else": "OFF"}], flat_values={}) is None
+
+    assert (
+        evaluate_status_value_rules(
+            mapping={
+                "paths": {
+                    "value": [
+                        {
+                            "if": [
+                                {
+                                    "expected": "void 0",
+                                    "operation": "t.equalTo",
+                                    "value": [{"group": "P8", "number": 1, "use": "s"}],
+                                }
+                            ],
+                            "then": {"value": "e.ON"},
+                        }
+                    ]
+                }
+            },
+            flat_values={},
+        )
+        == "e.ON"
+    )
+    assert (
+        evaluate_status_value_rules(
+            mapping={
+                "paths": {
+                    "value": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 2,
+                                    "operation": "equalTo",
+                                    "value": [{"group": "P8", "number": 1, "use": "s", "mask": 0x0F}],
+                                }
+                            ],
+                            "then": "ON",
+                            "else": "OFF",
+                        }
+                    ]
+                }
+            },
+            flat_values={"P8.s1": 0x12},
+        )
+        == "ON"
+    )
+    assert (
+        evaluate_status_value_rules(
+            mapping={
+                "paths": {
+                    "value": [
+                        {
+                            "if": [
+                                {
+                                    "expected": None,
+                                    "operation": "notEqualTo",
+                                    "value": [{"group": "P7", "number": 0, "use": "v"}],
+                                }
+                            ],
+                            "then": "ON",
+                        },
+                        {"else": "OFF"},
+                    ]
+                }
+            },
+            flat_values={},
+        )
+        == "OFF"
+    )
+
+
+def test_library_evaluator_available_handles_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing pybragerone import reports the library evaluator as unavailable."""
+    from custom_components.habragerone import status_rules as status_rules_mod
+
+    real_import = builtins.__import__
+
+    def _boom(name: str, globals: object = None, locals: object = None, fromlist: object = (), level: int = 0) -> object:
+        if name.startswith("pybragerone"):
+            raise ImportError("forced")
+        return real_import(name, globals, locals, fromlist, level)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", _boom)
+    assert status_rules_mod._library_evaluator_available() is False
 
 
 def test_compare_condition_supports_prefixed_and_not_equal_operations() -> None:
