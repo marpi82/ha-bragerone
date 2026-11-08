@@ -227,6 +227,93 @@ def test_status_binary_has_sync_path() -> None:
             }
         }
     ) == {"P2.s0"}
+    from custom_components.habragerone.status_rules import (
+        _addresses_from_status_rules,
+        status_value_rules_fingerprint,
+    )
+
+    assert status_value_rules_fingerprint(None) is None
+    assert status_value_rules_fingerprint({"paths": {"value": [{"else": "OFF"}]}}) == repr([{"else": "OFF"}])
+    assert status_rule_selector_addresses(None) == set()
+    assert status_rule_selector_addresses({"paths": {}}) == set()
+
+    # Skip non-mapping / malformed selectors while still collecting valid ones.
+    assert status_rule_selector_addresses(
+        {
+            "paths": {
+                "value": [
+                    "skip-me",
+                    {
+                        "if": [
+                            "bad-cond",
+                            {"expected": 1, "operation": "equalTo", "value": "not-list"},
+                            {
+                                "expected": 1,
+                                "operation": "equalTo",
+                                "value": [
+                                    "bad-sel",
+                                    {"group": "P9", "number": "x", "use": "s"},
+                                    {"group": "P9", "number": 1, "use": ""},
+                                    {"group": "P9", "number": 2, "use": "s"},
+                                ],
+                            },
+                        ],
+                        "then": "ON",
+                    },
+                ]
+            }
+        }
+    ) == {"P9.s2"}
+    # Defensive continues for callers that pass unfiltered rule lists.
+    assert _addresses_from_status_rules(
+        [
+            "skip-me",
+            {
+                "if": [
+                    "bad-cond",
+                    {"expected": 1, "operation": "equalTo", "value": "not-list"},
+                    {
+                        "expected": 1,
+                        "operation": "equalTo",
+                        "value": [
+                            "bad-sel",
+                            {"group": " ", "number": 1, "use": "s"},
+                            {"group": "P8", "number": 3, "use": "v"},
+                        ],
+                    },
+                ],
+                "then": "ON",
+            },
+        ]
+    ) == {"P8.v3"}
+
+    # Unmatched SPA rules can still resolve via command_rules without a second evaluate.
+    spa_then_command = {
+        "mapping": {
+            "paths": {
+                "value": [
+                    {
+                        "if": [
+                            {
+                                "expected": 99,
+                                "operation": "equalTo",
+                                "value": [{"group": "P1", "number": 0, "use": "v"}],
+                            }
+                        ],
+                        "then": "AUTO",
+                    }
+                ]
+            },
+            "command_rules": [
+                {"value": "On", "conditions": [{"operation": "equalTo", "expected": 1, "targets": []}]},
+            ],
+        }
+    }
+    assert try_resolve_status_binary_sync(descriptor=spa_then_command, flat_values={"P1.v0": 1}, default_actual=1) is True
+
+    # Preferred bit/mask with a non-numeric actual falls back to coerce_status_bool.
+    bit_bool = {"mapping": {"inputs": [{"address": "P5.s11", "bit": 1}]}}
+    assert try_resolve_status_binary_sync(descriptor=bit_bool, flat_values={"P5.s11": True}, default_actual=1) is True
 
 
 def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:
