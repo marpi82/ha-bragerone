@@ -40,6 +40,7 @@ from .entity_common import (
     record_platform_entity_stats,
 )
 from .event_feeds import iter_activity_feed_entities, iter_alarm_feed_entities
+from .numeric_display import apply_display_transform, descriptor_numeric_transform, descriptor_transform_precision
 from .runtime import BragerRuntime
 from .status_rules import resolve_rule_display_value
 
@@ -89,6 +90,8 @@ class BragerSymbolSensor(SensorEntity):
         self._symbol = symbol
         self._devid = devid
         self._is_status_symbol = symbol.startswith("STATUS_")
+        self._transform = descriptor_numeric_transform(descriptor)
+        self._precision = descriptor_transform_precision(descriptor)
         self._attr_name = label
         self._attr_suggested_object_id = descriptor_suggested_object_id(descriptor)
         self._attr_unique_id = f"{entry.entry_id}_{devid}_{symbol}".lower().replace(" ", "_")
@@ -264,7 +267,20 @@ class BragerSymbolSensor(SensorEntity):
         if mapped_value is not None:
             self._attr_native_value = _normalize_text_state(mapped_value)
             return
-        self._attr_native_value = _normalize_text_state(self._raw_to_label.get(str(raw_value), raw_value))
+        # ParamStore raw path: apply bootstrap-cached unit transform (parity with number).
+        # Resolver-backed symbols already return display-scaled values above — do not
+        # double-apply here.
+        self._attr_native_value = self._display_from_store_raw(raw_value)
+
+    def _display_from_store_raw(self, raw_value: Any) -> Any:
+        """Convert a ParamStore raw reading to the HA native sensor value."""
+        if isinstance(raw_value, int | float) and not isinstance(raw_value, bool) and self._transform is not None:
+            return apply_display_transform(
+                raw_value,
+                transform=self._transform,
+                precision=self._precision,
+            )
+        return _normalize_text_state(raw_value)
 
     def _display_from_resolved(self, resolved: Any) -> Any:
         """Map resolver/rule output through unit labels when it is still a raw code."""
