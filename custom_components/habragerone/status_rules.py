@@ -93,13 +93,16 @@ def _eval_spa_value_rules(rules: list[Any], *, flat_values: Mapping[str, Any]) -
         conds = rule.get("if")
         if conds is None:
             conds = rule.get("elseif")
-        if isinstance(conds, list) and conds:
-            if all(isinstance(c, Mapping) and _spa_condition_matches(c, flat_values=flat_values) for c in conds):
-                then = rule.get("then")
-                if isinstance(then, Mapping):
-                    return then.get("value")
-                return then
-            continue
+        # Unmatched if/elseif may still carry an inline ``else`` (library parity).
+        if (
+            isinstance(conds, list)
+            and conds
+            and all(isinstance(c, Mapping) and _spa_condition_matches(c, flat_values=flat_values) for c in conds)
+        ):
+            then = rule.get("then")
+            if isinstance(then, Mapping):
+                return then.get("value")
+            return then
         if else_value is None and "else" in rule:
             else_value = rule.get("else")
     if isinstance(else_value, Mapping):
@@ -107,9 +110,16 @@ def _eval_spa_value_rules(rules: list[Any], *, flat_values: Mapping[str, Any]) -
     return else_value
 
 
+def _coerce_spa_expected(expected: Any) -> Any:
+    """Normalize SPA ``void 0`` / empty expected tokens to ``None``."""
+    if isinstance(expected, str) and expected.strip() in {"void 0", "undefined"}:
+        return None
+    return expected
+
+
 def _spa_condition_matches(cond: Mapping[str, Any], *, flat_values: Mapping[str, Any]) -> bool:
     operation = cond.get("operation")
-    expected = cond.get("expected")
+    expected = _coerce_spa_expected(cond.get("expected"))
     if not isinstance(operation, str):
         return False
     values = cond.get("value")
@@ -124,6 +134,14 @@ def _spa_condition_matches(cond: Mapping[str, Any], *, flat_values: Mapping[str,
         if not isinstance(group, str) or not isinstance(number, int) or not isinstance(use, str) or not use:
             continue
         address = f"{group}.{use[0]}{number}"
+        # Absent register: only null/undefined equality can match (pump-diode guard).
+        if address not in flat_values:
+            op = operation.strip()
+            if "." in op:
+                op = op.rsplit(".", 1)[-1]
+            if op == "equalTo" and expected is None:
+                return True
+            continue
         actual = read_target_actual(
             {"address": address, "bit": sel.get("bit"), "mask": sel.get("mask")},
             flat_values=flat_values,

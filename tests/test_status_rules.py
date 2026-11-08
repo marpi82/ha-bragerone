@@ -255,6 +255,8 @@ def test_resolve_entity_bool_evaluates_paths_value_mask_rules() -> None:
     from custom_components.habragerone.status_rules import (
         mapping_has_status_value_rules,
         resolve_entity_bool,
+        resolve_rule_bool,
+        resolve_rule_display_value,
         status_binary_has_sync_path,
     )
 
@@ -280,6 +282,94 @@ def test_resolve_entity_bool_evaluates_paths_value_mask_rules() -> None:
     assert status_binary_has_sync_path(descriptor=descriptor, flat_values={"P31.s50": 0x0A}, default_actual=0x0A) is True
     assert resolve_entity_bool(descriptor=descriptor, flat_values={"P31.s50": 0x0A}, default_actual=0x0A) is True
     assert resolve_entity_bool(descriptor=descriptor, flat_values={"P31.s50": 0x01}, default_actual=0x01) is False
+    # Missing register: equalTo null → then null (undefined), not else OFF.
+    assert resolve_rule_display_value(descriptor=descriptor, flat_values={}, default_actual=0) is None
+    assert resolve_rule_bool(descriptor=descriptor, flat_values={}, default_actual=0) is None
+
+    # Inline else on the same rule as a nonmatching if.
+    inline = {
+        "mapping": {
+            "paths": {
+                "value": [
+                    {
+                        "if": [
+                            {
+                                "expected": 9,
+                                "operation": "equalTo",
+                                "value": [{"group": "P31", "number": 50, "use": "s"}],
+                            }
+                        ],
+                        "then": "ON",
+                        "else": "OFF",
+                    }
+                ]
+            },
+            "command_rules": [],
+            "inputs": [],
+        }
+    }
+    assert resolve_entity_bool(descriptor=inline, flat_values={"P31.s50": 0x01}, default_actual=0x01) is False
+
+    # raw.any / dict then / void 0 expected / junk selectors.
+    raw_any = {
+        "mapping": {
+            "raw": {
+                "any": [
+                    "skip",
+                    {
+                        "if": [
+                            {
+                                "expected": "void 0",
+                                "operation": "t.equalTo",
+                                "value": [
+                                    {"group": "P9", "number": 1, "use": "v"},
+                                    {"bad": True},
+                                ],
+                            }
+                        ],
+                        "then": {"value": "e.ON"},
+                    },
+                    {"else": {"value": "e.OFF"}},
+                ]
+            },
+            "command_rules": [],
+            "inputs": [],
+        }
+    }
+    assert mapping_has_status_value_rules(raw_any["mapping"]) is True
+    assert resolve_rule_display_value(descriptor=raw_any, flat_values={}, default_actual=0) == "On"
+
+    assert mapping_has_status_value_rules(None) is False
+    assert mapping_has_status_value_rules({"paths": {"value": [{"no": "rules"}]}}) is False
+
+    # Branch coverage: junk rules, empty/invalid selectors, missing≠null, Mapping else.
+    from custom_components.habragerone import status_rules as status_rules_mod
+
+    junk_rules = [
+        "skip",
+        {
+            "if": [{"operation": 1, "expected": 1, "value": [{"group": "P1", "number": 0, "use": "v"}]}],
+            "then": "Z",
+        },
+        {"if": [{"operation": "equalTo", "expected": 1, "value": []}], "then": "A"},
+        {"if": [{"operation": "equalTo", "expected": 1, "value": [None]}], "then": "B"},
+        {
+            "if": [{"operation": "equalTo", "expected": 1, "value": [{"group": 1, "number": 0, "use": "v"}]}],
+            "then": "C",
+        },
+        {
+            "if": [
+                {
+                    "operation": "notEqualTo",
+                    "expected": None,
+                    "value": [{"group": "P99", "number": 0, "use": "v"}],
+                }
+            ],
+            "then": "D",
+        },
+        {"else": {"value": "OFF"}},
+    ]
+    assert status_rules_mod._eval_spa_value_rules(junk_rules, flat_values={}) == "OFF"
 
 
 def test_compare_condition_supports_prefixed_and_not_equal_operations() -> None:

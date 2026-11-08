@@ -10,6 +10,7 @@ install_pybragerone_stubs()
 
 from custom_components.habragerone.bootstrap import (  # noqa: E402
     EntityDescriptor,
+    _card_descriptor_has_measurement_unit,
     _coerce_raw,
     _command_rule_names,
     _descriptor_for_value_slot,
@@ -23,6 +24,7 @@ from custom_components.habragerone.bootstrap import (  # noqa: E402
     _is_action_command_name,
     _is_boiler_panel,
     _is_command_like_symbol,
+    _rule_address_dedupe_key,
     _value_slots_from_payload,
     normalize_cached_descriptors,
 )
@@ -209,6 +211,7 @@ def test_runtime_visibility_helpers() -> None:
     assert _has_display_value(value=None, value_label="  ready  ") is True
     assert _has_display_value(value="  ", value_label=None) is False
     assert _has_display_value(value=0, value_label=None) is True
+    assert _has_display_value(value="ready", value_label=None) is True
     assert (
         _has_display_value(
             value=None,
@@ -218,6 +221,41 @@ def test_runtime_visibility_helpers() -> None:
         is True
     )
     assert _has_display_value(value=None, value_label=None, mapping={"paths": {"value": []}}) is False
+
+
+def test_rule_address_dedupe_key_and_measurement_unit_helpers() -> None:
+    """Footer diodes share address+rule fingerprint; measurement units keep companions."""
+    rules = [{"else": "OFF"}]
+    mapping = {"paths": {"value": rules}}
+    assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": 1}, mapping=mapping) == (
+        "P0",
+        "s",
+        1,
+        repr(rules),
+    )
+    assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": "x"}, mapping=mapping) is None
+    assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": 1}, mapping={"paths": {}}) is None
+    assert _rule_address_dedupe_key(
+        payload={"pool": "P0", "chan": "s", "idx": 1},
+        mapping={"raw": {"value": rules}, "paths": "bad"},
+    ) == ("P0", "s", 1, repr(rules))
+    assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": 1}, mapping={"raw": {}}) is None
+    # raw.any counts for mapping_has_status_value_rules but not the fingerprint loop.
+    assert (
+        _rule_address_dedupe_key(
+            payload={"pool": "P0", "chan": "s", "idx": 1},
+            mapping={"raw": {"any": [{"else": "OFF"}]}},
+        )
+        is None
+    )
+
+    assert _card_descriptor_has_measurement_unit({"transform_scale": 0.01}) is True
+    assert _card_descriptor_has_measurement_unit({"unit_code": 49}) is True
+    assert _card_descriptor_has_measurement_unit({"unit_code": "49"}) is True
+    assert _card_descriptor_has_measurement_unit({"unit": "°C"}) is True
+    assert _card_descriptor_has_measurement_unit({"unit": "HEAT_PUMP_STATE"}) is False
+    assert _card_descriptor_has_measurement_unit({"unit": True}) is False
+    assert _card_descriptor_has_measurement_unit({}) is False
 
     assert _has_runtime_raw_value(
         payload={"pool": "P4", "chan": "v", "idx": 1},
