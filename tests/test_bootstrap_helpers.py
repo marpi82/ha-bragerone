@@ -350,6 +350,35 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
     assert finalized is not None
     assert finalized["platform"] == "sensor"
 
+    status_companion = _descriptor_for_value_slot(
+        base,
+        slot={"slot": "value3", "pool": "P32", "chan": "s", "idx": 1},
+        parent_label="Heat pump status",
+    )
+    assert status_companion["symbol"] == "STATUS_POMPY#value3"
+    assert status_companion["chan"] == "s"
+    # Status companions keep parent enum maps / unit (chan == "s").
+    assert status_companion["options"] == ["Off", "On"]
+    assert status_companion["enum_map"] == {"Off": 0, "On": 1}
+    assert status_companion.get("unit") == {"0": "Off", "1": "On"}
+
+    plain_unit = _descriptor_for_value_slot(
+        {
+            **base,
+            "unit": "°C",
+            "unit_code": "celsius",
+            "transform_scale": 0.1,
+            "transform_offset": 0.0,
+            "transform_precision": 1,
+        },
+        slot={"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
+        parent_label="Heat pump status",
+    )
+    # Non-mapping unit stays as-is; transform metadata is still cleared.
+    assert plain_unit.get("unit") == "°C"
+    assert "unit_code" not in plain_unit
+    assert "transform_scale" not in plain_unit
+
 
 def test_finalize_slot_descriptor_returns_none_when_not_exposable() -> None:
     """Slot clones without a direct address / write capability are dropped."""

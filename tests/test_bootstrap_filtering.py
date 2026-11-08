@@ -250,6 +250,7 @@ def test_async_build_bootstrap_payload_expands_composite_value_slots(
                     "value_slots": [
                         {"slot": "value", "pool": "P31", "chan": "s", "idx": 12},
                         {"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
+                        {"slot": "value3", "pool": "P29", "chan": "v", "idx": 1},
                     ],
                 }
             }
@@ -302,6 +303,17 @@ def test_async_build_bootstrap_payload_expands_composite_value_slots(
 
     monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
     monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    import custom_components.habragerone.bootstrap as bootstrap_mod
+
+    real_finalize = bootstrap_mod._finalize_slot_descriptor
+
+    def _finalize_drop_value3(descriptor: dict[str, object]) -> dict[str, object] | None:
+        if str(descriptor.get("symbol") or "").endswith("#value3"):
+            return None
+        return real_finalize(descriptor)
+
+    monkeypatch.setattr(bootstrap_mod, "_finalize_slot_descriptor", _finalize_drop_value3)
 
     payload = asyncio.run(
         async_build_bootstrap_payload(
