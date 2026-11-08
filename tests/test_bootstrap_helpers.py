@@ -332,7 +332,18 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
     assert primary["options"] == ["Off", "On"]
 
     companion = _descriptor_for_value_slot(
-        base,
+        {
+            **base,
+            "writable": True,
+            "min": 0,
+            "max": 100,
+            "menu_kinds": ["read", "write"],
+            "mapping": {
+                "component_type": "STATUS",
+                "command_rules": [{"command": "BOILER_START", "value": "ON"}],
+                "units_source": "BOILER_STATE",
+            },
+        },
         slot={"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
         parent_label="Heat pump status",
     )
@@ -342,6 +353,11 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
     assert companion["pool"] == "P30"
     assert companion["chan"] == "v"
     assert companion["idx"] == 25
+    assert companion["writable"] is False
+    assert companion["min"] is None
+    assert companion["max"] is None
+    assert companion["menu_kinds"] == ["read"]
+    assert companion["mapping"] == {}
     assert companion["options"] == []
     assert companion["enum_map"] == {}
     assert companion.get("unit") is None
@@ -351,16 +367,34 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
     assert finalized["platform"] == "sensor"
 
     status_companion = _descriptor_for_value_slot(
-        base,
+        {
+            **base,
+            "writable": True,
+            "mapping": {
+                "component_type": "STATUS",
+                "command_rules": [{"command": "BOILER_START", "value": "ON"}],
+                "inputs": [{"address": "P5.s0"}],
+            },
+        },
         slot={"slot": "value3", "pool": "P32", "chan": "s", "idx": 1},
         parent_label="Heat pump status",
     )
     assert status_companion["symbol"] == "STATUS_POMPY#value3"
     assert status_companion["chan"] == "s"
-    # Status companions keep parent enum maps / unit (chan == "s").
+    assert status_companion["writable"] is False
+    # Status companions keep parent enum maps / unit, but drop write/command metadata.
     assert status_companion["options"] == ["Off", "On"]
     assert status_companion["enum_map"] == {"Off": 0, "On": 1}
     assert status_companion.get("unit") == {"0": "Off", "1": "On"}
+    assert status_companion["mapping"] == {"component_type": "STATUS"}
+
+    status_without_mapping = _descriptor_for_value_slot(
+        {**base, "mapping": None},
+        slot={"slot": "value3", "pool": "P32", "chan": "s", "idx": 1},
+        parent_label="Heat pump status",
+    )
+    assert status_without_mapping["writable"] is False
+    assert status_without_mapping.get("mapping") is None
 
     plain_unit = _descriptor_for_value_slot(
         {
@@ -374,10 +408,44 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
         slot={"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
         parent_label="Heat pump status",
     )
-    # Non-mapping unit stays as-is; transform metadata is still cleared.
-    assert plain_unit.get("unit") == "°C"
+    # Parent display unit / transforms do not apply to independent companion registers.
+    assert plain_unit.get("unit") is None
     assert "unit_code" not in plain_unit
     assert "transform_scale" not in plain_unit
+
+
+def test_normalize_cached_descriptors_keeps_composite_companions_read_only() -> None:
+    """Cached #valueN rows stay sensors even when parent write metadata is present."""
+    normalized = normalize_cached_descriptors(
+        [
+            {
+                "symbol": "STATUS_POMPY#value2",
+                "devid": "DEV1",
+                "pool": "P30",
+                "chan": "v",
+                "idx": 25,
+                "writable": True,
+                "min": 0,
+                "max": 100,
+                "menu_kinds": ["write"],
+                "mapping": {
+                    "component_type": "STATUS",
+                    "command_rules": [{"command": "BOILER_START", "value": "ON"}],
+                    "units_source": {"0": "Off", "1": "On"},
+                },
+                "unit": {"0": "Off", "1": "On"},
+                "enabled_by_default": False,
+            }
+        ]
+    )
+    assert len(normalized) == 1
+    companion = normalized[0]
+    assert companion["writable"] is False
+    assert companion["platform"] == "sensor"
+    assert companion["mapping"] == {}
+    assert companion["options"] == []
+    assert companion["min"] is None
+    assert companion["max"] is None
 
 
 def test_finalize_slot_descriptor_returns_none_when_not_exposable() -> None:

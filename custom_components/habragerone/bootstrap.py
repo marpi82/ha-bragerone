@@ -324,6 +324,45 @@ def _value_slots_from_payload(payload: Mapping[str, Any]) -> list[dict[str, Any]
     return slots
 
 
+def _is_composite_companion_symbol(symbol: str) -> bool:
+    """Return True for SPA composite companions (``SYMBOL#valueN``)."""
+    return "#" in symbol
+
+
+def _isolate_composite_companion(descriptor: EntityDescriptor) -> None:
+    """Force companions read-only and strip parent write/status metadata (#339).
+
+    Companion slots bind independent registers. They must not inherit the parent's
+    ``writable`` flag, command rules, bounds, or STATUS enum maps — otherwise HA
+    would offer writes/commands against the wrong address and numeric timers would
+    render as parent status labels through ``normalize_cached_descriptors``.
+    """
+    descriptor["writable"] = False
+    descriptor["min"] = None
+    descriptor["max"] = None
+    kinds = descriptor.get("menu_kinds")
+    if isinstance(kinds, list):
+        descriptor["menu_kinds"] = [
+            kind for kind in kinds if isinstance(kind, str) and kind.strip().lower() in {"read", "status"}
+        ]
+
+    if descriptor.get("chan") != "s":
+        descriptor["mapping"] = {}
+        descriptor[CONF_OPTIONS] = []
+        descriptor[CONF_ENUM_MAP] = {}
+        descriptor[CONF_RAW_TO_LABEL] = {}
+        descriptor["unit"] = None
+        descriptor.pop("unit_code", None)
+        descriptor.pop("transform_scale", None)
+        descriptor.pop("transform_offset", None)
+        descriptor.pop("transform_precision", None)
+        return
+
+    mapping = descriptor.get("mapping")
+    if isinstance(mapping, dict):
+        descriptor["mapping"] = {key: value for key, value in mapping.items() if key not in {"command_rules", "inputs"}}
+
+
 def _descriptor_for_value_slot(
     base: EntityDescriptor,
     *,
@@ -343,18 +382,7 @@ def _descriptor_for_value_slot(
         out["symbol"] = symbol
         out["key"] = f"{devid}:{symbol}"
         out["label"] = f"{parent_label} ({slot_name})"
-        # Companion registers are independent addresses; drop parent enum maps /
-        # enum unit so numeric timers/setpoints are not labelled from STATUS.
-        if out.get("chan") != "s":
-            out[CONF_OPTIONS] = []
-            out[CONF_ENUM_MAP] = {}
-            out[CONF_RAW_TO_LABEL] = {}
-            if isinstance(out.get("unit"), Mapping):
-                out["unit"] = None
-            out.pop("unit_code", None)
-            out.pop("transform_scale", None)
-            out.pop("transform_offset", None)
-            out.pop("transform_precision", None)
+        _isolate_composite_companion(out)
     return out
 
 
@@ -1058,13 +1086,19 @@ def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescr
         pool = descriptor.get("pool")
         chan = descriptor.get("chan")
         idx = descriptor.get("idx")
+        if _is_composite_companion_symbol(symbol):
+            _isolate_composite_companion(descriptor)
         mapping = descriptor.get("mapping") if isinstance(descriptor.get("mapping"), dict) else None
         kinds_raw = descriptor.get("menu_kinds")
         if isinstance(kinds_raw, list):
             menu_kinds = {str(kind).strip().lower() for kind in kinds_raw if isinstance(kind, str)}
         else:
             menu_kinds = set()
-        writable = _is_menu_command_action(symbol=symbol, symbol_kinds=menu_kinds, mapping=mapping)
+        writable = (
+            False
+            if _is_composite_companion_symbol(symbol)
+            else _is_menu_command_action(symbol=symbol, symbol_kinds=menu_kinds, mapping=mapping)
+        )
 
         if not _is_exposable_descriptor(writable=writable, pool=pool, chan=chan, idx=idx, mapping=mapping):
             continue

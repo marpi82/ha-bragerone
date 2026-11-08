@@ -233,11 +233,10 @@ def test_async_build_bootstrap_payload_expands_composite_value_slots(
             flat_values: object | None = None,
         ) -> dict[str, list[str]]:
             _ = device_menu, permissions, all_panels, web_ui_only, flat_values
-            return {"panel": ["STATUS_POMPY"]}
+            return {"panel": ["STATUS_POMPY", "PARAM_PASSWORD"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
-            _ = symbols
-            return {
+            payload: dict[str, dict[str, object]] = {
                 "STATUS_POMPY": {
                     "label": "Heat pump status",
                     "pool": "P31",
@@ -252,8 +251,19 @@ def test_async_build_bootstrap_payload_expands_composite_value_slots(
                         {"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
                         {"slot": "value3", "pool": "P29", "chan": "v", "idx": 1},
                     ],
-                }
+                },
+                "PARAM_PASSWORD": {
+                    "label": "Installer password",
+                    "pool": "P1",
+                    "chan": "v",
+                    "idx": 9,
+                    "mapping": {"component_type": "password"},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
             }
+            return {symbol: payload[symbol] for symbol in symbols if symbol in payload}
 
         def set_runtime_context(self, context: dict[str, object] | None) -> None:
             _ = context
