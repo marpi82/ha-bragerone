@@ -587,6 +587,136 @@ def test_async_build_bootstrap_payload_discovers_status_bar_and_dedupes_rules(
     assert any(row.get("reason") == "duplicate_address_rule" for row in rejections)
 
 
+def test_async_build_bootstrap_payload_prefers_ui_footer_over_installer_twin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Everyday-UI STATUS_BAR_* keeps the address key when the menu twin is installer-only."""
+
+    rules = [{"else": "OFF"}]
+    mapping = {"paths": {"value": rules}, "component_type": "STATUS"}
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P0.s1": 0}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, flat_values
+            if web_ui_only:
+                return {}
+            return {"installer": ["STATUS_INSTALLER_PUMP"]}
+
+        async def discover_status_bar_parameter_tokens(self) -> set[object]:
+            return {"STATUS_BAR_PUMP"}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            payload: dict[str, dict[str, object]] = {
+                "STATUS_INSTALLER_PUMP": {
+                    "label": "Installer pump",
+                    "pool": "P0",
+                    "chan": "s",
+                    "idx": 1,
+                    "mapping": mapping,
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+                "STATUS_BAR_PUMP": {
+                    "label": "Footer pump",
+                    "pool": "P0",
+                    "chan": "s",
+                    "idx": 1,
+                    "mapping": mapping,
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+            }
+            return {symbol: payload[symbol] for symbol in symbols if symbol in payload}
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=0, value_label="Off")
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+
+    by_symbol = {item["symbol"]: item for item in payload["entity_descriptors"]}
+    assert set(by_symbol) == {"STATUS_BAR_PUMP"}
+    assert by_symbol["STATUS_BAR_PUMP"].get("enabled_by_default") is True
+    rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
+    assert any(
+        row.get("symbol") == "STATUS_INSTALLER_PUMP" and row.get("reason") == "duplicate_address_rule" for row in rejections
+    )
+
+
 def test_async_build_bootstrap_payload_tolerates_status_bar_discovery_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

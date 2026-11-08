@@ -155,6 +155,11 @@ def test_read_target_actual_handles_address_bit_and_mask() -> None:
 
 
 def test_status_binary_has_sync_path() -> None:
+    from custom_components.habragerone.status_rules import (
+        status_rule_selector_addresses,
+        try_resolve_status_binary_sync,
+    )
+
     with_rules = {
         "mapping": {
             "command_rules": [
@@ -163,9 +168,13 @@ def test_status_binary_has_sync_path() -> None:
         }
     }
     assert status_binary_has_sync_path(descriptor=with_rules, flat_values={}, default_actual=1) is True
+    assert try_resolve_status_binary_sync(descriptor=with_rules, flat_values={}, default_actual=1) is True
 
     with_bits = {"mapping": {"inputs": [{"address": "P5.s11", "bit": 1}]}}
     assert status_binary_has_sync_path(descriptor=with_bits, flat_values={"P5.s11": 64.0}, default_actual=64.0) is True
+    # Bit 1 of 64 is clear → off; bit 1 of 2 is set → on.
+    assert try_resolve_status_binary_sync(descriptor=with_bits, flat_values={"P5.s11": 64.0}, default_actual=64.0) is False
+    assert try_resolve_status_binary_sync(descriptor=with_bits, flat_values={"P5.s11": 2.0}, default_actual=2.0) is True
 
     bare = {"mapping": {"command_rules": []}}
     assert status_binary_has_sync_path(descriptor=bare, flat_values={}, default_actual=64.0) is False
@@ -196,6 +205,28 @@ def test_status_binary_has_sync_path() -> None:
         }
     }
     assert status_binary_has_sync_path(descriptor=numeric_then, flat_values={"P1.v0": 1}, default_actual=1) is False
+    assert try_resolve_status_binary_sync(descriptor=numeric_then, flat_values={"P1.v0": 1}, default_actual=1) is None
+
+    # Elseif selectors are refresh dependencies even when not the primary pool address.
+    assert status_rule_selector_addresses(numeric_then["mapping"]) == {"P1.v0"}
+    assert status_rule_selector_addresses(
+        {
+            "raw": {
+                "any": [
+                    {
+                        "elseif": [
+                            {
+                                "expected": 1,
+                                "operation": "equalTo",
+                                "value": [{"group": "P2", "number": 0, "use": "s"}],
+                            }
+                        ],
+                        "then": "ON",
+                    }
+                ]
+            }
+        }
+    ) == {"P2.s0"}
 
 
 def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:

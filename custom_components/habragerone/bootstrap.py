@@ -30,7 +30,7 @@ from .const import (
     FILTER_MODE_UI,
 )
 from .numeric_display import py_transform_to_ha
-from .status_rules import mapping_has_status_value_rules
+from .status_rules import mapping_has_status_value_rules, status_value_rules_fingerprint
 
 if TYPE_CHECKING:
     from pybragerone import BragerOneApiClient
@@ -341,25 +341,16 @@ def _rule_address_dedupe_key(
     """Identity for SPA diodes that share one register + rule list (menu vs STATUS_BAR_*).
 
     Only rule-list mappings participate — plain setpoints that happen to share a
-    mock address in tests must not collapse together.
+    mock address in tests must not collapse together. Fingerprint uses the same
+    rule-list selector as evaluation (``paths.value`` / ``raw.value`` / ``raw.any``).
     """
     pool = payload.get("pool")
     chan = payload.get("chan")
     idx = payload.get("idx")
     if not isinstance(pool, str) or not isinstance(chan, str) or not isinstance(idx, int):
         return None
-    if not isinstance(mapping, Mapping) or not mapping_has_status_value_rules(mapping):
-        return None
-    rule_fp = ""
-    for container_name in ("paths", "raw"):
-        container = mapping.get(container_name)
-        if not isinstance(container, Mapping):
-            continue
-        value_rules = container.get("value")
-        if isinstance(value_rules, list) and value_rules:
-            rule_fp = repr(value_rules)
-            break
-    if not rule_fp:
+    rule_fp = status_value_rules_fingerprint(mapping)
+    if rule_fp is None:
         return None
     return (pool, chan, idx, rule_fp)
 
@@ -1624,8 +1615,16 @@ async def async_build_bootstrap_payload(
             }
         )
 
-        # Menu / panel symbols first so STATUS_BAR_* footer twins lose address dedupe.
-        ordered_candidates = sorted(module_candidates, key=lambda sym: (1 if str(sym).startswith("STATUS_BAR_") else 0, str(sym)))
+        # Everyday-UI first (so installer-only twins do not claim the dedupe key and
+        # hide an enabled footer), then menu/panel before STATUS_BAR_* among UI peers.
+        ordered_candidates = sorted(
+            module_candidates,
+            key=lambda sym: (
+                0 if sym in module_ui_route_symbols else 1,
+                1 if str(sym).startswith("STATUS_BAR_") else 0,
+                str(sym),
+            ),
+        )
         for symbol in ordered_candidates:
             payload = details.get(symbol)
             if payload is None:

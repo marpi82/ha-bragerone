@@ -25,6 +25,16 @@ def resolve_rule_display_value(
     if paths_display is not None:
         return normalize_rule_value(paths_display)
 
+    return _command_rules_display_value(mapping=mapping, flat_values=flat_values, default_actual=default_actual)
+
+
+def _command_rules_display_value(
+    *,
+    mapping: Mapping[str, Any],
+    flat_values: Mapping[str, Any],
+    default_actual: Any,
+) -> Any | None:
+    """Return the first matched cached ``command_rules`` value, or ``None``."""
     command_rules = mapping.get("command_rules")
     if not isinstance(command_rules, list) or not command_rules:
         return None
@@ -44,6 +54,26 @@ def resolve_rule_display_value(
 def mapping_has_status_value_rules(mapping: Mapping[str, Any] | None) -> bool:
     """Return True when *mapping* carries SPA if/elseif/else value rules."""
     return _status_value_rule_list(mapping) is not None
+
+
+def status_value_rules_fingerprint(mapping: Mapping[str, Any] | None) -> str | None:
+    """Stable fingerprint of the SPA rule list used for evaluation / address dedupe."""
+    rules = _status_value_rule_list(mapping)
+    if rules is None:
+        return None
+    return repr(rules)
+
+
+def status_rule_selector_addresses(mapping: Mapping[str, Any] | None) -> set[str]:
+    """Return register addresses referenced by SPA if/elseif selectors in status rules.
+
+    Used as entity refresh dependencies so non-primary condition registers still
+    wake STATUS_* entities when their value changes.
+    """
+    rules = _status_value_rule_list(mapping)
+    if rules is None:
+        return set()
+    return _addresses_from_status_rules(rules)
 
 
 def evaluate_status_value_rules(
@@ -84,9 +114,11 @@ def _evaluate_rules_via_library(rules: list[Any], *, flat_values: Mapping[str, A
     from pybragerone.models.param_resolver import ComputedValueEvaluator
 
     store = ParamStore()
-    for key, value in flat_values.items():
-        if isinstance(key, str) and key:
-            store.upsert(key, value)
+    # Seed only registers referenced by rule selectors — full flatten upserts
+    # deep-copy family snapshots on every STATUS_* WebSocket tick.
+    for key in _addresses_from_status_rules(rules):
+        if key in flat_values:
+            store.upsert(key, flat_values[key])
     return ComputedValueEvaluator(store).evaluate({"value": list(rules)})
 
 
@@ -111,6 +143,45 @@ def _looks_like_status_rule_list(entries: Any) -> bool:
     if not isinstance(entries, list) or not entries:
         return False
     return any(isinstance(entry, Mapping) and any(key in entry for key in ("if", "elseif", "then", "else")) for entry in entries)
+
+
+def _addresses_from_status_rules(rules: list[Any]) -> set[str]:
+    """Collect ``P<n>.<chan><idx>`` addresses from if/elseif value selectors."""
+    out: set[str] = set()
+    for rule in rules:
+        if not isinstance(rule, Mapping):
+            continue
+        for key in ("if", "elseif"):
+            conds = rule.get(key)
+            if not isinstance(conds, list):
+                continue
+            for cond in conds:
+                if not isinstance(cond, Mapping):
+                    continue
+                values = cond.get("value")
+                if not isinstance(values, list):
+                    continue
+                for sel in values:
+                    if not isinstance(sel, Mapping):
+                        continue
+                    address = _address_from_spa_selector(sel)
+                    if address is not None:
+                        out.add(address)
+    return out
+
+
+def _address_from_spa_selector(entry: Mapping[str, Any]) -> str | None:
+    """Build ``P<n>.<chan><idx>`` from an SPA ``{group, number, use}`` selector."""
+    group = entry.get("group")
+    number = entry.get("number")
+    use = entry.get("use")
+    if not isinstance(group, str) or not group.strip():
+        return None
+    if not isinstance(number, int):
+        return None
+    if not isinstance(use, str) or not use.strip():
+        return None
+    return f"{group.strip()}.{use.strip()[0]}{number}"
 
 
 def _eval_spa_value_rules(rules: list[Any], *, flat_values: Mapping[str, Any]) -> Any | None:
@@ -197,26 +268,66 @@ def status_binary_has_sync_path(
     default_actual: Any,
 ) -> bool:
     """Return whether a status binary can resolve without ``ParamResolver``."""
-    mapping = descriptor.get("mapping")
-    if isinstance(mapping, Mapping) and mapping_has_status_value_rules(mapping):
+    return (
+        try_resolve_status_binary_sync(
+            descriptor=descriptor,
+            flat_values=flat_values,
+            default_actual=default_actual,
+        )
+        is not None
+    )
+
+
+def try_resolve_status_binary_sync(
+    *,
+    descriptor: Mapping[str, Any],
+    flat_values: Mapping[str, Any],
+    default_actual: Any,
+) -> bool | None:
+    """Return on/off when a sync path works, else ``None`` (use ``ParamResolver``).
+
+    Evaluates SPA value rules at most once per call so STATUS_* WebSocket refreshes
+    do not rebuild the library store twice for the same tick.
+    """
+    mapping_raw = descriptor.get("mapping")
+    mapping: Mapping[str, Any] | None = mapping_raw if isinstance(mapping_raw, Mapping) else None
+    if mapping is not None and mapping_has_status_value_rules(mapping):
         # Only claim a sync path when the rule list yields an on/off label.
         # Unsupported / undefined results keep the async library resolver fallback.
         display = evaluate_status_value_rules(mapping=mapping, flat_values=flat_values)
-        if status_label_to_bool(display) is not None:
-            return True
-    if resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual) is not None:
-        return True
-    if not isinstance(mapping, Mapping):
-        return False
+        resolved = status_label_to_bool(display)
+        if resolved is not None:
+            return resolved
+        if display is not None:
+            return None
+        # Unmatched SPA rules: try command_rules without re-running the evaluator.
+        command_bool = status_label_to_bool(
+            _command_rules_display_value(mapping=mapping, flat_values=flat_values, default_actual=default_actual)
+        )
+        if command_bool is not None:
+            return command_bool
+    else:
+        rule_value = resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
+        if rule_value is not None:
+            return rule_value
+    if mapping is None:
+        return None
     inputs = mapping.get("inputs")
     if not isinstance(inputs, list):
-        return False
+        return None
     bit_inputs = [
         entry
         for entry in inputs
         if isinstance(entry, Mapping) and (isinstance(entry.get("bit"), int) or isinstance(entry.get("mask"), int))
     ]
-    return _preferred_bit_input(bit_inputs) is not None
+    preferred = _preferred_bit_input(bit_inputs)
+    if preferred is None:
+        return None
+    actual = read_target_actual(preferred, flat_values=flat_values)
+    if isinstance(actual, int | float) and not isinstance(actual, bool):
+        return bool(int(actual))
+    # Preferred bit/mask input exists — same sync eligibility as resolve_entity_bool.
+    return coerce_status_bool(default_actual)
 
 
 def status_label_to_bool(value: Any) -> bool | None:

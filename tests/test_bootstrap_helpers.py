@@ -240,11 +240,16 @@ def test_rule_address_dedupe_key_and_measurement_unit_helpers() -> None:
         mapping={"raw": {"value": rules}, "paths": "bad"},
     ) == ("P0", "s", 1, repr(rules))
     assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": 1}, mapping={"raw": {}}) is None
-    # raw.any counts for mapping_has_status_value_rules but not the fingerprint loop.
+    # raw.any uses the same rule-list selector as evaluation.
+    assert _rule_address_dedupe_key(
+        payload={"pool": "P0", "chan": "s", "idx": 1},
+        mapping={"raw": {"any": [{"else": "OFF"}]}},
+    ) == ("P0", "s", 1, repr([{"else": "OFF"}]))
+    # Ordinary address selectors in paths.value must not fingerprint as rules.
     assert (
         _rule_address_dedupe_key(
-            payload={"pool": "P0", "chan": "s", "idx": 1},
-            mapping={"raw": {"any": [{"else": "OFF"}]}},
+            payload={"pool": "P0", "chan": "v", "idx": 1},
+            mapping={"paths": {"value": [{"group": "P0", "number": 1, "use": "v"}]}},
         )
         is None
     )
