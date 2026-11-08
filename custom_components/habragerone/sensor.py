@@ -89,7 +89,10 @@ class BragerSymbolSensor(SensorEntity):
 
         self._symbol = symbol
         self._devid = devid
-        self._is_status_symbol = symbol.startswith("STATUS_")
+        # Primary STATUS_* uses ParamResolver rule evaluation. Composite companions
+        # (``STATUS_*#valueN``) bind independent registers and must use slot-local
+        # raw→label maps instead (#339).
+        self._is_status_symbol = symbol.startswith("STATUS_") and "#" not in symbol
         self._transform = descriptor_numeric_transform(descriptor)
         self._precision = descriptor_transform_precision(descriptor)
         self._attr_name = label

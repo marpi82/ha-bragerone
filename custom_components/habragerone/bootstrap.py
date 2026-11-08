@@ -1723,7 +1723,7 @@ async def async_build_bootstrap_payload(
             "module_address": module.moduleAddress,
             "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
             # Lightweight manuf/dev/fw refs for REST menu construction (#438).
-            # BOOTSTRAP_VERSION 17 also expands describe value_slots into companion entities.
+            # BOOTSTRAP_VERSION 18 expands describe value_slots into companion entities.
             "devices": (
                 [{"manuf_code": r.manuf_code, "dev_code": r.dev_code, "fw": r.fw} for r in menu_refs] if menu_refs else []
             ),

@@ -161,6 +161,39 @@ async def test_sensor_update_uses_raw_to_label_mapping(hass: HomeAssistant) -> N
 
 
 @pytest.mark.asyncio
+async def test_sensor_update_maps_status_companion_via_slot_raw_to_label(hass: HomeAssistant) -> None:
+    """STATUS_*#valueN companions use cached labels, not the parent STATUS resolver (#339)."""
+    resolve_status = AsyncMock(return_value="ShouldNotUse")
+    store = FakeStore(flat_values={"P32.s1": 2})
+    runtime = SimpleNamespace(
+        store=store,
+        add_listener=lambda _cb: lambda: None,
+        module_online=lambda _devid: None,
+        async_resolve_status_label=resolve_status,
+        peek_status_label=lambda _symbol: None,
+        cloud_session_connected=True,
+        live_push_healthy=True,
+    )
+    descriptor = sensor_descriptor(
+        symbol="STATUS_POMPY#value3",
+        pool="P32",
+        chan="s",
+        idx=1,
+        unit={"0": "Off", "1": "Idle", "2": "Heating"},
+        raw_to_label={"0": "Off", "1": "Idle", "2": "Heating"},
+    )
+    entry = register_config_entry(hass, runtime=make_runtime()[0], descriptors=[descriptor])
+    entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)  # type: ignore[arg-type]
+    entity.hass = hass
+    entity.entity_id = "sensor.test_status_companion"
+
+    await entity.async_update()
+
+    assert entity.native_value == "heating"
+    resolve_status.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_sensor_update_uses_status_resolver_for_status_symbols(hass: HomeAssistant) -> None:
     store = FakeStore(flat_values={"P5.s5": 768})
     resolve_status = AsyncMock(return_value="Work")
