@@ -30,6 +30,7 @@ from .const import (
     FILTER_MODE_UI,
 )
 from .numeric_display import py_transform_to_ha
+from .status_rules import mapping_has_status_value_rules
 
 if TYPE_CHECKING:
     from pybragerone import BragerOneApiClient
@@ -329,6 +330,63 @@ def _is_composite_companion_symbol(symbol: str) -> bool:
     return "#" in symbol
 
 
+_NAMED_CUSTOM_UNIT_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
+
+
+def _rule_address_dedupe_key(
+    *,
+    payload: Mapping[str, Any],
+    mapping: Mapping[str, Any] | None,
+) -> tuple[str, str, int, str] | None:
+    """Identity for SPA diodes that share one register + rule list (menu vs STATUS_BAR_*).
+
+    Only rule-list mappings participate — plain setpoints that happen to share a
+    mock address in tests must not collapse together.
+    """
+    pool = payload.get("pool")
+    chan = payload.get("chan")
+    idx = payload.get("idx")
+    if not isinstance(pool, str) or not isinstance(chan, str) or not isinstance(idx, int):
+        return None
+    if not isinstance(mapping, Mapping) or not mapping_has_status_value_rules(mapping):
+        return None
+    rule_fp = ""
+    for container_name in ("paths", "raw"):
+        container = mapping.get(container_name)
+        if not isinstance(container, Mapping):
+            continue
+        value_rules = container.get("value")
+        if isinstance(value_rules, list) and value_rules:
+            rule_fp = repr(value_rules)
+            break
+    if not rule_fp:
+        return None
+    return (pool, chan, idx, rule_fp)
+
+
+def _card_descriptor_has_measurement_unit(descriptor: Mapping[str, Any]) -> bool:
+    """Return True when the parent card resolved a SPA measurement unit (not status enum).
+
+    Mirrors library ``_card_unit_exposes_measurement_companions``: numeric unit codes,
+    display UoM strings, or cached transforms come from primary ``u`` → units table.
+    Dict ``unit`` maps / named CustomUnit tokens are status enums — do not keep them
+    on numeric companions.
+    """
+    if descriptor.get("transform_scale") is not None:
+        return True
+    unit_code = descriptor.get("unit_code")
+    if isinstance(unit_code, int | float) and not isinstance(unit_code, bool):
+        return True
+    if isinstance(unit_code, str) and unit_code.strip().isdigit():
+        return True
+    unit = descriptor.get("unit")
+    if isinstance(unit, str) and unit.strip():
+        text = unit.strip()
+        if _NAMED_CUSTOM_UNIT_RE.fullmatch(text) is None:
+            return True
+    return False
+
+
 def _isolate_composite_companion(descriptor: EntityDescriptor) -> None:
     """Force companions read-only and strip parent write/status metadata (#339).
 
@@ -336,6 +394,9 @@ def _isolate_composite_companion(descriptor: EntityDescriptor) -> None:
     ``writable`` flag, command rules, bounds, or STATUS enum maps — otherwise HA
     would offer writes/commands against the wrong address and numeric timers would
     render as parent status labels through ``normalize_cached_descriptors``.
+
+    Measurement cards (weather curve): SPA formats every slot through the card unit
+    resolved via the primary ``u``-channel — keep that unit/transform on companions.
     """
     descriptor["writable"] = False
     descriptor["min"] = None
@@ -346,16 +407,19 @@ def _isolate_composite_companion(descriptor: EntityDescriptor) -> None:
             kind for kind in kinds if isinstance(kind, str) and kind.strip().lower() in {"read", "status"}
         ]
 
+    keep_measurement_unit = _card_descriptor_has_measurement_unit(descriptor)
+
     if descriptor.get("chan") != "s":
         descriptor["mapping"] = {}
         descriptor[CONF_OPTIONS] = []
         descriptor[CONF_ENUM_MAP] = {}
         descriptor[CONF_RAW_TO_LABEL] = {}
-        descriptor["unit"] = None
-        descriptor.pop("unit_code", None)
-        descriptor.pop("transform_scale", None)
-        descriptor.pop("transform_offset", None)
-        descriptor.pop("transform_precision", None)
+        if not keep_measurement_unit:
+            descriptor["unit"] = None
+            descriptor.pop("unit_code", None)
+            descriptor.pop("transform_scale", None)
+            descriptor.pop("transform_offset", None)
+            descriptor.pop("transform_precision", None)
         return
 
     mapping = descriptor.get("mapping")
@@ -923,14 +987,22 @@ def _normalize_panel_path(panel_path: str) -> str:
     return panel_path.strip()
 
 
-def _has_display_value(*, value: Any, value_label: Any) -> bool:
+def _has_display_value(*, value: Any, value_label: Any, mapping: Mapping[str, Any] | None = None) -> bool:
+    """Return whether SPA would treat this parameter as having a display value.
+
+    Scalar/label readings count. SPA if/elseif/else rule lists also count — the
+    web UI shows those diodes even when the current store reading is still
+    undefined at bootstrap time.
+    """
     if isinstance(value_label, str) and value_label.strip():
         return True
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    return True
+    if value is not None:
+        if isinstance(value, str):
+            if value.strip():
+                return True
+        else:
+            return True
+    return bool(mapping is not None and mapping_has_status_value_rules(mapping))
 
 
 def _has_runtime_raw_value(
@@ -1469,11 +1541,33 @@ async def async_build_bootstrap_payload(
         per_module_route_dep_index[module.devid] = module_route_dep_index
         all_candidate_symbols.update(symbols)
 
+    # SPA footer diodes live in ``STATUS_BAR_*`` param chunks (vite map), not menu panels.
+    status_bar_tokens: set[str] = set()
+    discover_status_bar = getattr(resolver, "discover_status_bar_parameter_tokens", None)
+    if callable(discover_status_bar):
+        try:
+            discovered = await discover_status_bar()
+            if isinstance(discovered, set):
+                status_bar_tokens = {str(token) for token in discovered if isinstance(token, str) and token}
+        except Exception:
+            LOGGER.debug("Status-bar parameter discovery failed", exc_info=True)
+    if status_bar_tokens:
+        bootstrap_debug["status_bar_tokens"] = sorted(status_bar_tokens)
+        for module in effective_modules:
+            per_module_candidate_symbols.setdefault(module.devid, set()).update(status_bar_tokens)
+            # Footer diodes are everyday UI — gate with SPA visibility like other UI routes.
+            per_module_ui_route_symbols.setdefault(module.devid, set()).update(status_bar_tokens)
+            for token in status_bar_tokens:
+                per_module_symbol_kinds.setdefault(module.devid, {}).setdefault(token, set()).add("status")
+        all_candidate_symbols.update(status_bar_tokens)
+
     details = await resolver.describe_symbols(sorted(all_candidate_symbols))
     flat_values = store.flatten()
     per_module_symbols: dict[str, set[str]] = {}
 
     per_module_enabled_by_default: dict[str, dict[str, bool]] = {}
+    # Dedupe footer diodes that share address+rule with a menu status (e.g. P0 vs STATUS_BAR_PUMP).
+    accepted_rule_addresses: set[tuple[str, str, int, str]] = set()
 
     for module in effective_modules:
         module_symbols: set[str] = set()
@@ -1530,7 +1624,9 @@ async def async_build_bootstrap_payload(
             }
         )
 
-        for symbol in module_candidates:
+        # Menu / panel symbols first so STATUS_BAR_* footer twins lose address dedupe.
+        ordered_candidates = sorted(module_candidates, key=lambda sym: (1 if str(sym).startswith("STATUS_BAR_") else 0, str(sym)))
+        for symbol in ordered_candidates:
             payload = details.get(symbol)
             if payload is None:
                 if len(module_rejections) < 500:
@@ -1553,7 +1649,11 @@ async def async_build_bootstrap_payload(
                 # SPA ``isParameterVisible`` requires ``parameter.value !== undefined``.
                 # Command-like writes without a display value are not shown on the web UI.
                 # This still gates entity creation (#212 only changes UI-visibility, not this).
-                if not _has_display_value(value=resolved.value, value_label=resolved.value_label):
+                if not _has_display_value(
+                    value=resolved.value,
+                    value_label=resolved.value_label,
+                    mapping=mapping_dict,
+                ):
                     if len(module_rejections) < 500:
                         module_rejections.append(
                             {
@@ -1600,6 +1700,21 @@ async def async_build_bootstrap_payload(
             except Exception:
                 LOGGER.debug("Value resolution failed for %s/%s", module.devid, symbol, exc_info=True)
                 enabled_by_default = is_ui_route_symbol
+
+            address_key = _rule_address_dedupe_key(payload=payload, mapping=mapping_dict)
+            if address_key is not None and address_key in accepted_rule_addresses:
+                if len(module_rejections) < 500:
+                    module_rejections.append(
+                        {
+                            "symbol": symbol,
+                            "reason": "duplicate_address_rule",
+                            "address_key": list(address_key),
+                            "menu_kinds": sorted(symbol_kinds),
+                        }
+                    )
+                continue
+            if address_key is not None:
+                accepted_rule_addresses.add(address_key)
 
             module_symbols.add(symbol)
             module_enabled_by_default[symbol] = enabled_by_default
@@ -1723,7 +1838,7 @@ async def async_build_bootstrap_payload(
             "module_address": module.moduleAddress,
             "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
             # Lightweight manuf/dev/fw refs for REST menu construction (#438).
-            # BOOTSTRAP_VERSION 18 expands describe value_slots into companion entities.
+            # BOOTSTRAP_VERSION 19: measurement-gated composites + STATUS_BAR discovery.
             "devices": (
                 [{"manuf_code": r.manuf_code, "dev_code": r.dev_code, "fw": r.fw} for r in menu_refs] if menu_refs else []
             ),

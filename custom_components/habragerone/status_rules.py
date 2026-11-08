@@ -12,10 +12,19 @@ def resolve_rule_display_value(
     flat_values: Mapping[str, Any],
     default_actual: Any,
 ) -> Any | None:
-    """Return the first matched rule value normalized for display."""
+    """Return the first matched rule value normalized for display.
+
+    Prefers SPA ``paths.value`` / ``raw.value`` if/elseif/else lists (prefix-agnostic
+    diodes such as pump status), then cached ``command_rules``.
+    """
     mapping = descriptor.get("mapping")
     if not isinstance(mapping, Mapping):
         return None
+
+    paths_display = evaluate_status_value_rules(mapping=mapping, flat_values=flat_values)
+    if paths_display is not None:
+        return normalize_rule_value(paths_display)
+
     command_rules = mapping.get("command_rules")
     if not isinstance(command_rules, list) or not command_rules:
         return None
@@ -30,6 +39,98 @@ def resolve_rule_display_value(
             continue
         return normalize_rule_value(value)
     return None
+
+
+def mapping_has_status_value_rules(mapping: Mapping[str, Any] | None) -> bool:
+    """Return True when *mapping* carries SPA if/elseif/else value rules."""
+    return _status_value_rule_list(mapping) is not None
+
+
+def evaluate_status_value_rules(
+    *,
+    mapping: Mapping[str, Any],
+    flat_values: Mapping[str, Any],
+) -> Any | None:
+    """Evaluate SPA ``if``/``elseif``/``else`` lists from ``paths.value`` / ``raw.value``.
+
+    Mirrors ``ComputedValueEvaluator._eval_any_rules`` (including ``else`` and
+    address selectors with ``bit`` / ``mask``).
+    """
+    rules = _status_value_rule_list(mapping)
+    if rules is None:
+        return None
+    return _eval_spa_value_rules(rules, flat_values=flat_values)
+
+
+def _status_value_rule_list(mapping: Mapping[str, Any] | None) -> list[Any] | None:
+    if not isinstance(mapping, Mapping):
+        return None
+    candidates: list[Any] = []
+    paths = mapping.get("paths")
+    if isinstance(paths, Mapping):
+        candidates.append(paths.get("value"))
+    raw = mapping.get("raw")
+    if isinstance(raw, Mapping):
+        candidates.append(raw.get("value"))
+        candidates.append(raw.get("any"))
+    for entries in candidates:
+        if _looks_like_status_rule_list(entries):
+            return [entry for entry in entries if isinstance(entry, Mapping)]
+    return None
+
+
+def _looks_like_status_rule_list(entries: Any) -> bool:
+    if not isinstance(entries, list) or not entries:
+        return False
+    return any(isinstance(entry, Mapping) and any(key in entry for key in ("if", "elseif", "then", "else")) for entry in entries)
+
+
+def _eval_spa_value_rules(rules: list[Any], *, flat_values: Mapping[str, Any]) -> Any | None:
+    else_value: Any = None
+    for rule in rules:
+        if not isinstance(rule, Mapping):
+            continue
+        conds = rule.get("if")
+        if conds is None:
+            conds = rule.get("elseif")
+        if isinstance(conds, list) and conds:
+            if all(isinstance(c, Mapping) and _spa_condition_matches(c, flat_values=flat_values) for c in conds):
+                then = rule.get("then")
+                if isinstance(then, Mapping):
+                    return then.get("value")
+                return then
+            continue
+        if else_value is None and "else" in rule:
+            else_value = rule.get("else")
+    if isinstance(else_value, Mapping):
+        return else_value.get("value")
+    return else_value
+
+
+def _spa_condition_matches(cond: Mapping[str, Any], *, flat_values: Mapping[str, Any]) -> bool:
+    operation = cond.get("operation")
+    expected = cond.get("expected")
+    if not isinstance(operation, str):
+        return False
+    values = cond.get("value")
+    if not isinstance(values, list) or not values:
+        return False
+    for sel in values:
+        if not isinstance(sel, Mapping):
+            continue
+        group = sel.get("group")
+        number = sel.get("number")
+        use = sel.get("use")
+        if not isinstance(group, str) or not isinstance(number, int) or not isinstance(use, str) or not use:
+            continue
+        address = f"{group}.{use[0]}{number}"
+        actual = read_target_actual(
+            {"address": address, "bit": sel.get("bit"), "mask": sel.get("mask")},
+            flat_values=flat_values,
+        )
+        if compare_condition(operation=operation, actual=actual, expected=expected):
+            return True
+    return False
 
 
 def resolve_rule_bool(
@@ -49,10 +150,13 @@ def status_binary_has_sync_path(
     flat_values: Mapping[str, Any],
     default_actual: Any,
 ) -> bool:
-    """Return whether a ``STATUS_*`` binary can resolve without ``ParamResolver``."""
+    """Return whether a status binary can resolve without ``ParamResolver``."""
+    mapping = descriptor.get("mapping")
+    if isinstance(mapping, Mapping) and mapping_has_status_value_rules(mapping):
+        # paths.value if/elseif/else always yields a sync evaluation path (incl. else).
+        return True
     if resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual) is not None:
         return True
-    mapping = descriptor.get("mapping")
     if not isinstance(mapping, Mapping):
         return False
     inputs = mapping.get("inputs")

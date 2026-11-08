@@ -101,6 +101,10 @@ class BragerSymbolSensor(SensorEntity):
         self._attr_entity_registry_enabled_default = descriptor_enabled_by_default(descriptor)
         self._attr_native_unit_of_measurement = self._normalize_unit(descriptor.get("unit"))
         self._attr_device_class, self._attr_state_class = self._infer_sensor_classes(self._attr_native_unit_of_measurement)
+        # SPA unit ``toFixed(N)`` → bootstrap ``transform_precision``. Without this, HA
+        # device-class defaults (e.g. volume_flow_rate → 0) hide tenths/hundredths.
+        if self._precision is not None:
+            self._attr_suggested_display_precision = self._precision
         self._attr_available = True
         self._raw_to_label = descriptor_raw_to_label(descriptor)
         mapping = descriptor.get("mapping")

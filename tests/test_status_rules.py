@@ -250,6 +250,38 @@ def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:
     assert resolve_entity_bool(descriptor=weird, flat_values={"P5.s0": "on"}, default_actual="on") is True
 
 
+def test_resolve_entity_bool_evaluates_paths_value_mask_rules() -> None:
+    """SPA pump-diode paths.value if/elseif/else+mask (prefix-agnostic)."""
+    from custom_components.habragerone.status_rules import (
+        mapping_has_status_value_rules,
+        resolve_entity_bool,
+        status_binary_has_sync_path,
+    )
+
+    rules = [
+        {
+            "if": [{"expected": None, "operation": "equalTo", "value": [{"group": "P31", "number": 50, "use": "s"}]}],
+            "then": None,
+        },
+        {
+            "elseif": [
+                {
+                    "expected": 0,
+                    "operation": "notEqualTo",
+                    "value": [{"group": "P31", "number": 50, "use": "s", "mask": 0x0A}],
+                }
+            ],
+            "then": "ON",
+        },
+        {"else": "OFF"},
+    ]
+    descriptor = {"mapping": {"paths": {"value": rules}, "command_rules": [], "inputs": []}}
+    assert mapping_has_status_value_rules(descriptor["mapping"]) is True
+    assert status_binary_has_sync_path(descriptor=descriptor, flat_values={"P31.s50": 0x0A}, default_actual=0x0A) is True
+    assert resolve_entity_bool(descriptor=descriptor, flat_values={"P31.s50": 0x0A}, default_actual=0x0A) is True
+    assert resolve_entity_bool(descriptor=descriptor, flat_values={"P31.s50": 0x01}, default_actual=0x01) is False
+
+
 def test_compare_condition_supports_prefixed_and_not_equal_operations() -> None:
     assert compare_condition(operation="xa.notEqualTo", actual=1, expected=2) is True
     assert compare_condition(operation="equalTo", actual=1, expected=1) is True

@@ -126,6 +126,7 @@ async def test_sensor_applies_cached_unit_transform(hass: HomeAssistant) -> None
     await entity.async_update()
     assert entity.native_value == 12.7
     assert entity.native_unit_of_measurement == "L/min"
+    assert entity.suggested_display_precision == 2
 
 
 @pytest.mark.asyncio

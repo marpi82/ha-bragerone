@@ -209,6 +209,15 @@ def test_runtime_visibility_helpers() -> None:
     assert _has_display_value(value=None, value_label="  ready  ") is True
     assert _has_display_value(value="  ", value_label=None) is False
     assert _has_display_value(value=0, value_label=None) is True
+    assert (
+        _has_display_value(
+            value=None,
+            value_label=None,
+            mapping={"paths": {"value": [{"else": "OFF"}]}},
+        )
+        is True
+    )
+    assert _has_display_value(value=None, value_label=None, mapping={"paths": {"value": []}}) is False
 
     assert _has_runtime_raw_value(
         payload={"pool": "P4", "chan": "v", "idx": 1},
@@ -400,7 +409,7 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
         {
             **base,
             "unit": "°C",
-            "unit_code": "celsius",
+            "unit_code": 1,
             "transform_scale": 0.1,
             "transform_offset": 0.0,
             "transform_precision": 1,
@@ -408,10 +417,23 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
         slot={"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
         parent_label="Heat pump status",
     )
-    # Parent display unit / transforms do not apply to independent companion registers.
-    assert plain_unit.get("unit") is None
-    assert "unit_code" not in plain_unit
-    assert "transform_scale" not in plain_unit
+    # SPA parseValue formats companions through the card measurement unit (primary u).
+    assert plain_unit.get("unit") == "°C"
+    assert plain_unit.get("unit_code") == 1
+    assert plain_unit.get("transform_scale") == 0.1
+    assert plain_unit.get("transform_precision") == 1
+
+    enum_only = _descriptor_for_value_slot(
+        {
+            **base,
+            "unit": "HEAT_PUMP_STATE",
+            "unit_code": "HEAT_PUMP_STATE",
+        },
+        slot={"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
+        parent_label="Heat pump status",
+    )
+    assert enum_only.get("unit") is None
+    assert "unit_code" not in enum_only
 
 
 def test_normalize_cached_descriptors_keeps_composite_companions_read_only() -> None:
