@@ -205,6 +205,144 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
     assert any(row.get("reason") == "hidden:spa_visibility" for row in m1_rejections)
 
 
+def test_async_build_bootstrap_payload_expands_composite_value_slots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multi-slot describe payloads become one entity per SPA value_slot (#339)."""
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P31.s12": 1, "P30.v25": 40}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": ["STATUS_POMPY", "PARAM_PASSWORD"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            payload: dict[str, dict[str, object]] = {
+                "STATUS_POMPY": {
+                    "label": "Heat pump status",
+                    "pool": "P31",
+                    "chan": "s",
+                    "idx": 12,
+                    "mapping": {"component_type": "STATUS"},
+                    "min": None,
+                    "max": None,
+                    "unit": {"0": "Off", "1": "On"},
+                    "value_slots": [
+                        {"slot": "value", "pool": "P31", "chan": "s", "idx": 12},
+                        {"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
+                        {"slot": "value3", "pool": "P29", "chan": "v", "idx": 1},
+                    ],
+                },
+                "PARAM_PASSWORD": {
+                    "label": "Installer password",
+                    "pool": "P1",
+                    "chan": "v",
+                    "idx": 9,
+                    "mapping": {"component_type": "password"},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+            }
+            return {symbol: payload[symbol] for symbol in symbols if symbol in payload}
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=1, value_label="On")
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    import custom_components.habragerone.bootstrap as bootstrap_mod
+
+    real_finalize = bootstrap_mod._finalize_slot_descriptor
+
+    def _finalize_drop_value3(descriptor: dict[str, object]) -> dict[str, object] | None:
+        if str(descriptor.get("symbol") or "").endswith("#value3"):
+            return None
+        return real_finalize(descriptor)
+
+    monkeypatch.setattr(bootstrap_mod, "_finalize_slot_descriptor", _finalize_drop_value3)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+
+    by_symbol = {item["symbol"]: item for item in payload["entity_descriptors"]}
+    assert set(by_symbol) == {"STATUS_POMPY", "STATUS_POMPY#value2"}
+    assert by_symbol["STATUS_POMPY"]["pool"] == "P31"
+    assert by_symbol["STATUS_POMPY"]["chan"] == "s"
+    assert by_symbol["STATUS_POMPY#value2"]["pool"] == "P30"
+    assert by_symbol["STATUS_POMPY#value2"]["chan"] == "v"
+    assert by_symbol["STATUS_POMPY#value2"]["label"] == "Heat pump status (value2)"
+
+
 def test_async_build_bootstrap_payload_caps_spa_visibility_rejection_samples(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

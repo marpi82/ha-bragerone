@@ -299,6 +299,115 @@ def _is_exposable_descriptor(
     return writable or _has_direct_address(pool=pool, chan=chan, idx=idx)
 
 
+def _value_slots_from_payload(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Normalize ``describe_symbol`` ``value_slots`` into addressable slot dicts.
+
+    Older py-bragerone builds omit ``value_slots``; callers then keep a single
+    primary descriptor. Each slot needs ``slot``/``pool``/``chan``/``idx``.
+    """
+    raw_slots = payload.get("value_slots")
+    if not isinstance(raw_slots, list):
+        return []
+    slots: list[dict[str, Any]] = []
+    for item in raw_slots:
+        if not isinstance(item, Mapping):
+            continue
+        slot_name = item.get("slot")
+        pool = item.get("pool")
+        chan = item.get("chan")
+        idx = item.get("idx")
+        if not isinstance(slot_name, str) or not slot_name.strip():
+            continue
+        if not (isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int) and not isinstance(idx, bool)):
+            continue
+        slots.append({"slot": slot_name.strip(), "pool": pool, "chan": chan, "idx": idx})
+    return slots
+
+
+def _is_composite_companion_symbol(symbol: str) -> bool:
+    """Return True for SPA composite companions (``SYMBOL#valueN``)."""
+    return "#" in symbol
+
+
+def _isolate_composite_companion(descriptor: EntityDescriptor) -> None:
+    """Force companions read-only and strip parent write/status metadata (#339).
+
+    Companion slots bind independent registers. They must not inherit the parent's
+    ``writable`` flag, command rules, bounds, or STATUS enum maps — otherwise HA
+    would offer writes/commands against the wrong address and numeric timers would
+    render as parent status labels through ``normalize_cached_descriptors``.
+    """
+    descriptor["writable"] = False
+    descriptor["min"] = None
+    descriptor["max"] = None
+    kinds = descriptor.get("menu_kinds")
+    if isinstance(kinds, list):
+        descriptor["menu_kinds"] = [
+            kind for kind in kinds if isinstance(kind, str) and kind.strip().lower() in {"read", "status"}
+        ]
+
+    if descriptor.get("chan") != "s":
+        descriptor["mapping"] = {}
+        descriptor[CONF_OPTIONS] = []
+        descriptor[CONF_ENUM_MAP] = {}
+        descriptor[CONF_RAW_TO_LABEL] = {}
+        descriptor["unit"] = None
+        descriptor.pop("unit_code", None)
+        descriptor.pop("transform_scale", None)
+        descriptor.pop("transform_offset", None)
+        descriptor.pop("transform_precision", None)
+        return
+
+    mapping = descriptor.get("mapping")
+    if isinstance(mapping, dict):
+        descriptor["mapping"] = {key: value for key, value in mapping.items() if key not in {"command_rules", "inputs"}}
+
+
+def _descriptor_for_value_slot(
+    base: EntityDescriptor,
+    *,
+    slot: Mapping[str, Any],
+    parent_label: str,
+) -> EntityDescriptor:
+    """Clone ``base`` bound to one SPA value slot (primary or ``value2+`` companion)."""
+    slot_name = str(slot["slot"])
+    out = cast(EntityDescriptor, dict(base))
+    out["pool"] = cast(str, slot["pool"])
+    out["chan"] = cast(str, slot["chan"])
+    out["idx"] = cast(int, slot["idx"])
+    if slot_name != "value":
+        base_symbol = str(base.get("symbol") or "")
+        symbol = f"{base_symbol}#{slot_name}"
+        devid = str(base.get("devid") or "")
+        out["symbol"] = symbol
+        out["key"] = f"{devid}:{symbol}"
+        out["label"] = f"{parent_label} ({slot_name})"
+        _isolate_composite_companion(out)
+    return out
+
+
+def _finalize_slot_descriptor(descriptor: EntityDescriptor) -> EntityDescriptor | None:
+    """Re-infer platform for a slot-bound descriptor; return None if not exposable."""
+    mapping = descriptor.get("mapping") if isinstance(descriptor.get("mapping"), dict) else None
+    writable = bool(descriptor.get("writable"))
+    pool = descriptor.get("pool")
+    chan = descriptor.get("chan")
+    idx = descriptor.get("idx")
+    if not _is_exposable_descriptor(writable=writable, pool=pool, chan=chan, idx=idx, mapping=mapping):
+        return None
+    descriptor[CONF_PLATFORM] = _infer_platform(
+        writable=writable,
+        mapping=mapping,
+        minimum=descriptor.get("min"),
+        maximum=descriptor.get("max"),
+        symbol=str(descriptor.get("symbol") or ""),
+        chan=chan,
+        has_direct_address=_has_direct_address(pool=pool, chan=chan, idx=idx),
+        unit=descriptor.get("unit"),
+    )
+    return descriptor
+
+
 def _infer_platform(
     *,
     writable: bool,
@@ -312,11 +421,15 @@ def _infer_platform(
 ) -> str:
     symbol_norm = symbol.upper()
     component_type = str(mapping.get("component_type") if isinstance(mapping, dict) else "").lower()
+    # Composite companions keep the parent STATUS_* token (``SYM#value2``) but bind a
+    # different channel — only treat them as status when ``chan == "s"``.
+    composite_companion = "#" in symbol_norm
+    status_like = chan == "s" or (not composite_companion and (symbol_norm.startswith("STATUS_") or "status" in component_type))
 
     if not writable and _is_binary_status_unit(unit):
         return "binary_sensor"
 
-    if (chan == "s" or symbol_norm.startswith("STATUS_") or "status" in component_type) and not writable:
+    if status_like and not writable:
         if _is_binary_status_rule(mapping):
             return "binary_sensor"
         if _is_binary_units_source(mapping):
@@ -973,13 +1086,19 @@ def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescr
         pool = descriptor.get("pool")
         chan = descriptor.get("chan")
         idx = descriptor.get("idx")
+        if _is_composite_companion_symbol(symbol):
+            _isolate_composite_companion(descriptor)
         mapping = descriptor.get("mapping") if isinstance(descriptor.get("mapping"), dict) else None
         kinds_raw = descriptor.get("menu_kinds")
         if isinstance(kinds_raw, list):
             menu_kinds = {str(kind).strip().lower() for kind in kinds_raw if isinstance(kind, str)}
         else:
             menu_kinds = set()
-        writable = _is_menu_command_action(symbol=symbol, symbol_kinds=menu_kinds, mapping=mapping)
+        writable = (
+            False
+            if _is_composite_companion_symbol(symbol)
+            else _is_menu_command_action(symbol=symbol, symbol_kinds=menu_kinds, mapping=mapping)
+        )
 
         if not _is_exposable_descriptor(writable=writable, pool=pool, chan=chan, idx=idx, mapping=mapping):
             continue
@@ -1604,7 +1723,7 @@ async def async_build_bootstrap_payload(
             "module_address": module.moduleAddress,
             "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
             # Lightweight manuf/dev/fw refs for REST menu construction (#438).
-            # BOOTSTRAP_VERSION 16 invalidates pre-pin caches so modules_meta picks up devices.
+            # BOOTSTRAP_VERSION 18 expands describe value_slots into companion entities.
             "devices": (
                 [{"manuf_code": r.manuf_code, "dev_code": r.dev_code, "fw": r.fw} for r in menu_refs] if menu_refs else []
             ),
@@ -1757,7 +1876,18 @@ async def async_build_bootstrap_payload(
                 ),
                 unit=unit_value,
             )
-            descriptors.append(descriptor)
+
+            # SPA composites (value2/value3/…) → one entity per describe value_slot (#339 / py#466).
+            value_slots = _value_slots_from_payload(payload if isinstance(payload, Mapping) else {})
+            if len(value_slots) <= 1:
+                descriptors.append(descriptor)
+                continue
+
+            for slot in value_slots:
+                slot_desc = _descriptor_for_value_slot(descriptor, slot=slot, parent_label=label)
+                finalized = _finalize_slot_descriptor(slot_desc)
+                if finalized is not None:
+                    descriptors.append(finalized)
 
     connection_labels, connection_labels_supported = await _resolve_connection_labels(resolver, language=language)
     connection_descriptors: list[dict[str, Any]] = []

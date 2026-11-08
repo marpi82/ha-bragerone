@@ -9,17 +9,21 @@ from tests.conftest import install_pybragerone_stubs
 install_pybragerone_stubs()
 
 from custom_components.habragerone.bootstrap import (  # noqa: E402
+    EntityDescriptor,
     _coerce_raw,
     _command_rule_names,
+    _descriptor_for_value_slot,
     _enum_maps,
     _extract_options,
     _extract_symbol_token,
+    _finalize_slot_descriptor,
     _has_display_value,
     _has_named_command_rule,
     _has_runtime_raw_value,
     _is_action_command_name,
     _is_boiler_panel,
     _is_command_like_symbol,
+    _value_slots_from_payload,
     normalize_cached_descriptors,
 )
 
@@ -278,3 +282,184 @@ def test_normalize_cached_descriptors_classifies_status_fallback_paths() -> None
 
 def test_normalize_cached_descriptors_skips_non_dict_entries() -> None:
     assert normalize_cached_descriptors(["bad"]) == []
+
+
+def test_value_slots_from_payload_filters_invalid_entries() -> None:
+    """Only complete slot address dicts survive; missing value_slots → empty."""
+    assert _value_slots_from_payload({}) == []
+    assert _value_slots_from_payload({"value_slots": "bad"}) == []
+    assert _value_slots_from_payload(
+        {
+            "value_slots": [
+                {"slot": "value", "pool": "P31", "chan": "s", "idx": 12},
+                {"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
+                {"slot": "bad", "pool": "P1", "chan": "v"},  # missing idx
+                {"slot": "", "pool": "P1", "chan": "v", "idx": 0},
+                "skip-me",
+            ]
+        }
+    ) == [
+        {"slot": "value", "pool": "P31", "chan": "s", "idx": 12},
+        {"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
+    ]
+
+
+def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions() -> None:
+    """Primary slot keeps stable unique_id symbol; companions get #valueN + label."""
+    base: EntityDescriptor = {
+        "key": "DEV1:STATUS_POMPY",
+        "symbol": "STATUS_POMPY",
+        "devid": "DEV1",
+        "label": "Heat pump status",
+        "pool": "P31",
+        "chan": "s",
+        "idx": 12,
+        "writable": False,
+        "options": ["Off", "On"],
+        "enum_map": {"Off": 0, "On": 1},
+        "raw_to_label": {"0": "Off", "1": "On"},
+        "mapping": {"component_type": "STATUS"},
+        "unit": {"0": "Off", "1": "On"},
+    }
+    primary = _descriptor_for_value_slot(
+        base,
+        slot={"slot": "value", "pool": "P31", "chan": "s", "idx": 12},
+        parent_label="Heat pump status",
+    )
+    assert primary["symbol"] == "STATUS_POMPY"
+    assert primary["key"] == "DEV1:STATUS_POMPY"
+    assert primary["label"] == "Heat pump status"
+    assert primary["options"] == ["Off", "On"]
+
+    companion = _descriptor_for_value_slot(
+        {
+            **base,
+            "writable": True,
+            "min": 0,
+            "max": 100,
+            "menu_kinds": ["read", "write"],
+            "mapping": {
+                "component_type": "STATUS",
+                "command_rules": [{"command": "BOILER_START", "value": "ON"}],
+                "units_source": "BOILER_STATE",
+            },
+        },
+        slot={"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
+        parent_label="Heat pump status",
+    )
+    assert companion["symbol"] == "STATUS_POMPY#value2"
+    assert companion["key"] == "DEV1:STATUS_POMPY#value2"
+    assert companion["label"] == "Heat pump status (value2)"
+    assert companion["pool"] == "P30"
+    assert companion["chan"] == "v"
+    assert companion["idx"] == 25
+    assert companion["writable"] is False
+    assert companion["min"] is None
+    assert companion["max"] is None
+    assert companion["menu_kinds"] == ["read"]
+    assert companion["mapping"] == {}
+    assert companion["options"] == []
+    assert companion["enum_map"] == {}
+    assert companion.get("unit") is None
+
+    finalized = _finalize_slot_descriptor(companion)
+    assert finalized is not None
+    assert finalized["platform"] == "sensor"
+
+    status_companion = _descriptor_for_value_slot(
+        {
+            **base,
+            "writable": True,
+            "mapping": {
+                "component_type": "STATUS",
+                "command_rules": [{"command": "BOILER_START", "value": "ON"}],
+                "inputs": [{"address": "P5.s0"}],
+            },
+        },
+        slot={"slot": "value3", "pool": "P32", "chan": "s", "idx": 1},
+        parent_label="Heat pump status",
+    )
+    assert status_companion["symbol"] == "STATUS_POMPY#value3"
+    assert status_companion["chan"] == "s"
+    assert status_companion["writable"] is False
+    # Status companions keep parent enum maps / unit, but drop write/command metadata.
+    assert status_companion["options"] == ["Off", "On"]
+    assert status_companion["enum_map"] == {"Off": 0, "On": 1}
+    assert status_companion.get("unit") == {"0": "Off", "1": "On"}
+    assert status_companion["mapping"] == {"component_type": "STATUS"}
+
+    status_without_mapping = _descriptor_for_value_slot(
+        {**base, "mapping": None},
+        slot={"slot": "value3", "pool": "P32", "chan": "s", "idx": 1},
+        parent_label="Heat pump status",
+    )
+    assert status_without_mapping["writable"] is False
+    assert status_without_mapping.get("mapping") is None
+
+    plain_unit = _descriptor_for_value_slot(
+        {
+            **base,
+            "unit": "°C",
+            "unit_code": "celsius",
+            "transform_scale": 0.1,
+            "transform_offset": 0.0,
+            "transform_precision": 1,
+        },
+        slot={"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
+        parent_label="Heat pump status",
+    )
+    # Parent display unit / transforms do not apply to independent companion registers.
+    assert plain_unit.get("unit") is None
+    assert "unit_code" not in plain_unit
+    assert "transform_scale" not in plain_unit
+
+
+def test_normalize_cached_descriptors_keeps_composite_companions_read_only() -> None:
+    """Cached #valueN rows stay sensors even when parent write metadata is present."""
+    normalized = normalize_cached_descriptors(
+        [
+            {
+                "symbol": "STATUS_POMPY#value2",
+                "devid": "DEV1",
+                "pool": "P30",
+                "chan": "v",
+                "idx": 25,
+                "writable": True,
+                "min": 0,
+                "max": 100,
+                "menu_kinds": ["write"],
+                "mapping": {
+                    "component_type": "STATUS",
+                    "command_rules": [{"command": "BOILER_START", "value": "ON"}],
+                    "units_source": {"0": "Off", "1": "On"},
+                },
+                "unit": {"0": "Off", "1": "On"},
+                "enabled_by_default": False,
+            }
+        ]
+    )
+    assert len(normalized) == 1
+    companion = normalized[0]
+    assert companion["writable"] is False
+    assert companion["platform"] == "sensor"
+    assert companion["mapping"] == {}
+    assert companion["options"] == []
+    assert companion["min"] is None
+    assert companion["max"] is None
+
+
+def test_finalize_slot_descriptor_returns_none_when_not_exposable() -> None:
+    """Slot clones without a direct address / write capability are dropped."""
+    assert (
+        _finalize_slot_descriptor(
+            {
+                "symbol": "STATUS_POMPY#value2",
+                "writable": False,
+                "pool": None,
+                "chan": None,
+                "idx": None,
+                "mapping": {},
+            }
+        )
+        is None
+    )
