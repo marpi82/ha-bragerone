@@ -101,6 +101,52 @@ async def test_sensor_listener_lifecycle_and_numeric_state(hass: HomeAssistant) 
 
 
 @pytest.mark.asyncio
+async def test_sensor_applies_cached_unit_transform(hass: HomeAssistant) -> None:
+    """Bootstrap-cached transform_scale must scale ParamStore raw readings (flow x0.01)."""
+    runtime, *_rest = make_runtime(flat_values={"P30.v28": 1270})
+    descriptor = sensor_descriptor(
+        symbol="PARAM_P30_28",
+        pool="P30",
+        chan="v",
+        idx=28,
+        unit="L/min",
+    )
+    descriptor.update(
+        {
+            "transform_scale": 0.01,
+            "transform_offset": 0.0,
+            "transform_precision": 2,
+        }
+    )
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "sensor.flow_total"
+
+    await entity.async_update()
+    assert entity.native_value == 12.7
+    assert entity.native_unit_of_measurement == "L/min"
+
+
+@pytest.mark.asyncio
+async def test_sensor_transform_does_not_override_enum_labels(hass: HomeAssistant) -> None:
+    """Enum/unit labels win over numeric transform when raw maps to a label."""
+    runtime, *_rest = make_runtime(flat_values={"P6.v0": 2})
+    descriptor = sensor_descriptor(
+        unit=None,
+        raw_to_label={"2": "Grzanie"},
+    )
+    descriptor.update({"transform_scale": 0.1, "transform_offset": 0.0, "transform_precision": 1})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "sensor.enumish"
+
+    await entity.async_update()
+    assert entity.native_value == "grzanie"
+
+
+@pytest.mark.asyncio
 async def test_sensor_update_uses_raw_to_label_mapping(hass: HomeAssistant) -> None:
     runtime, *_rest = make_runtime(flat_values={"P6.v0": 1})
     descriptor = sensor_descriptor(raw_to_label={"1": "Open", "0": "Closed"})
