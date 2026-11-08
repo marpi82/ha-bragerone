@@ -53,13 +53,41 @@ def evaluate_status_value_rules(
 ) -> Any | None:
     """Evaluate SPA ``if``/``elseif``/``else`` lists from ``paths.value`` / ``raw.value``.
 
-    Mirrors ``ComputedValueEvaluator._eval_any_rules`` (including ``else`` and
-    address selectors with ``bit`` / ``mask``).
+    Prefers ``pybragerone.ComputedValueEvaluator`` (library boundary). Falls back to a
+    local equalTo/notEqualTo evaluator only when the library evaluator is unavailable
+    (offline stubs / older pins).
     """
     rules = _status_value_rule_list(mapping)
     if rules is None:
         return None
+    library_value = _evaluate_rules_via_library(rules, flat_values=flat_values)
+    if library_value is not None or _library_evaluator_available():
+        return library_value
     return _eval_spa_value_rules(rules, flat_values=flat_values)
+
+
+def _library_evaluator_available() -> bool:
+    """Return True when the pinned library exposes a usable ComputedValueEvaluator."""
+    try:
+        from pybragerone.models.param import ParamStore
+        from pybragerone.models.param_resolver import ComputedValueEvaluator
+    except ImportError:
+        return False
+    return callable(getattr(ParamStore, "upsert", None)) and callable(getattr(ComputedValueEvaluator, "evaluate", None))
+
+
+def _evaluate_rules_via_library(rules: list[Any], *, flat_values: Mapping[str, Any]) -> Any | None:
+    """Run SPA rule lists through ``ComputedValueEvaluator`` when available."""
+    if not _library_evaluator_available():
+        return None
+    from pybragerone.models.param import ParamStore
+    from pybragerone.models.param_resolver import ComputedValueEvaluator
+
+    store = ParamStore()
+    for key, value in flat_values.items():
+        if isinstance(key, str) and key:
+            store.upsert(key, value)
+    return ComputedValueEvaluator(store).evaluate({"value": list(rules)})
 
 
 def _status_value_rule_list(mapping: Mapping[str, Any] | None) -> list[Any] | None:
@@ -171,8 +199,11 @@ def status_binary_has_sync_path(
     """Return whether a status binary can resolve without ``ParamResolver``."""
     mapping = descriptor.get("mapping")
     if isinstance(mapping, Mapping) and mapping_has_status_value_rules(mapping):
-        # paths.value if/elseif/else always yields a sync evaluation path (incl. else).
-        return True
+        # Only claim a sync path when the rule list yields an on/off label.
+        # Unsupported / undefined results keep the async library resolver fallback.
+        display = evaluate_status_value_rules(mapping=mapping, flat_values=flat_values)
+        if status_label_to_bool(display) is not None:
+            return True
     if resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual) is not None:
         return True
     if not isinstance(mapping, Mapping):

@@ -343,6 +343,117 @@ def test_async_build_bootstrap_payload_expands_composite_value_slots(
     assert by_symbol["STATUS_POMPY#value2"]["label"] == "Heat pump status (value2)"
 
 
+def test_async_build_bootstrap_payload_dedupes_rules_per_module_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Identical address+rule on two modules must both keep a descriptor."""
+
+    rules = [{"else": "OFF"}]
+    mapping = {"paths": {"value": rules}, "component_type": "STATUS"}
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P0.s1": 0}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": ["STATUS_PUMP"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                symbol: {
+                    "symbol": symbol,
+                    "label": "Pump",
+                    "pool": "P0",
+                    "chan": "s",
+                    "idx": 1,
+                    "mapping": mapping,
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+                for symbol in symbols
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=0, value_label="Off")
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid=devid,
+                    name=devid,
+                    moduleTitle=devid,
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu=devid,
+                    connectedAt="now",
+                )
+                for devid in ("M1", "M2")
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1", "M2"],
+            language="en",
+        )
+    )
+    by_module = {(item["devid"], item["symbol"]) for item in payload["entity_descriptors"]}
+    assert by_module == {("M1", "STATUS_PUMP"), ("M2", "STATUS_PUMP")}
+
+
 def test_async_build_bootstrap_payload_discovers_status_bar_and_dedupes_rules(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

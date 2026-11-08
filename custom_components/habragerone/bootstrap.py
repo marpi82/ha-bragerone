@@ -1566,8 +1566,6 @@ async def async_build_bootstrap_payload(
     per_module_symbols: dict[str, set[str]] = {}
 
     per_module_enabled_by_default: dict[str, dict[str, bool]] = {}
-    # Dedupe footer diodes that share address+rule with a menu status (e.g. P0 vs STATUS_BAR_PUMP).
-    accepted_rule_addresses: set[tuple[str, str, int, str]] = set()
 
     for module in effective_modules:
         module_symbols: set[str] = set()
@@ -1577,6 +1575,8 @@ async def async_build_bootstrap_payload(
         module_accepts: list[dict[str, Any]] = []
         boiler_accepts: list[dict[str, Any]] = []
         module_enabled_by_default: dict[str, bool] = {}
+        # Per-module only: identical address+rule on another module must stay.
+        accepted_rule_addresses: set[tuple[str, str, int, str]] = set()
         per_module_enabled_by_default[module.devid] = module_enabled_by_default
         module_candidates = per_module_candidate_symbols.get(module.devid, set())
         module_ui_route_symbols = per_module_ui_route_symbols.get(module.devid, set())

@@ -176,6 +176,23 @@ def test_status_binary_has_sync_path() -> None:
         is False
     )
 
+    # Rule list that yields a non-boolean / undefined value keeps resolver fallback.
+    numeric_then = {
+        "mapping": {
+            "paths": {
+                "value": [
+                    {
+                        "if": [{"expected": 1, "operation": "equalTo", "value": [{"group": "P1", "number": 0, "use": "v"}]}],
+                        "then": 42,
+                    }
+                ]
+            },
+            "command_rules": [],
+            "inputs": [],
+        }
+    }
+    assert status_binary_has_sync_path(descriptor=numeric_then, flat_values={"P1.v0": 1}, default_actual=1) is False
+
 
 def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:
     from custom_components.habragerone.status_rules import resolve_entity_bool
@@ -282,9 +299,36 @@ def test_resolve_entity_bool_evaluates_paths_value_mask_rules() -> None:
     assert status_binary_has_sync_path(descriptor=descriptor, flat_values={"P31.s50": 0x0A}, default_actual=0x0A) is True
     assert resolve_entity_bool(descriptor=descriptor, flat_values={"P31.s50": 0x0A}, default_actual=0x0A) is True
     assert resolve_entity_bool(descriptor=descriptor, flat_values={"P31.s50": 0x01}, default_actual=0x01) is False
+    assert status_binary_has_sync_path(descriptor=descriptor, flat_values={"P31.s50": 0x0A}, default_actual=0x0A) is True
     # Missing register: equalTo null → then null (undefined), not else OFF.
     assert resolve_rule_display_value(descriptor=descriptor, flat_values={}, default_actual=0) is None
     assert resolve_rule_bool(descriptor=descriptor, flat_values={}, default_actual=0) is None
+    assert status_binary_has_sync_path(descriptor=descriptor, flat_values={}, default_actual=0) is False
+
+    # Library evaluator also handles ClauseOperation / greaterThan.
+    from custom_components.habragerone.status_rules import evaluate_status_value_rules
+
+    gt = evaluate_status_value_rules(
+        mapping={
+            "paths": {
+                "value": [
+                    {
+                        "if": [
+                            {
+                                "expected": 5,
+                                "operation": "ClauseOperation['greaterThan']",
+                                "value": [{"group": "P2", "number": 0, "use": "v"}],
+                            }
+                        ],
+                        "then": "ON",
+                        "else": "OFF",
+                    }
+                ]
+            }
+        },
+        flat_values={"P2.v0": 9},
+    )
+    assert gt == "ON"
 
     # Inline else on the same rule as a nonmatching if.
     inline = {
