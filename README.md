@@ -56,7 +56,7 @@ The integration can be configured through the Home Assistant UI. You will need:
 
 After upgrading to a release that bumps `BOOTSTRAP_VERSION` (currently **17** for SPA visibility gating of everyday-UI entities / #341), reload the integration or re-add it so entity descriptors pick up the rebuilt cache.
 
-There is no separate UI/permissions filtering mode to choose. **Installer-only** symbols (outside the everyday BragerOne web UI) are still created but start **disabled** in the entity registry — enable them manually if you need them. Symbols that sit on an everyday-UI route but the SPA itself hides (`isParameterVisible` false at bootstrap) are **omitted entirely** (#341); they will not appear in the registry until a later bootstrap sees them as visible. Enable/disable state for created entities can be changed per-entity at any time from the entity registry.
+There is no separate UI/permissions filtering mode to choose. **Installer-only** symbols (outside the everyday BragerOne web UI) are still created but start **disabled** in the entity registry — enable them manually if you need them. Symbols that sit on an everyday-UI route but the SPA itself hides (`isParameterVisible` false at bootstrap) are **omitted entirely** from new entity creation (#341); they will not be recreated until a later bootstrap sees them as visible. After upgrading from an older bootstrap that already materialised those symbols, Home Assistant may still keep the previous entity-registry entries — remove them manually if you no longer want them. Enable/disable state for created entities can be changed per-entity at any time from the entity registry.
 
 ## Contributions are welcome!
 
