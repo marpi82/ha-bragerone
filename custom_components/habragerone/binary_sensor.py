@@ -40,7 +40,7 @@ from .entity_common import (
 )
 from .outage_attrs import live_push_state_attributes, outage_state_attributes
 from .runtime import BragerRuntime
-from .status_rules import coerce_status_bool, resolve_entity_bool, status_binary_has_sync_path, status_label_to_bool
+from .status_rules import coerce_status_bool, resolve_entity_bool, status_label_to_bool, try_resolve_status_binary_sync
 
 
 def _descriptor_labels(descriptor: dict[str, Any]) -> dict[str, Any]:
@@ -202,12 +202,16 @@ class BragerStatusBinarySensor(BinarySensorEntity):
     def _try_apply_binary_state_sync(self, raw_value: Any) -> bool:
         """Apply on/off from ParamStore without ``ParamResolver`` when possible."""
         flat_values = self._runtime.store.flatten()
-        if self._symbol.startswith("STATUS_") and not status_binary_has_sync_path(
-            descriptor=self._descriptor,
-            flat_values=flat_values,
-            default_actual=raw_value,
-        ):
-            return False
+        if self._symbol.startswith("STATUS_"):
+            resolved = try_resolve_status_binary_sync(
+                descriptor=self._descriptor,
+                flat_values=flat_values,
+                default_actual=raw_value,
+            )
+            if resolved is None:
+                return False
+            self._attr_is_on = resolved
+            return True
         self._attr_is_on = resolve_entity_bool(
             descriptor=self._descriptor,
             flat_values=flat_values,

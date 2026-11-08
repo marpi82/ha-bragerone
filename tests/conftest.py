@@ -56,12 +56,19 @@ def install_pybragerone_stubs() -> None:
         return
 
     real_param_resolver_cls: type[Any] | None = None
+    real_param_store_cls: type[Any] | None = None
+    real_computed_value_evaluator_cls: type[Any] | None = None
     try:
+        import pybragerone.models.param as _real_param_mod
         import pybragerone.models.param_resolver as _real_param_resolver_mod
 
         real_param_resolver_cls = _real_param_resolver_mod.ParamResolver
+        real_param_store_cls = _real_param_mod.ParamStore
+        real_computed_value_evaluator_cls = _real_param_resolver_mod.ComputedValueEvaluator
     except ImportError:
         real_param_resolver_cls = None
+        real_param_store_cls = None
+        real_computed_value_evaluator_cls = None
 
     for module_name in list(sys.modules):
         if module_name == "pybragerone" or module_name.startswith("pybragerone."):
@@ -103,10 +110,12 @@ def install_pybragerone_stubs() -> None:
     sys.modules["pybragerone.models"] = pybragerone_models_stub
 
     pybragerone_models_param_stub = types.ModuleType("pybragerone.models.param")
-    pybragerone_models_param_stub.ParamStore = object
+    pybragerone_models_param_stub.ParamStore = real_param_store_cls or object
     sys.modules["pybragerone.models.param"] = pybragerone_models_param_stub
 
     pybragerone_models_param_resolver_stub = types.ModuleType("pybragerone.models.param_resolver")
+    if real_computed_value_evaluator_cls is not None:
+        pybragerone_models_param_resolver_stub.ComputedValueEvaluator = real_computed_value_evaluator_cls
 
     class _ParamResolverStub:
         @staticmethod

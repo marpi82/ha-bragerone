@@ -12,10 +12,29 @@ def resolve_rule_display_value(
     flat_values: Mapping[str, Any],
     default_actual: Any,
 ) -> Any | None:
-    """Return the first matched rule value normalized for display."""
+    """Return the first matched rule value normalized for display.
+
+    Prefers SPA ``paths.value`` / ``raw.value`` if/elseif/else lists (prefix-agnostic
+    diodes such as pump status), then cached ``command_rules``.
+    """
     mapping = descriptor.get("mapping")
     if not isinstance(mapping, Mapping):
         return None
+
+    paths_display = evaluate_status_value_rules(mapping=mapping, flat_values=flat_values)
+    if paths_display is not None:
+        return normalize_rule_value(paths_display)
+
+    return _command_rules_display_value(mapping=mapping, flat_values=flat_values, default_actual=default_actual)
+
+
+def _command_rules_display_value(
+    *,
+    mapping: Mapping[str, Any],
+    flat_values: Mapping[str, Any],
+    default_actual: Any,
+) -> Any | None:
+    """Return the first matched cached ``command_rules`` value, or ``None``."""
     command_rules = mapping.get("command_rules")
     if not isinstance(command_rules, list) or not command_rules:
         return None
@@ -30,6 +49,218 @@ def resolve_rule_display_value(
             continue
         return normalize_rule_value(value)
     return None
+
+
+def mapping_has_status_value_rules(mapping: Mapping[str, Any] | None) -> bool:
+    """Return True when *mapping* carries SPA if/elseif/else value rules."""
+    return _status_value_rule_list(mapping) is not None
+
+
+def status_value_rules_fingerprint(mapping: Mapping[str, Any] | None) -> str | None:
+    """Stable fingerprint of the SPA rule list used for evaluation / address dedupe.
+
+    Dictionary keys are sorted so equivalent rule trees fingerprint identically
+    regardless of insertion order; list order is preserved.
+    """
+    rules = _status_value_rule_list(mapping)
+    if rules is None:
+        return None
+    return repr(_canonicalize_for_fingerprint(rules))
+
+
+def _canonicalize_for_fingerprint(value: Any) -> Any:
+    """Return a deep copy with mapping keys sorted for stable ``repr`` fingerprints."""
+    if isinstance(value, Mapping):
+        return {key: _canonicalize_for_fingerprint(value[key]) for key in sorted(value.keys(), key=str)}
+    if isinstance(value, list):
+        return [_canonicalize_for_fingerprint(item) for item in value]
+    return value
+
+
+def status_rule_selector_addresses(mapping: Mapping[str, Any] | None) -> set[str]:
+    """Return register addresses referenced by SPA if/elseif selectors in status rules.
+
+    Used as entity refresh dependencies so non-primary condition registers still
+    wake STATUS_* entities when their value changes.
+    """
+    rules = _status_value_rule_list(mapping)
+    if rules is None:
+        return set()
+    return _addresses_from_status_rules(rules)
+
+
+def evaluate_status_value_rules(
+    *,
+    mapping: Mapping[str, Any],
+    flat_values: Mapping[str, Any],
+) -> Any | None:
+    """Evaluate SPA ``if``/``elseif``/``else`` lists from ``paths.value`` / ``raw.value``.
+
+    Prefers ``pybragerone.ComputedValueEvaluator`` (library boundary). Falls back to a
+    local equalTo/notEqualTo evaluator only when the library evaluator is unavailable
+    (offline stubs / older pins).
+    """
+    rules = _status_value_rule_list(mapping)
+    if rules is None:
+        return None
+    library_value = _evaluate_rules_via_library(rules, flat_values=flat_values)
+    if library_value is not None or _library_evaluator_available():
+        return library_value
+    return _eval_spa_value_rules(rules, flat_values=flat_values)
+
+
+def _library_evaluator_available() -> bool:
+    """Return True when the pinned library exposes a usable ComputedValueEvaluator."""
+    try:
+        from pybragerone.models.param import ParamStore
+        from pybragerone.models.param_resolver import ComputedValueEvaluator
+    except ImportError:
+        return False
+    return callable(getattr(ParamStore, "upsert", None)) and callable(getattr(ComputedValueEvaluator, "evaluate", None))
+
+
+def _evaluate_rules_via_library(rules: list[Any], *, flat_values: Mapping[str, Any]) -> Any | None:
+    """Run SPA rule lists through ``ComputedValueEvaluator`` when available."""
+    if not _library_evaluator_available():
+        return None
+    from pybragerone.models.param import ParamStore
+    from pybragerone.models.param_resolver import ComputedValueEvaluator
+
+    store = ParamStore()
+    # Seed only registers referenced by rule selectors — full flatten upserts
+    # deep-copy family snapshots on every STATUS_* WebSocket tick.
+    for key in _addresses_from_status_rules(rules):
+        if key in flat_values:
+            store.upsert(key, flat_values[key])
+    return ComputedValueEvaluator(store).evaluate({"value": list(rules)})
+
+
+def _status_value_rule_list(mapping: Mapping[str, Any] | None) -> list[Any] | None:
+    if not isinstance(mapping, Mapping):
+        return None
+    candidates: list[Any] = []
+    paths = mapping.get("paths")
+    if isinstance(paths, Mapping):
+        candidates.append(paths.get("value"))
+    raw = mapping.get("raw")
+    if isinstance(raw, Mapping):
+        candidates.append(raw.get("value"))
+        candidates.append(raw.get("any"))
+    for entries in candidates:
+        if _looks_like_status_rule_list(entries):
+            return [entry for entry in entries if isinstance(entry, Mapping)]
+    return None
+
+
+def _looks_like_status_rule_list(entries: Any) -> bool:
+    if not isinstance(entries, list) or not entries:
+        return False
+    return any(isinstance(entry, Mapping) and any(key in entry for key in ("if", "elseif", "then", "else")) for entry in entries)
+
+
+def _addresses_from_status_rules(rules: list[Any]) -> set[str]:
+    """Collect ``P<n>.<chan><idx>`` addresses from if/elseif value selectors."""
+    out: set[str] = set()
+    for rule in rules:
+        if not isinstance(rule, Mapping):
+            continue
+        for key in ("if", "elseif"):
+            conds = rule.get(key)
+            if not isinstance(conds, list):
+                continue
+            for cond in conds:
+                if not isinstance(cond, Mapping):
+                    continue
+                values = cond.get("value")
+                if not isinstance(values, list):
+                    continue
+                for sel in values:
+                    if not isinstance(sel, Mapping):
+                        continue
+                    address = _address_from_spa_selector(sel)
+                    if address is not None:
+                        out.add(address)
+    return out
+
+
+def _address_from_spa_selector(entry: Mapping[str, Any]) -> str | None:
+    """Build ``P<n>.<chan><idx>`` from an SPA ``{group, number, use}`` selector."""
+    group = entry.get("group")
+    number = entry.get("number")
+    use = entry.get("use")
+    if not isinstance(group, str) or not group.strip():
+        return None
+    if not isinstance(number, int):
+        return None
+    if not isinstance(use, str) or not use.strip():
+        return None
+    return f"{group.strip()}.{use.strip()[0]}{number}"
+
+
+def _eval_spa_value_rules(rules: list[Any], *, flat_values: Mapping[str, Any]) -> Any | None:
+    else_value: Any = None
+    for rule in rules:
+        if not isinstance(rule, Mapping):
+            continue
+        conds = rule.get("if")
+        if conds is None:
+            conds = rule.get("elseif")
+        # Unmatched if/elseif may still carry an inline ``else`` (library parity).
+        if (
+            isinstance(conds, list)
+            and conds
+            and all(isinstance(c, Mapping) and _spa_condition_matches(c, flat_values=flat_values) for c in conds)
+        ):
+            then = rule.get("then")
+            if isinstance(then, Mapping):
+                return then.get("value")
+            return then
+        if else_value is None and "else" in rule:
+            else_value = rule.get("else")
+    if isinstance(else_value, Mapping):
+        return else_value.get("value")
+    return else_value
+
+
+def _coerce_spa_expected(expected: Any) -> Any:
+    """Normalize SPA ``void 0`` / empty expected tokens to ``None``."""
+    if isinstance(expected, str) and expected.strip() in {"void 0", "undefined"}:
+        return None
+    return expected
+
+
+def _spa_condition_matches(cond: Mapping[str, Any], *, flat_values: Mapping[str, Any]) -> bool:
+    operation = cond.get("operation")
+    expected = _coerce_spa_expected(cond.get("expected"))
+    if not isinstance(operation, str):
+        return False
+    values = cond.get("value")
+    if not isinstance(values, list) or not values:
+        return False
+    for sel in values:
+        if not isinstance(sel, Mapping):
+            continue
+        group = sel.get("group")
+        number = sel.get("number")
+        use = sel.get("use")
+        if not isinstance(group, str) or not isinstance(number, int) or not isinstance(use, str) or not use:
+            continue
+        address = f"{group}.{use[0]}{number}"
+        # Absent register: only null/undefined equality can match (pump-diode guard).
+        if address not in flat_values:
+            op = operation.strip()
+            if "." in op:
+                op = op.rsplit(".", 1)[-1]
+            if op == "equalTo" and expected is None:
+                return True
+            continue
+        actual = read_target_actual(
+            {"address": address, "bit": sel.get("bit"), "mask": sel.get("mask")},
+            flat_values=flat_values,
+        )
+        if compare_condition(operation=operation, actual=actual, expected=expected):
+            return True
+    return False
 
 
 def resolve_rule_bool(
@@ -49,21 +280,57 @@ def status_binary_has_sync_path(
     flat_values: Mapping[str, Any],
     default_actual: Any,
 ) -> bool:
-    """Return whether a ``STATUS_*`` binary can resolve without ``ParamResolver``."""
-    if resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual) is not None:
-        return True
-    mapping = descriptor.get("mapping")
-    if not isinstance(mapping, Mapping):
-        return False
+    """Return whether a status binary can resolve without ``ParamResolver``."""
+    return (
+        try_resolve_status_binary_sync(
+            descriptor=descriptor,
+            flat_values=flat_values,
+            default_actual=default_actual,
+        )
+        is not None
+    )
+
+
+def try_resolve_status_binary_sync(
+    *,
+    descriptor: Mapping[str, Any],
+    flat_values: Mapping[str, Any],
+    default_actual: Any,
+) -> bool | None:
+    """Return on/off when a sync path works, else ``None`` (use ``ParamResolver``).
+
+    Evaluates SPA value rules at most once per call so STATUS_* WebSocket refreshes
+    do not rebuild the library store twice for the same tick.
+    """
+    mapping_raw = descriptor.get("mapping")
+    mapping: Mapping[str, Any] | None = mapping_raw if isinstance(mapping_raw, Mapping) else None
+    if mapping is not None and mapping_has_status_value_rules(mapping):
+        # Only claim a sync path when the rule list yields an on/off label.
+        # Matched ``then: null``, unmatched rules, and non-bool labels all defer to
+        # the async library resolver — do not fall through to raw/bit coercion.
+        display = evaluate_status_value_rules(mapping=mapping, flat_values=flat_values)
+        return status_label_to_bool(display)
+    rule_value = resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
+    if rule_value is not None:
+        return rule_value
+    if mapping is None:
+        return None
     inputs = mapping.get("inputs")
     if not isinstance(inputs, list):
-        return False
+        return None
     bit_inputs = [
         entry
         for entry in inputs
         if isinstance(entry, Mapping) and (isinstance(entry.get("bit"), int) or isinstance(entry.get("mask"), int))
     ]
-    return _preferred_bit_input(bit_inputs) is not None
+    preferred = _preferred_bit_input(bit_inputs)
+    if preferred is None:
+        return None
+    actual = read_target_actual(preferred, flat_values=flat_values)
+    if isinstance(actual, int | float) and not isinstance(actual, bool):
+        return bool(int(actual))
+    # Preferred bit/mask input exists — same sync eligibility as resolve_entity_bool.
+    return coerce_status_bool(default_actual)
 
 
 def status_label_to_bool(value: Any) -> bool | None:

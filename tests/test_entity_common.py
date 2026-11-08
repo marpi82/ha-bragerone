@@ -157,6 +157,42 @@ def test_descriptor_refresh_keys_includes_route_visibility_deps() -> None:
     assert descriptor_refresh_keys(descriptor) == {"P6.v219", "P1.s0"}
 
 
+def test_descriptor_refresh_keys_includes_status_rule_selectors() -> None:
+    """STATUS rule elseif selectors must wake the entity on non-primary deltas."""
+    descriptor = {
+        "pool": "P1",
+        "chan": "s",
+        "idx": 0,
+        "mapping": {
+            "raw": {
+                "value": [
+                    {
+                        "if": [
+                            {
+                                "expected": 0,
+                                "operation": "equalTo",
+                                "value": [{"group": "P1", "number": 0, "use": "s"}],
+                            }
+                        ],
+                        "then": "OFF",
+                    },
+                    {
+                        "elseif": [
+                            {
+                                "expected": 1,
+                                "operation": "equalTo",
+                                "value": [{"group": "P2", "number": 0, "use": "s"}],
+                            }
+                        ],
+                        "then": "ON",
+                    },
+                ],
+            },
+        },
+    }
+    assert descriptor_refresh_keys(descriptor) == {"P1.s0", "P2.s0"}
+
+
 def test_descriptor_refresh_keys_skips_invalid_channel_and_path_entries() -> None:
     """Malformed channel/path rows must not raise or invent refresh keys (#214)."""
     descriptor = {

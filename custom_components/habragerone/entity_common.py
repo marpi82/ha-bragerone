@@ -33,6 +33,7 @@ from .const import (
     DOMAIN,
 )
 from .runtime import BragerRuntime
+from .status_rules import status_rule_selector_addresses
 
 
 def collect_resolver_warm_symbols(items: Iterable[Any]) -> list[str]:
@@ -187,6 +188,8 @@ def descriptor_refresh_keys(descriptor: dict[str, Any]) -> set[str]:
 
     mapping = descriptor.get("mapping")
     if isinstance(mapping, dict):
+        keys.update(status_rule_selector_addresses(mapping))
+
         inputs = mapping.get("inputs")
         if isinstance(inputs, list):
             for candidate in inputs:

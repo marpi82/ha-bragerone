@@ -10,6 +10,7 @@ install_pybragerone_stubs()
 
 from custom_components.habragerone.bootstrap import (  # noqa: E402
     EntityDescriptor,
+    _card_descriptor_has_measurement_unit,
     _coerce_raw,
     _command_rule_names,
     _descriptor_for_value_slot,
@@ -23,6 +24,7 @@ from custom_components.habragerone.bootstrap import (  # noqa: E402
     _is_action_command_name,
     _is_boiler_panel,
     _is_command_like_symbol,
+    _rule_address_dedupe_key,
     _value_slots_from_payload,
     normalize_cached_descriptors,
 )
@@ -209,6 +211,58 @@ def test_runtime_visibility_helpers() -> None:
     assert _has_display_value(value=None, value_label="  ready  ") is True
     assert _has_display_value(value="  ", value_label=None) is False
     assert _has_display_value(value=0, value_label=None) is True
+    assert _has_display_value(value="ready", value_label=None) is True
+    assert (
+        _has_display_value(
+            value=None,
+            value_label=None,
+            mapping={"paths": {"value": [{"else": "OFF"}]}},
+        )
+        is True
+    )
+    assert _has_display_value(value=None, value_label=None, mapping={"paths": {"value": []}}) is False
+
+
+def test_rule_address_dedupe_key_and_measurement_unit_helpers() -> None:
+    """Footer diodes share address+rule fingerprint; measurement units keep companions."""
+    rules = [{"else": "OFF"}]
+    mapping = {"paths": {"value": rules}}
+    from custom_components.habragerone.status_rules import status_value_rules_fingerprint
+
+    assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": 1}, mapping=mapping) == (
+        "P0",
+        "s",
+        1,
+        status_value_rules_fingerprint(mapping),
+    )
+    assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": "x"}, mapping=mapping) is None
+    assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": 1}, mapping={"paths": {}}) is None
+    assert _rule_address_dedupe_key(
+        payload={"pool": "P0", "chan": "s", "idx": 1},
+        mapping={"raw": {"value": rules}, "paths": "bad"},
+    ) == ("P0", "s", 1, repr(rules))
+    assert _rule_address_dedupe_key(payload={"pool": "P0", "chan": "s", "idx": 1}, mapping={"raw": {}}) is None
+    # raw.any uses the same rule-list selector as evaluation.
+    assert _rule_address_dedupe_key(
+        payload={"pool": "P0", "chan": "s", "idx": 1},
+        mapping={"raw": {"any": [{"else": "OFF"}]}},
+    ) == ("P0", "s", 1, repr([{"else": "OFF"}]))
+    # Ordinary address selectors in paths.value must not fingerprint as rules.
+    assert (
+        _rule_address_dedupe_key(
+            payload={"pool": "P0", "chan": "v", "idx": 1},
+            mapping={"paths": {"value": [{"group": "P0", "number": 1, "use": "v"}]}},
+        )
+        is None
+    )
+
+    assert _card_descriptor_has_measurement_unit({"transform_scale": 0.01}) is True
+    assert _card_descriptor_has_measurement_unit({"unit_code": 49}) is True
+    assert _card_descriptor_has_measurement_unit({"unit_code": "49"}) is True
+    assert _card_descriptor_has_measurement_unit({"unit": "°C"}) is True
+    assert _card_descriptor_has_measurement_unit({"unit": "HEAT_PUMP_STATE"}) is False
+    assert _card_descriptor_has_measurement_unit({"unit": True}) is False
+    assert _card_descriptor_has_measurement_unit({}) is False
 
     assert _has_runtime_raw_value(
         payload={"pool": "P4", "chan": "v", "idx": 1},
@@ -374,6 +428,11 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
                 "component_type": "STATUS",
                 "command_rules": [{"command": "BOILER_START", "value": "ON"}],
                 "inputs": [{"address": "P5.s0"}],
+                "paths": {
+                    "value": [{"else": "ON"}],
+                    "unit": [{"group": "P5", "number": 0, "use": "u"}],
+                },
+                "raw": {"any": [{"else": "OFF"}], "meta": 1},
             },
         },
         slot={"slot": "value3", "pool": "P32", "chan": "s", "idx": 1},
@@ -382,11 +441,41 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
     assert status_companion["symbol"] == "STATUS_POMPY#value3"
     assert status_companion["chan"] == "s"
     assert status_companion["writable"] is False
-    # Status companions keep parent enum maps / unit, but drop write/command metadata.
+    # Status companions keep parent enum maps / unit, but drop write/command metadata
+    # and the primary card's SPA value rules (paths.value / raw.any).
     assert status_companion["options"] == ["Off", "On"]
     assert status_companion["enum_map"] == {"Off": 0, "On": 1}
     assert status_companion.get("unit") == {"0": "Off", "1": "On"}
-    assert status_companion["mapping"] == {"component_type": "STATUS"}
+    assert status_companion["mapping"] == {
+        "component_type": "STATUS",
+        "paths": {"unit": [{"group": "P5", "number": 0, "use": "u"}]},
+        "raw": {"meta": 1},
+    }
+
+    # Value-only paths/raw containers are dropped entirely after stripping rules.
+    value_only_companion = _descriptor_for_value_slot(
+        {
+            **base,
+            "mapping": {
+                "component_type": "STATUS",
+                "paths": {"value": [{"else": "ON"}]},
+                "raw": {"any": [{"else": "OFF"}]},
+            },
+        },
+        slot={"slot": "value3", "pool": "P32", "chan": "s", "idx": 2},
+        parent_label="Heat pump status",
+    )
+    assert value_only_companion["mapping"] == {"component_type": "STATUS"}
+    # Non-dict paths/raw entries are left untouched.
+    weird_container = _descriptor_for_value_slot(
+        {
+            **base,
+            "mapping": {"component_type": "STATUS", "paths": "bad", "raw": ["x"]},
+        },
+        slot={"slot": "value3", "pool": "P32", "chan": "s", "idx": 3},
+        parent_label="Heat pump status",
+    )
+    assert weird_container["mapping"] == {"component_type": "STATUS", "paths": "bad", "raw": ["x"]}
 
     status_without_mapping = _descriptor_for_value_slot(
         {**base, "mapping": None},
@@ -400,7 +489,7 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
         {
             **base,
             "unit": "°C",
-            "unit_code": "celsius",
+            "unit_code": 1,
             "transform_scale": 0.1,
             "transform_offset": 0.0,
             "transform_precision": 1,
@@ -408,10 +497,23 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
         slot={"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
         parent_label="Heat pump status",
     )
-    # Parent display unit / transforms do not apply to independent companion registers.
-    assert plain_unit.get("unit") is None
-    assert "unit_code" not in plain_unit
-    assert "transform_scale" not in plain_unit
+    # SPA parseValue formats companions through the card measurement unit (primary u).
+    assert plain_unit.get("unit") == "°C"
+    assert plain_unit.get("unit_code") == 1
+    assert plain_unit.get("transform_scale") == 0.1
+    assert plain_unit.get("transform_precision") == 1
+
+    enum_only = _descriptor_for_value_slot(
+        {
+            **base,
+            "unit": "HEAT_PUMP_STATE",
+            "unit_code": "HEAT_PUMP_STATE",
+        },
+        slot={"slot": "value2", "pool": "P30", "chan": "v", "idx": 25},
+        parent_label="Heat pump status",
+    )
+    assert enum_only.get("unit") is None
+    assert "unit_code" not in enum_only
 
 
 def test_normalize_cached_descriptors_keeps_composite_companions_read_only() -> None:
