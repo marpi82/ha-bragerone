@@ -182,6 +182,7 @@ async def test_async_setup_entry_raises_when_bootstrap_incomplete(hass: HomeAssi
         await async_setup_entry(hass, entry)
 
     assert entry.data.get(CONF_BOOTSTRAP_VERSION) is None
+    deps["api"].close.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -115,6 +115,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 language=language,
             )
         except BootstrapTransientError as err:
+            # Runtime (which owns api.close) is not created yet — close here so HA retries
+            # after a failed prime/resolve do not abandon authenticated clients.
+            await api.close()
             raise ConfigEntryNotReady(f"Bootstrap incomplete for BragerOne entry {entry.entry_id}: {err}") from err
         platform_counter: Counter[str] = Counter()
         for descriptor in bootstrap_payload[CONF_ENTITY_DESCRIPTORS]:

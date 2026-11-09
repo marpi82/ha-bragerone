@@ -300,7 +300,8 @@ def test_rule_address_dedupe_key_and_measurement_unit_helpers() -> None:
         mapping=None,
         flat_values={"P4.v1": 12},
     )
-    assert _has_runtime_raw_value(
+    # Secondary mapping.inputs must not count — only the descriptor's own register.
+    assert not _has_runtime_raw_value(
         payload={"pool": "P4", "chan": "v", "idx": 1},
         mapping={"inputs": [{"address": "P4.s2"}]},
         flat_values={"P4.s2": 1},

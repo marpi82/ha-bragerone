@@ -1034,26 +1034,18 @@ def _has_runtime_raw_value(
     mapping: Mapping[str, Any] | None,
     flat_values: Mapping[str, Any],
 ) -> bool:
+    """Return True when the descriptor's own register is present in the prime snapshot.
+
+    Secondary ``mapping.inputs`` addresses are ignored — a populated companion bit must
+    not bypass null existence guards on the primary diode register.
+    """
+    _ = mapping
     pool = payload.get("pool")
     chan = payload.get("chan")
     idx = payload.get("idx")
     if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
         direct_key = f"{pool}.{chan}{idx}"
-        if flat_values.get(direct_key) is not None:
-            return True
-    if not isinstance(mapping, Mapping):
-        return False
-    inputs = mapping.get("inputs")
-    if not isinstance(inputs, list):
-        return False
-    for candidate in inputs:
-        if not isinstance(candidate, Mapping):
-            continue
-        address = candidate.get("address")
-        if not isinstance(address, str) or not address.strip():
-            continue
-        if flat_values.get(address.strip()) is not None:
-            return True
+        return flat_values.get(direct_key) is not None
     return False
 
 
@@ -1710,16 +1702,13 @@ async def async_build_bootstrap_payload(
                 has_runtime_raw = _has_runtime_raw_value(payload=payload, mapping=mapping_dict, flat_values=flat_values)
                 # Diode rule lists alone are not enough when the register is absent
                 # (HT STATUS_BAR_* heat-pump footers on a pellet boiler, unused valves).
-                # Require a resolved label or a live raw word; otherwise HA shows unavailable.
+                # Always evaluate null guards before trusting a raw fallback, and require
+                # the descriptor's own register — ``else: OFF`` without raw still yields an
+                # unavailable HA entity at runtime.
                 scalar_display = _has_scalar_display_value(value=resolved.value, value_label=resolved.value_label)
-                if (
-                    not scalar_display
-                    and mapping_dict is not None
-                    and mapping_has_status_label_rules(mapping_dict)
-                    and not has_runtime_raw
-                ):
+                if not scalar_display and mapping_dict is not None and mapping_has_status_label_rules(mapping_dict):
                     display = evaluate_status_value_rules(mapping=mapping_dict, flat_values=flat_values)
-                    if display is None:
+                    if display is None or not has_runtime_raw:
                         if len(module_rejections) < 500:
                             module_rejections.append(
                                 {
