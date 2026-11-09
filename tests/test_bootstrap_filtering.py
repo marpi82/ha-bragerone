@@ -206,10 +206,10 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
     assert any(row.get("reason") == "hidden:spa_visibility" for row in m1_rejections)
 
 
-def test_async_build_bootstrap_payload_expands_composite_value_slots(
+def test_async_build_bootstrap_payload_keeps_only_primary_composite_slot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Multi-slot describe payloads become one entity per SPA value_slot (#339)."""
+    """Multi-slot describe payloads keep the primary entity; value2+ are not expanded."""
 
     class _FakeParamStore:
         def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
@@ -315,17 +315,6 @@ def test_async_build_bootstrap_payload_expands_composite_value_slots(
     monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
     monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
 
-    import custom_components.habragerone.bootstrap as bootstrap_mod
-
-    real_finalize = bootstrap_mod._finalize_slot_descriptor
-
-    def _finalize_drop_value3(descriptor: dict[str, object]) -> dict[str, object] | None:
-        if str(descriptor.get("symbol") or "").endswith("#value3"):
-            return None
-        return real_finalize(descriptor)
-
-    monkeypatch.setattr(bootstrap_mod, "_finalize_slot_descriptor", _finalize_drop_value3)
-
     payload = asyncio.run(
         async_build_bootstrap_payload(
             api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
@@ -336,12 +325,11 @@ def test_async_build_bootstrap_payload_expands_composite_value_slots(
     )
 
     by_symbol = {item["symbol"]: item for item in payload["entity_descriptors"]}
-    assert set(by_symbol) == {"STATUS_POMPY", "STATUS_POMPY#value2"}
+    assert set(by_symbol) == {"STATUS_POMPY"}
     assert by_symbol["STATUS_POMPY"]["pool"] == "P31"
     assert by_symbol["STATUS_POMPY"]["chan"] == "s"
-    assert by_symbol["STATUS_POMPY#value2"]["pool"] == "P30"
-    assert by_symbol["STATUS_POMPY#value2"]["chan"] == "v"
-    assert by_symbol["STATUS_POMPY#value2"]["label"] == "Heat pump status (value2)"
+    assert "STATUS_POMPY#value2" not in by_symbol
+    assert "STATUS_POMPY#value3" not in by_symbol
 
 
 def test_async_build_bootstrap_payload_dedupes_rules_per_module_only(
