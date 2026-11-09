@@ -529,6 +529,25 @@ def test_resolve_entity_bool_evaluates_paths_value_mask_rules() -> None:
     assert mapping_has_status_value_rules(None) is False
     assert mapping_has_status_value_rules({"paths": {"value": [{"no": "rules"}]}}) is False
 
+    from custom_components.habragerone.status_rules import mapping_has_status_label_rules
+
+    assert mapping_has_status_label_rules({"paths": {"value": [{"else": "OFF"}]}}) is True
+    assert mapping_has_status_label_rules({"paths": {"value": ["skip", {"else": {"value": 1}}]}}) is True
+    assert mapping_has_status_label_rules(None) is False
+    assert (
+        mapping_has_status_label_rules(
+            {
+                "paths": {
+                    "value": [
+                        {"if": [{"expected": None, "operation": "equalTo", "value": []}], "then": None},
+                        {"else": [{"group": "P12", "number": 0, "use": "a"}]},
+                    ]
+                }
+            }
+        )
+        is False
+    )
+
     # Branch coverage: junk rules, empty/invalid selectors, missing≠null, Mapping else.
     from custom_components.habragerone import status_rules as status_rules_mod
 

@@ -30,7 +30,11 @@ from .const import (
     FILTER_MODE_UI,
 )
 from .numeric_display import py_transform_to_ha
-from .status_rules import mapping_has_status_value_rules, status_value_rules_fingerprint
+from .status_rules import (
+    evaluate_status_value_rules,
+    mapping_has_status_label_rules,
+    status_value_rules_fingerprint,
+)
 
 if TYPE_CHECKING:
     from pybragerone import BragerOneApiClient
@@ -990,22 +994,28 @@ def _normalize_panel_path(panel_path: str) -> str:
     return panel_path.strip()
 
 
-def _has_display_value(*, value: Any, value_label: Any, mapping: Mapping[str, Any] | None = None) -> bool:
-    """Return whether SPA would treat this parameter as having a display value.
-
-    Scalar/label readings count. SPA if/elseif/else rule lists also count — the
-    web UI shows those diodes even when the current store reading is still
-    undefined at bootstrap time.
-    """
+def _has_scalar_display_value(*, value: Any, value_label: Any) -> bool:
+    """Return True when resolve produced a non-empty scalar or label."""
     if isinstance(value_label, str) and value_label.strip():
         return True
     if value is not None:
         if isinstance(value, str):
-            if value.strip():
-                return True
-        else:
-            return True
-    return bool(mapping is not None and mapping_has_status_value_rules(mapping))
+            return bool(value.strip())
+        return True
+    return False
+
+
+def _has_display_value(*, value: Any, value_label: Any, mapping: Mapping[str, Any] | None = None) -> bool:
+    """Return whether SPA would treat this parameter as having a display value.
+
+    Scalar/label readings count. Diode-style SPA if/elseif/else rule lists that
+    yield ON/OFF (or similar) labels also count — the web UI shows those diodes
+    even when the store reading is still undefined. Schedule / password composites
+    whose ``then``/``else`` is an address-selector list do **not** count.
+    """
+    if _has_scalar_display_value(value=value, value_label=value_label):
+        return True
+    return bool(mapping is not None and mapping_has_status_label_rules(mapping))
 
 
 def _has_runtime_raw_value(
@@ -1677,6 +1687,29 @@ async def async_build_bootstrap_payload(
                         )
                     continue
                 has_runtime_raw = _has_runtime_raw_value(payload=payload, mapping=mapping_dict, flat_values=flat_values)
+                # Diode rule lists alone are not enough when the register is absent
+                # (HT STATUS_BAR_* heat-pump footers on a pellet boiler, unused valves).
+                # Require a resolved label or a live raw word; otherwise HA shows unavailable.
+                scalar_display = _has_scalar_display_value(value=resolved.value, value_label=resolved.value_label)
+                if (
+                    not scalar_display
+                    and mapping_dict is not None
+                    and mapping_has_status_label_rules(mapping_dict)
+                    and not has_runtime_raw
+                ):
+                    display = evaluate_status_value_rules(mapping=mapping_dict, flat_values=flat_values)
+                    if display is None:
+                        if len(module_rejections) < 500:
+                            module_rejections.append(
+                                {
+                                    "symbol": symbol,
+                                    "reason": "undefined_status_rules",
+                                    "value": resolved_value,
+                                    "value_label": resolved_value_label,
+                                    "menu_kinds": sorted(symbol_kinds),
+                                }
+                            )
+                        continue
 
                 # Everyday-UI route symbols: SPA ``isParameterVisible`` gates both
                 # ``enabled_by_default`` and entity creation (#341 / py#468). Installer-
@@ -1710,7 +1743,15 @@ async def async_build_bootstrap_payload(
                     enabled_by_default = False
             except Exception:
                 LOGGER.debug("Value resolution failed for %s/%s", module.devid, symbol, exc_info=True)
-                enabled_by_default = is_ui_route_symbol
+                if len(module_rejections) < 500:
+                    module_rejections.append(
+                        {
+                            "symbol": symbol,
+                            "reason": "resolve_failed",
+                            "menu_kinds": sorted(symbol_kinds),
+                        }
+                    )
+                continue
 
             address_key = _rule_address_dedupe_key(payload=payload, mapping=mapping_dict)
             if address_key is not None and address_key in accepted_rule_addresses:
@@ -1849,7 +1890,7 @@ async def async_build_bootstrap_payload(
             "module_address": module.moduleAddress,
             "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
             # Lightweight manuf/dev/fw refs for REST menu construction (#438).
-            # BOOTSTRAP_VERSION 19: measurement-gated composites + STATUS_BAR discovery.
+            # BOOTSTRAP_VERSION 20: reject schedule composites / undefined STATUS_BAR diodes.
             "devices": (
                 [{"manuf_code": r.manuf_code, "dev_code": r.dev_code, "fw": r.fw} for r in menu_refs] if menu_refs else []
             ),

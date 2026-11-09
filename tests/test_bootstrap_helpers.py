@@ -221,6 +221,24 @@ def test_runtime_visibility_helpers() -> None:
         is True
     )
     assert _has_display_value(value=None, value_label=None, mapping={"paths": {"value": []}}) is False
+    # Schedule / password composites (then/else = selector lists) are not display values.
+    schedule_mapping = {
+        "paths": {
+            "value": [
+                {
+                    "if": [{"expected": None, "operation": "equalTo", "value": [{"group": "P6", "number": 177, "use": "v"}]}],
+                    "then": None,
+                },
+                {
+                    "else": [
+                        {"group": "P12", "number": 0, "use": "a"},
+                        {"group": "P12", "number": 0, "use": "b"},
+                    ]
+                },
+            ]
+        }
+    }
+    assert _has_display_value(value=None, value_label=None, mapping=schedule_mapping) is False
 
 
 def test_rule_address_dedupe_key_and_measurement_unit_helpers() -> None:

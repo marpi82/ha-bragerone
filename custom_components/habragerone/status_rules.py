@@ -56,6 +56,37 @@ def mapping_has_status_value_rules(mapping: Mapping[str, Any] | None) -> bool:
     return _status_value_rule_list(mapping) is not None
 
 
+def mapping_has_status_label_rules(mapping: Mapping[str, Any] | None) -> bool:
+    """Return True for diode-style rule lists that yield status labels.
+
+    Schedule / password composites also use if/elseif/else, but their ``then`` /
+    ``else`` branches are address-selector lists (``P12.a``…), not ON/OFF labels.
+    Those must not count as a bootstrap display value — they are not HA entities yet.
+    """
+    rules = _status_value_rule_list(mapping)
+    if rules is None:
+        return False
+    saw_label = False
+    for rule in rules:
+        # ``_status_value_rule_list`` already keeps Mapping entries only.
+        for key in ("then", "else"):
+            if key not in rule:
+                continue
+            value = _unwrap_rule_result(rule.get(key))
+            if isinstance(value, list):
+                return False
+            if (isinstance(value, str) and value.strip()) or isinstance(value, (int, float, bool)):
+                saw_label = True
+    return saw_label
+
+
+def _unwrap_rule_result(value: Any) -> Any:
+    """Unwrap ``{value: ...}`` rule payloads used by some SPA compilers."""
+    if isinstance(value, Mapping) and "value" in value:
+        return value.get("value")
+    return value
+
+
 def status_value_rules_fingerprint(mapping: Mapping[str, Any] | None) -> str | None:
     """Stable fingerprint of the SPA rule list used for evaluation / address dedupe.
 
