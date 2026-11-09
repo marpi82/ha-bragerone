@@ -208,6 +208,15 @@ def test_normalize_cached_descriptors_preserves_explicit_enabled_by_default() ->
 
 
 def test_runtime_visibility_helpers() -> None:
+    from custom_components.habragerone.bootstrap import _has_scalar_display_value
+
+    assert _has_scalar_display_value(value=None, value_label="  ready  ") is True
+    assert _has_scalar_display_value(value="  ", value_label=None) is False
+    assert _has_scalar_display_value(value=0, value_label=None) is True
+    assert _has_scalar_display_value(value=True, value_label=None) is True
+    assert _has_scalar_display_value(value=None, value_label=None) is False
+    assert _has_scalar_display_value(value=[], value_label=None) is False
+    assert _has_scalar_display_value(value={"group": "P12"}, value_label=None) is False
     assert _has_display_value(value=None, value_label="  ready  ") is True
     assert _has_display_value(value="  ", value_label=None) is False
     assert _has_display_value(value=0, value_label=None) is True
@@ -221,6 +230,28 @@ def test_runtime_visibility_helpers() -> None:
         is True
     )
     assert _has_display_value(value=None, value_label=None, mapping={"paths": {"value": []}}) is False
+    # Schedule / password composites (then/else = selector lists) are not display values,
+    # even when resolve returns the selector list itself rather than None.
+    schedule_mapping = {
+        "paths": {
+            "value": [
+                {
+                    "if": [{"expected": None, "operation": "equalTo", "value": [{"group": "P6", "number": 177, "use": "v"}]}],
+                    "then": None,
+                },
+                {
+                    "else": [
+                        {"group": "P12", "number": 0, "use": "a"},
+                        {"group": "P12", "number": 0, "use": "b"},
+                    ]
+                },
+            ]
+        }
+    }
+    schedule_list = [{"group": "P12", "number": 0, "use": "a"}, {"group": "P12", "number": 0, "use": "b"}]
+    assert _has_display_value(value=None, value_label=None, mapping=schedule_mapping) is False
+    assert _has_display_value(value=schedule_list, value_label=None, mapping=schedule_mapping) is False
+    assert _has_display_value(value=schedule_list, value_label=None, mapping=None) is False
 
 
 def test_rule_address_dedupe_key_and_measurement_unit_helpers() -> None:
@@ -269,7 +300,8 @@ def test_rule_address_dedupe_key_and_measurement_unit_helpers() -> None:
         mapping=None,
         flat_values={"P4.v1": 12},
     )
-    assert _has_runtime_raw_value(
+    # Secondary mapping.inputs must not count — only the descriptor's own register.
+    assert not _has_runtime_raw_value(
         payload={"pool": "P4", "chan": "v", "idx": 1},
         mapping={"inputs": [{"address": "P4.s2"}]},
         flat_values={"P4.s2": 1},

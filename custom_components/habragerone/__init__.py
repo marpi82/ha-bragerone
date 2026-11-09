@@ -12,7 +12,7 @@ from pybragerone import BragerOneApiClient, BragerOneGateway
 from pybragerone.api.server import Platform, server_for
 from pybragerone.models.param import ParamStore
 
-from .bootstrap import async_build_bootstrap_payload, normalize_cached_descriptors
+from .bootstrap import BootstrapTransientError, async_build_bootstrap_payload, normalize_cached_descriptors
 from .const import (
     BOOTSTRAP_VERSION,
     CONF_BACKEND_PLATFORM,
@@ -107,12 +107,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             object_id,
             len(modules),
         )
-        bootstrap_payload = await async_build_bootstrap_payload(
-            api=api,
-            object_id=object_id,
-            modules=modules,
-            language=language,
-        )
+        try:
+            bootstrap_payload = await async_build_bootstrap_payload(
+                api=api,
+                object_id=object_id,
+                modules=modules,
+                language=language,
+            )
+        except BootstrapTransientError as err:
+            # Runtime (which owns api.close) is not created yet — close here so HA retries
+            # after a failed prime/resolve do not abandon authenticated clients.
+            await api.close()
+            raise ConfigEntryNotReady(f"Bootstrap incomplete for BragerOne entry {entry.entry_id}: {err}") from err
         platform_counter: Counter[str] = Counter()
         for descriptor in bootstrap_payload[CONF_ENTITY_DESCRIPTORS]:
             if isinstance(descriptor, dict):

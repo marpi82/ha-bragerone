@@ -30,12 +30,24 @@ from .const import (
     FILTER_MODE_UI,
 )
 from .numeric_display import py_transform_to_ha
-from .status_rules import mapping_has_status_value_rules, status_value_rules_fingerprint
+from .status_rules import (
+    evaluate_status_value_rules,
+    mapping_has_status_label_rules,
+    status_value_rules_fingerprint,
+)
 
 if TYPE_CHECKING:
     from pybragerone import BragerOneApiClient
     from pybragerone.models.param_resolver import ParamResolver
 LOGGER = logging.getLogger(__name__)
+
+
+class BootstrapTransientError(RuntimeError):
+    """Raised when bootstrap cannot finish safely and must be retried.
+
+    Failed primes or per-symbol resolve errors would otherwise produce a partial
+    descriptor cache that setup persists at ``BOOTSTRAP_VERSION`` and never rebuilds.
+    """
 
 
 def _device_menu_refs_from_module(module: Any) -> list[Any] | None:
@@ -990,22 +1002,30 @@ def _normalize_panel_path(panel_path: str) -> str:
     return panel_path.strip()
 
 
-def _has_display_value(*, value: Any, value_label: Any, mapping: Mapping[str, Any] | None = None) -> bool:
-    """Return whether SPA would treat this parameter as having a display value.
+def _has_scalar_display_value(*, value: Any, value_label: Any) -> bool:
+    """Return True when resolve produced a non-empty scalar or label.
 
-    Scalar/label readings count. SPA if/elseif/else rule lists also count — the
-    web UI shows those diodes even when the current store reading is still
-    undefined at bootstrap time.
+    Lists / mappings (schedule selector payloads, composite resolve results) are
+    not scalars — those must go through ``mapping_has_status_label_rules`` instead.
     """
     if isinstance(value_label, str) and value_label.strip():
         return True
-    if value is not None:
-        if isinstance(value, str):
-            if value.strip():
-                return True
-        else:
-            return True
-    return bool(mapping is not None and mapping_has_status_value_rules(mapping))
+    if isinstance(value, str):
+        return bool(value.strip())
+    return isinstance(value, (int, float, bool))
+
+
+def _has_display_value(*, value: Any, value_label: Any, mapping: Mapping[str, Any] | None = None) -> bool:
+    """Return whether SPA would treat this parameter as having a display value.
+
+    Scalar/label readings count. Diode-style SPA if/elseif/else rule lists that
+    yield ON/OFF (or similar) labels also count — the web UI shows those diodes
+    even when the store reading is still undefined. Schedule / password composites
+    whose ``then``/``else`` is an address-selector list do **not** count.
+    """
+    if _has_scalar_display_value(value=value, value_label=value_label):
+        return True
+    return bool(mapping is not None and mapping_has_status_label_rules(mapping))
 
 
 def _has_runtime_raw_value(
@@ -1014,26 +1034,18 @@ def _has_runtime_raw_value(
     mapping: Mapping[str, Any] | None,
     flat_values: Mapping[str, Any],
 ) -> bool:
+    """Return True when the descriptor's own register is present in the prime snapshot.
+
+    Secondary ``mapping.inputs`` addresses are ignored — a populated companion bit must
+    not bypass null existence guards on the primary diode register.
+    """
+    _ = mapping
     pool = payload.get("pool")
     chan = payload.get("chan")
     idx = payload.get("idx")
     if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
         direct_key = f"{pool}.{chan}{idx}"
-        if flat_values.get(direct_key) is not None:
-            return True
-    if not isinstance(mapping, Mapping):
-        return False
-    inputs = mapping.get("inputs")
-    if not isinstance(inputs, list):
-        return False
-    for candidate in inputs:
-        if not isinstance(candidate, Mapping):
-            continue
-        address = candidate.get("address")
-        if not isinstance(address, str) or not address.strip():
-            continue
-        if flat_values.get(address.strip()) is not None:
-            return True
+        return flat_values.get(direct_key) is not None
     return False
 
 
@@ -1397,6 +1409,11 @@ async def async_build_bootstrap_payload(
     those are omitted entirely (#341). Installer-only symbols stay created but
     disabled by default. ``entity_filter_mode``/``module_filter_modes`` are accepted
     only for call-site compatibility and are otherwise ignored.
+
+    Raises:
+        BootstrapTransientError: When ``modules_parameters_prime`` fails or any
+            candidate ``resolve_value`` raises. Callers must not persist a
+            partial cache; setup maps this to ``ConfigEntryNotReady``.
     """
     _ = entity_filter_mode, module_filter_modes
     from pybragerone.models.param import ParamStore
@@ -1416,12 +1433,18 @@ async def async_build_bootstrap_payload(
     resolver = ParamResolver.from_api(api=api, store=store, lang=language)
 
     prime_result = await api.modules_parameters_prime([module.devid for module in effective_modules], return_data=True)
-    if isinstance(prime_result, tuple) and len(prime_result) == 2:
-        st, data = prime_result
-        if st in (200, 204) and isinstance(data, dict):
-            store.ingest_prime_payload(data)
+    if not (isinstance(prime_result, tuple) and len(prime_result) == 2):
+        raise BootstrapTransientError("modules_parameters_prime returned an unexpected payload")
+    prime_status, prime_data = prime_result
+    if prime_status not in (200, 204):
+        raise BootstrapTransientError(f"modules_parameters_prime failed with HTTP {prime_status}")
+    if prime_status == 200 and not isinstance(prime_data, dict):
+        raise BootstrapTransientError("modules_parameters_prime returned a non-dict body")
+    if isinstance(prime_data, dict):
+        store.ingest_prime_payload(prime_data)
 
     flat_values = store.flatten()
+    resolve_failed_symbols: list[str] = []
     per_module_candidate_symbols: dict[str, set[str]] = {}
     per_module_panel_paths: dict[str, dict[str, str]] = {}
     per_module_ui_route_symbols: dict[str, set[str]] = {}
@@ -1677,6 +1700,25 @@ async def async_build_bootstrap_payload(
                         )
                     continue
                 has_runtime_raw = _has_runtime_raw_value(payload=payload, mapping=mapping_dict, flat_values=flat_values)
+                # Diode rule lists alone are not enough when the register is absent
+                # (HT STATUS_BAR_* heat-pump footers on a pellet boiler, unused valves).
+                # Always evaluate null guards and require the descriptor's own register —
+                # even when resolve already returned a scalar/label via ``else: OFF``,
+                # because runtime marks the entity unavailable without raw.
+                if mapping_dict is not None and mapping_has_status_label_rules(mapping_dict):
+                    display = evaluate_status_value_rules(mapping=mapping_dict, flat_values=flat_values)
+                    if display is None or not has_runtime_raw:
+                        if len(module_rejections) < 500:
+                            module_rejections.append(
+                                {
+                                    "symbol": symbol,
+                                    "reason": "undefined_status_rules",
+                                    "value": resolved_value,
+                                    "value_label": resolved_value_label,
+                                    "menu_kinds": sorted(symbol_kinds),
+                                }
+                            )
+                        continue
 
                 # Everyday-UI route symbols: SPA ``isParameterVisible`` gates both
                 # ``enabled_by_default`` and entity creation (#341 / py#468). Installer-
@@ -1710,7 +1752,16 @@ async def async_build_bootstrap_payload(
                     enabled_by_default = False
             except Exception:
                 LOGGER.debug("Value resolution failed for %s/%s", module.devid, symbol, exc_info=True)
-                enabled_by_default = is_ui_route_symbol
+                resolve_failed_symbols.append(symbol)
+                if len(module_rejections) < 500:
+                    module_rejections.append(
+                        {
+                            "symbol": symbol,
+                            "reason": "resolve_failed",
+                            "menu_kinds": sorted(symbol_kinds),
+                        }
+                    )
+                continue
 
             address_key = _rule_address_dedupe_key(payload=payload, mapping=mapping_dict)
             if address_key is not None and address_key in accepted_rule_addresses:
@@ -1849,7 +1900,7 @@ async def async_build_bootstrap_payload(
             "module_address": module.moduleAddress,
             "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
             # Lightweight manuf/dev/fw refs for REST menu construction (#438).
-            # BOOTSTRAP_VERSION 19: measurement-gated composites + STATUS_BAR discovery.
+            # BOOTSTRAP_VERSION 20: reject schedule composites / undefined STATUS_BAR diodes.
             "devices": (
                 [{"manuf_code": r.manuf_code, "dev_code": r.dev_code, "fw": r.fw} for r in menu_refs] if menu_refs else []
             ),
@@ -2031,6 +2082,10 @@ async def async_build_bootstrap_payload(
         )
     elif effective_modules:
         LOGGER.debug("Skipping connection_descriptors: pybragerone connection-label API unavailable")
+
+    if resolve_failed_symbols:
+        sample = ", ".join(resolve_failed_symbols[:5])
+        raise BootstrapTransientError(f"Symbol resolution failed for {len(resolve_failed_symbols)} candidate(s); sample={sample}")
 
     from .upstream_assets import async_probe_upstream_assets_fingerprint
 
