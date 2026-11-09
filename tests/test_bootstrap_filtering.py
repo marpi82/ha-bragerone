@@ -979,6 +979,110 @@ def test_async_build_bootstrap_payload_raises_on_prime_http_failure(
         )
 
 
+def test_async_build_bootstrap_payload_accepts_prime_204_without_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HTTP 204 may omit a body; bootstrap continues with an empty prime store."""
+
+    class _FakeParamStore:
+        def __init__(self) -> None:
+            self.ingested: list[dict[str, object]] = []
+
+        def ingest_prime_payload(self, payload: dict[str, object]) -> None:
+            self.ingested.append(payload)
+
+        def flatten(self) -> dict[str, object]:
+            return {}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": ["SYM_UI"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                symbol: {
+                    "label": symbol,
+                    "pool": "P4",
+                    "chan": "v",
+                    "idx": 1,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+                for symbol in symbols
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=1, value_label="1")
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    store = _FakeParamStore()
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(self, module_ids: list[str], return_data: bool = False) -> tuple[int, object]:
+            _ = module_ids, return_data
+            return 204, None
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", lambda: store)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+    assert store.ingested == []
+    assert {item["symbol"] for item in payload["entity_descriptors"]} == {"SYM_UI"}
+
+
 def test_async_build_bootstrap_payload_raises_on_prime_non_dict_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1139,6 +1243,120 @@ def test_async_build_bootstrap_payload_raises_on_resolve_failure(
             if symbol == "SYM_RESOLVE_FAIL":
                 raise RuntimeError("resolve failed")
             return SimpleNamespace(value=1, value_label="1")
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    with pytest.raises(BootstrapTransientError, match="Symbol resolution failed"):
+        asyncio.run(
+            async_build_bootstrap_payload(
+                api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+                object_id=1,
+                modules=["M1"],
+                language="en",
+            )
+        )
+
+
+def test_async_build_bootstrap_payload_raises_on_resolve_failure_after_rejection_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolve failures still abort bootstrap when the rejection sample is already full."""
+
+    fillers = [f"SYM_FILL_{idx}" for idx in range(500)]
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": [*fillers, "SYM_RESOLVE_FAIL"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            payload: dict[str, dict[str, object]] = {
+                "SYM_RESOLVE_FAIL": {
+                    "label": "Boom",
+                    "pool": "P4",
+                    "chan": "v",
+                    "idx": 1,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+            }
+            for symbol in fillers:
+                payload[symbol] = {
+                    "label": symbol,
+                    "pool": "P9",
+                    "chan": "v",
+                    "idx": 0,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+            return {symbol: payload[symbol] for symbol in symbols if symbol in payload}
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            if symbol == "SYM_RESOLVE_FAIL":
+                raise RuntimeError("resolve failed")
+            return SimpleNamespace(value=None, value_label=None)
 
         def parameter_visibility_diagnostics(
             self,
