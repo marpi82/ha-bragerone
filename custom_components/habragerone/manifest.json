@@ -19,5 +19,5 @@
     "py-bragerone==2026.10.2rc5",
     "tree-sitter==0.26.0"
   ],
-  "version": "2026.10.2rc4"
+  "version": "2026.10.2rc5"
 }
