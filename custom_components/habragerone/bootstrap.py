@@ -995,14 +995,16 @@ def _normalize_panel_path(panel_path: str) -> str:
 
 
 def _has_scalar_display_value(*, value: Any, value_label: Any) -> bool:
-    """Return True when resolve produced a non-empty scalar or label."""
+    """Return True when resolve produced a non-empty scalar or label.
+
+    Lists / mappings (schedule selector payloads, composite resolve results) are
+    not scalars — those must go through ``mapping_has_status_label_rules`` instead.
+    """
     if isinstance(value_label, str) and value_label.strip():
         return True
-    if value is not None:
-        if isinstance(value, str):
-            return bool(value.strip())
-        return True
-    return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return isinstance(value, (int, float, bool))
 
 
 def _has_display_value(*, value: Any, value_label: Any, mapping: Mapping[str, Any] | None = None) -> bool:

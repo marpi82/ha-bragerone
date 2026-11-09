@@ -213,7 +213,10 @@ def test_runtime_visibility_helpers() -> None:
     assert _has_scalar_display_value(value=None, value_label="  ready  ") is True
     assert _has_scalar_display_value(value="  ", value_label=None) is False
     assert _has_scalar_display_value(value=0, value_label=None) is True
+    assert _has_scalar_display_value(value=True, value_label=None) is True
     assert _has_scalar_display_value(value=None, value_label=None) is False
+    assert _has_scalar_display_value(value=[], value_label=None) is False
+    assert _has_scalar_display_value(value={"group": "P12"}, value_label=None) is False
     assert _has_display_value(value=None, value_label="  ready  ") is True
     assert _has_display_value(value="  ", value_label=None) is False
     assert _has_display_value(value=0, value_label=None) is True
@@ -227,7 +230,8 @@ def test_runtime_visibility_helpers() -> None:
         is True
     )
     assert _has_display_value(value=None, value_label=None, mapping={"paths": {"value": []}}) is False
-    # Schedule / password composites (then/else = selector lists) are not display values.
+    # Schedule / password composites (then/else = selector lists) are not display values,
+    # even when resolve returns the selector list itself rather than None.
     schedule_mapping = {
         "paths": {
             "value": [
@@ -244,7 +248,10 @@ def test_runtime_visibility_helpers() -> None:
             ]
         }
     }
+    schedule_list = [{"group": "P12", "number": 0, "use": "a"}, {"group": "P12", "number": 0, "use": "b"}]
     assert _has_display_value(value=None, value_label=None, mapping=schedule_mapping) is False
+    assert _has_display_value(value=schedule_list, value_label=None, mapping=schedule_mapping) is False
+    assert _has_display_value(value=schedule_list, value_label=None, mapping=None) is False
 
 
 def test_rule_address_dedupe_key_and_measurement_unit_helpers() -> None:
