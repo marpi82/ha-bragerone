@@ -654,9 +654,27 @@ def test_async_build_bootstrap_payload_rejects_schedules_and_undefined_status_ba
             return {"panel": ["PARAM_P12_0", "STATUS_PUMP"]}
 
         async def discover_status_bar_parameter_tokens(self) -> set[object]:
-            return {"STATUS_BAR_COMPRESSOR"}
+            return {"STATUS_BAR_COMPRESSOR", "STATUS_BAR_BLOWER"}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            # Blower has an ``else: OFF`` fallback — evaluate yields a label even without raw.
+            blower_mapping = {
+                "paths": {
+                    "value": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 1,
+                                    "operation": "equalTo",
+                                    "value": [{"group": "P31", "number": 55, "use": "s"}],
+                                }
+                            ],
+                            "then": "ON",
+                        },
+                        {"else": "OFF"},
+                    ]
+                }
+            }
             payload: dict[str, dict[str, object]] = {
                 "PARAM_P12_0": {
                     "label": "Schedule",
@@ -685,6 +703,16 @@ def test_async_build_bootstrap_payload_rejects_schedules_and_undefined_status_ba
                     "chan": "s",
                     "idx": 12,
                     "mapping": status_bar_mapping,
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+                "STATUS_BAR_BLOWER": {
+                    "label": "Blower",
+                    "pool": "P31",
+                    "chan": "s",
+                    "idx": 55,
+                    "mapping": blower_mapping,
                     "min": None,
                     "max": None,
                     "unit": None,
@@ -752,12 +780,160 @@ def test_async_build_bootstrap_payload_rejects_schedules_and_undefined_status_ba
     )
 
     symbols = {item["symbol"] for item in payload["entity_descriptors"]}
-    assert symbols == {"STATUS_PUMP"}
+    assert symbols == {"STATUS_PUMP", "STATUS_BAR_BLOWER"}
     rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
     assert any(row.get("symbol") == "PARAM_P12_0" and row.get("reason") == "no_display_value" for row in rejections)
     assert any(
         row.get("symbol") == "STATUS_BAR_COMPRESSOR" and row.get("reason") == "undefined_status_rules" for row in rejections
     )
+
+
+def test_async_build_bootstrap_payload_caps_undefined_status_and_resolve_failed_samples(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """undefined_status_rules / resolve_failed still drop entities after the 500-row sample fills."""
+
+    fillers = [f"SYM_FILL_{idx}" for idx in range(500)]
+    status_bar_mapping = {
+        "paths": {
+            "value": [
+                {
+                    "if": [{"expected": 1, "operation": "equalTo", "value": [{"group": "P31", "number": 12, "use": "s"}]}],
+                    "then": "ON",
+                },
+                {"else": None},
+            ]
+        }
+    }
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": [*fillers, "STATUS_BAR_COMPRESSOR", "SYM_RESOLVE_FAIL"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            payload: dict[str, dict[str, object]] = {
+                "STATUS_BAR_COMPRESSOR": {
+                    "label": "Compressor",
+                    "pool": "P31",
+                    "chan": "s",
+                    "idx": 12,
+                    "mapping": status_bar_mapping,
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+                "SYM_RESOLVE_FAIL": {
+                    "label": "Boom",
+                    "pool": "P4",
+                    "chan": "v",
+                    "idx": 1,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+            }
+            for symbol in fillers:
+                payload[symbol] = {
+                    "label": symbol,
+                    "pool": "P9",
+                    "chan": "v",
+                    "idx": 0,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+            return {symbol: payload[symbol] for symbol in symbols if symbol in payload}
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            if symbol == "SYM_RESOLVE_FAIL":
+                raise RuntimeError("resolve failed")
+            if symbol.startswith("SYM_FILL_"):
+                return SimpleNamespace(value=None, value_label=None)
+            return SimpleNamespace(value=None, value_label=None)
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+    assert payload["entity_descriptors"] == []
+    rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
+    assert len(rejections) == 500
+    assert all(row.get("reason") == "no_display_value" for row in rejections)
+    # Still omitted even though the rejection sample no longer records them.
+    assert "STATUS_BAR_COMPRESSOR" not in {row.get("symbol") for row in rejections}
+    assert "SYM_RESOLVE_FAIL" not in {row.get("symbol") for row in rejections}
 
 
 def test_async_build_bootstrap_payload_prefers_ui_footer_over_installer_twin(

@@ -208,6 +208,12 @@ def test_normalize_cached_descriptors_preserves_explicit_enabled_by_default() ->
 
 
 def test_runtime_visibility_helpers() -> None:
+    from custom_components.habragerone.bootstrap import _has_scalar_display_value
+
+    assert _has_scalar_display_value(value=None, value_label="  ready  ") is True
+    assert _has_scalar_display_value(value="  ", value_label=None) is False
+    assert _has_scalar_display_value(value=0, value_label=None) is True
+    assert _has_scalar_display_value(value=None, value_label=None) is False
     assert _has_display_value(value=None, value_label="  ready  ") is True
     assert _has_display_value(value="  ", value_label=None) is False
     assert _has_display_value(value=0, value_label=None) is True
