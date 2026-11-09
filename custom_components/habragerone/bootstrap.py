@@ -1702,11 +1702,10 @@ async def async_build_bootstrap_payload(
                 has_runtime_raw = _has_runtime_raw_value(payload=payload, mapping=mapping_dict, flat_values=flat_values)
                 # Diode rule lists alone are not enough when the register is absent
                 # (HT STATUS_BAR_* heat-pump footers on a pellet boiler, unused valves).
-                # Always evaluate null guards before trusting a raw fallback, and require
-                # the descriptor's own register — ``else: OFF`` without raw still yields an
-                # unavailable HA entity at runtime.
-                scalar_display = _has_scalar_display_value(value=resolved.value, value_label=resolved.value_label)
-                if not scalar_display and mapping_dict is not None and mapping_has_status_label_rules(mapping_dict):
+                # Always evaluate null guards and require the descriptor's own register —
+                # even when resolve already returned a scalar/label via ``else: OFF``,
+                # because runtime marks the entity unavailable without raw.
+                if mapping_dict is not None and mapping_has_status_label_rules(mapping_dict):
                     display = evaluate_status_value_rules(mapping=mapping_dict, flat_values=flat_values)
                     if display is None or not has_runtime_raw:
                         if len(module_rejections) < 500:

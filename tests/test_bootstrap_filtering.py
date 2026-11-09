@@ -791,6 +791,122 @@ def test_async_build_bootstrap_payload_rejects_schedules_and_undefined_status_ba
     assert any(row.get("symbol") == "STATUS_BAR_BLOWER" and row.get("reason") == "undefined_status_rules" for row in rejections)
 
 
+def test_async_build_bootstrap_payload_rejects_status_label_without_register(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolved else:OFF labels must not admit STATUS diodes when the register is absent."""
+
+    mapping = {
+        "paths": {
+            "value": [
+                {
+                    "if": [{"expected": 1, "operation": "equalTo", "value": [{"group": "P31", "number": 12, "use": "s"}]}],
+                    "then": "ON",
+                },
+                {"else": "OFF"},
+            ]
+        }
+    }
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": ["STATUS_BAR_LABEL_ONLY"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                "STATUS_BAR_LABEL_ONLY": {
+                    "label": "Label only",
+                    "pool": "P31",
+                    "chan": "s",
+                    "idx": 12,
+                    "mapping": mapping,
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            # Resolver already produced a label via else:OFF — still no register.
+            return SimpleNamespace(value="OFF", value_label="Off")
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+    assert payload["entity_descriptors"] == []
+    rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
+    assert any(
+        row.get("symbol") == "STATUS_BAR_LABEL_ONLY" and row.get("reason") == "undefined_status_rules" for row in rejections
+    )
+
+
 def test_async_build_bootstrap_payload_keeps_status_bar_when_register_is_live(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
