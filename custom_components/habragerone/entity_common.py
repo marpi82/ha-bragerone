@@ -33,7 +33,7 @@ from .const import (
     DOMAIN,
 )
 from .runtime import BragerRuntime
-from .status_rules import status_rule_selector_addresses
+from .status_rules import first_selector_address_value, select_raw_any_branch, status_rule_selector_addresses
 
 
 def collect_resolver_warm_symbols(items: Iterable[Any]) -> list[str]:
@@ -331,9 +331,11 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
     Prefer SPA multi-register composition (``convert`` + ``times``) via
     :meth:`ParamResolver.compose_mapping_register_value` when the mapping carries
     multi-register / converted address-selector value paths (#327 /
-    ha-bragerone#214). Plain single ``{group, number, use}`` selectors fall through
-    to a direct store read so half-degree floats are preserved. Fall back to
-    direct ``pool/chan/idx``, then the first mapping input address.
+    ha-bragerone#214). Conditional ``raw.any`` cards (e.g. indoor-temp writes) bind
+    the active branch's value register. Plain single ``{group, number, use}``
+    selectors fall through to a direct store read so half-degree floats are
+    preserved. Fall back to direct ``pool/chan/idx``, then the first mapping input
+    address.
     """
     from pybragerone.models.param_resolver import ParamResolver
 
@@ -345,6 +347,11 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
             composed = compose(store, mapping)
             if composed is not None:
                 return composed
+
+    if isinstance(mapping, dict):
+        active = _active_any_branch_value(store, mapping)
+        if active is not None:
+            return active
 
     pool = descriptor.get("pool")
     chan = descriptor.get("chan")
@@ -370,6 +377,19 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
         if value is not None:
             return value
     return None
+
+
+def _active_any_branch_value(store: ParamStore, mapping: Mapping[str, Any]) -> Any | None:
+    """Read the value register from the active ``raw.any`` branch when present."""
+    raw = mapping.get("raw")
+    if not isinstance(raw, Mapping):
+        return None
+    any_rules = raw.get("any")
+    if not isinstance(any_rules, list) or not any_rules:
+        return None
+    flat_values = store.flatten()
+    branch = select_raw_any_branch(any_rules, flat_values=flat_values)
+    return first_selector_address_value(branch, flat_values=flat_values)
 
 
 def get_runtime_and_descriptors(

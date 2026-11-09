@@ -32,7 +32,9 @@ from .const import (
 from .numeric_display import py_transform_to_ha
 from .status_rules import (
     evaluate_status_value_rules,
+    first_selector_address_value,
     mapping_has_status_label_rules,
+    select_raw_any_branch,
     status_value_rules_fingerprint,
 )
 
@@ -1028,6 +1030,22 @@ def _has_display_value(*, value: Any, value_label: Any, mapping: Mapping[str, An
     return bool(mapping is not None and mapping_has_status_label_rules(mapping))
 
 
+def _any_branch_store_value(*, mapping: Mapping[str, Any] | None, flat_values: Mapping[str, Any]) -> Any | None:
+    """Return the active ``raw.any`` value-register reading when present.
+
+    Cards such as ``ZADANA_TEMP_CO*_WRITE`` keep ``paths.value`` empty and put the
+    live setpoint behind a conditional branch object. Older library resolvers may
+    still yield ``null`` for that shape; the prime snapshot already holds the word.
+    """
+    if not isinstance(mapping, Mapping):
+        return None
+    raw = mapping.get("raw")
+    if not isinstance(raw, Mapping):
+        return None
+    branch = select_raw_any_branch(raw.get("any"), flat_values=flat_values)
+    return first_selector_address_value(branch, flat_values=flat_values)
+
+
 def _has_runtime_raw_value(
     *,
     payload: Mapping[str, Any],
@@ -1077,46 +1095,74 @@ def _has_named_command_rule(mapping: dict[str, Any] | None) -> bool:
     return False
 
 
+def _is_value_channel_selector(entry: Mapping[str, Any]) -> bool:
+    """Return True when *entry* is an SPA ``{group, number, use:v}`` write target."""
+    group = entry.get("group") if entry.get("group") is not None else entry.get("pool")
+    number = entry.get("number")
+    if number is None:
+        number = entry.get("index")
+    if number is None:
+        number = entry.get("idx")
+    use = entry.get("use")
+    if use is None:
+        use = entry.get("path")
+    if use is None:
+        use = entry.get("pathType")
+    if use is None:
+        use = entry.get("chan")
+    if not isinstance(group, str) or not group.strip():
+        return False
+    if not isinstance(number, int):
+        return False
+    if not isinstance(use, str) or not use.strip():
+        return False
+    return use.strip().lower() in {"v", "value"}
+
+
+def _selector_list_has_value_write(entries: Any) -> bool:
+    if not isinstance(entries, list):
+        return False
+    return any(isinstance(entry, Mapping) and _is_value_channel_selector(entry) for entry in entries)
+
+
 def _mapping_has_parameter_write(mapping: dict[str, Any] | None) -> bool:
     """Return whether the ParamMap declares a write to a value channel.
 
     Live menus sometimes list editable PARAMs only under ``status`` (or omit
     kinds entirely for panel-only candidates). Those still carry
     ``paths.command`` entries such as ``{group: P6, number: 61, use: v}``.
+    Conditional write cards (``ZADANA_TEMP_CO*_WRITE``) keep ``paths.command``
+    empty and put the target register in ``command_rules`` / ``raw.any`` instead.
     """
     if not isinstance(mapping, dict):
         return False
     paths = mapping.get("paths")
-    if not isinstance(paths, Mapping):
-        return False
-    commands = paths.get("command")
-    if not isinstance(commands, list):
-        return False
-    for entry in commands:
-        if not isinstance(entry, Mapping):
-            continue
-        group = entry.get("group") if entry.get("group") is not None else entry.get("pool")
-        number = entry.get("number")
-        if number is None:
-            number = entry.get("index")
-        if number is None:
-            number = entry.get("idx")
-        use = entry.get("use")
-        if use is None:
-            use = entry.get("path")
-        if use is None:
-            use = entry.get("pathType")
-        if use is None:
-            use = entry.get("chan")
-        if not isinstance(group, str) or not group.strip():
-            continue
-        if not isinstance(number, int):
-            continue
-        if not isinstance(use, str) or not use.strip():
-            continue
-        use_norm = use.strip().lower()
-        if use_norm in {"v", "value"}:
-            return True
+    if isinstance(paths, Mapping) and _selector_list_has_value_write(paths.get("command")):
+        return True
+
+    command_rules = mapping.get("command_rules")
+    if isinstance(command_rules, list):
+        for rule in command_rules:
+            if not isinstance(rule, Mapping):
+                continue
+            if _selector_list_has_value_write(rule.get("value")) or _selector_list_has_value_write(rule.get("command")):
+                return True
+
+    raw = mapping.get("raw")
+    if isinstance(raw, Mapping):
+        any_rules = raw.get("any")
+        if isinstance(any_rules, list):
+            for rule in any_rules:
+                if not isinstance(rule, Mapping):
+                    continue
+                for payload_key in ("then", "else"):
+                    payload = rule.get(payload_key)
+                    if not isinstance(payload, Mapping):
+                        continue
+                    if _selector_list_has_value_write(payload.get("command")) or _selector_list_has_value_write(
+                        payload.get("value")
+                    ):
+                        return True
     return False
 
 
@@ -1680,9 +1726,14 @@ async def async_build_bootstrap_payload(
                 # SPA ``isParameterVisible`` requires ``parameter.value !== undefined``.
                 # Command-like writes without a display value are not shown on the web UI.
                 # This still gates entity creation (#212 only changes UI-visibility, not this).
+                # Conditional ``raw.any`` write cards may resolve to null while the active
+                # branch register is already primed — treat that store reading as display.
+                any_branch_value = _any_branch_store_value(mapping=mapping_dict, flat_values=flat_values)
+                if any_branch_value is not None and resolved_value is None:
+                    resolved_value = any_branch_value
                 if not _has_display_value(
-                    value=resolved.value,
-                    value_label=resolved.value_label,
+                    value=resolved_value,
+                    value_label=resolved_value_label,
                     mapping=mapping_dict,
                 ):
                     if len(module_rejections) < 500:
@@ -1697,6 +1748,8 @@ async def async_build_bootstrap_payload(
                         )
                     continue
                 has_runtime_raw = _has_runtime_raw_value(payload=payload, mapping=mapping_dict, flat_values=flat_values)
+                if not has_runtime_raw and any_branch_value is not None:
+                    has_runtime_raw = True
                 # Diode rule lists alone are not enough when the register is absent
                 # (HT STATUS_BAR_* heat-pump footers on a pellet boiler, unused valves).
                 # Always evaluate null guards and require the descriptor's own register —
@@ -1897,7 +1950,7 @@ async def async_build_bootstrap_payload(
             "module_address": module.moduleAddress,
             "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
             # Lightweight manuf/dev/fw refs for REST menu construction (#438).
-            # BOOTSTRAP_VERSION 21: primary-only for SPA composites (no value2+ companions).
+            # BOOTSTRAP_VERSION 21+: primary-only for SPA composites (no value2+ companions).
             "devices": (
                 [{"manuf_code": r.manuf_code, "dev_code": r.dev_code, "fw": r.fw} for r in menu_refs] if menu_refs else []
             ),

@@ -598,6 +598,48 @@ def test_is_menu_command_action_uses_parameter_write_unless_status_symbol() -> N
     assert _mapping_has_parameter_write({"paths": {"command": [{"group": "P6", "number": 1, "chan": "v"}]}}) is True
 
 
+def test_mapping_has_parameter_write_accepts_conditional_any_branch_targets() -> None:
+    """Indoor-temp write cards keep paths.command empty and bind via command_rules/raw.any."""
+    mapping = {
+        "paths": {"command": [], "value": []},
+        "command_rules": [
+            {
+                "kind": "if",
+                "value": [{"group": "P32", "number": 0, "use": "v"}],
+            },
+            {
+                "kind": "else",
+                "value": [{"group": "P32", "number": 221, "use": "v"}],
+            },
+        ],
+        "raw": {
+            "any": [
+                {
+                    "if": [
+                        {
+                            "expected": 0,
+                            "operation": "equalTo",
+                            "value": [{"bit": 2, "group": "P31", "number": 13, "use": "s"}],
+                        }
+                    ],
+                    "then": {
+                        "command": [{"group": "P32", "number": 0, "use": "v"}],
+                        "value": [{"group": "P32", "number": 0, "use": "v"}],
+                    },
+                },
+                {
+                    "else": {
+                        "command": [{"group": "P32", "number": 221, "use": "v"}],
+                        "value": [{"group": "P32", "number": 221, "use": "v"}],
+                    }
+                },
+            ]
+        },
+    }
+    assert _mapping_has_parameter_write(mapping) is True
+    assert _is_menu_command_action(symbol="ZADANA_TEMP_CO0_WRITE", symbol_kinds=set(), mapping=mapping) is True
+
+
 def test_normalize_cached_descriptors_treats_status_menu_param_with_write_path_as_select() -> None:
     """Editable Tak/Nie PARAMs listed only under menu status must become select."""
     descriptors = [

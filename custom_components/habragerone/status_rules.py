@@ -190,7 +190,12 @@ def _looks_like_status_rule_list(entries: Any) -> bool:
 
 
 def _addresses_from_status_rules(rules: list[Any]) -> set[str]:
-    """Collect ``P<n>.<chan><idx>`` addresses from if/elseif value selectors."""
+    """Collect ``P<n>.<chan><idx>`` addresses from rule conditions and payloads.
+
+    Includes if/elseif selectors plus ``then``/``else`` address lists so entities
+    that bind a conditional value register (e.g. ``ZADANA_TEMP_CO*_WRITE``) refresh
+    when either the gate bit or the active setpoint word changes.
+    """
     out: set[str] = set()
     for rule in rules:
         if not isinstance(rule, Mapping):
@@ -211,7 +216,84 @@ def _addresses_from_status_rules(rules: list[Any]) -> set[str]:
                     address = _address_from_spa_selector(sel)
                     if address is not None:
                         out.add(address)
+        for payload_key in ("then", "else"):
+            if payload_key not in rule:
+                continue
+            out.update(_addresses_from_rule_payload(rule.get(payload_key)))
     return out
+
+
+def _addresses_from_rule_payload(payload: Any) -> set[str]:
+    """Collect addresses from a ``then``/``else`` label or address-selector payload."""
+    out: set[str] = set()
+    if isinstance(payload, Mapping):
+        if "value" in payload:
+            out.update(_addresses_from_rule_payload(payload.get("value")))
+            return out
+        address = _address_from_spa_selector(payload)
+        if address is not None:
+            out.add(address)
+        return out
+    if isinstance(payload, list):
+        for entry in payload:
+            if isinstance(entry, Mapping):
+                out.update(_addresses_from_rule_payload(entry))
+    return out
+
+
+def select_raw_any_branch(
+    any_rules: Any,
+    *,
+    flat_values: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    """Return the active ``raw.any`` then/else payload mapping, if any.
+
+    Mirrors library ``ParamResolver._select_raw_any_branch`` with the local SPA
+    condition matcher so HA stays usable against stubs / older pins.
+    """
+    if not isinstance(any_rules, list):
+        return None
+    explicit_else: Mapping[str, Any] | None = None
+    for rule in any_rules:
+        if not isinstance(rule, Mapping):
+            continue
+        conds = rule.get("if")
+        if conds is None:
+            conds = rule.get("elseif")
+        if (
+            isinstance(conds, list)
+            and conds
+            and all(isinstance(c, Mapping) and _spa_condition_matches(c, flat_values=flat_values) for c in conds)
+        ):
+            then_val = rule.get("then")
+            return then_val if isinstance(then_val, Mapping) else None
+        if explicit_else is None:
+            else_val = rule.get("else")
+            if isinstance(else_val, Mapping):
+                explicit_else = else_val
+    return explicit_else
+
+
+def first_selector_address_value(
+    payload: Mapping[str, Any] | None,
+    *,
+    flat_values: Mapping[str, Any],
+) -> Any | None:
+    """Read the first address-selector entry under ``payload['value']`` from *flat_values*."""
+    if not isinstance(payload, Mapping):
+        return None
+    value_payload = payload.get("value")
+    if not isinstance(value_payload, list):
+        return None
+    for entry in value_payload:
+        if not isinstance(entry, Mapping):
+            continue
+        address = _address_from_spa_selector(entry)
+        if address is None:
+            continue
+        if address in flat_values and flat_values.get(address) is not None:
+            return flat_values.get(address)
+    return None
 
 
 def _address_from_spa_selector(entry: Mapping[str, Any]) -> str | None:
@@ -301,6 +383,12 @@ def resolve_rule_bool(
     default_actual: Any,
 ) -> bool | None:
     """Resolve rule output to boolean for binary-state entities."""
+    mapping = descriptor.get("mapping")
+    if isinstance(mapping, Mapping) and mapping_has_status_value_rules(mapping):
+        # Multi-state SPA footers (e.g. STATUS_BAR_COMPRESSOR) emit mode labels
+        # such as COMPRESSOR_STATE_HEATING before ON_SHORT/OFF_SHORT — for binary
+        # entities skip non-bool labels and keep walking.
+        return evaluate_status_binary_from_rules(mapping=mapping, flat_values=flat_values)
     display = resolve_rule_display_value(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
     return status_label_to_bool(display)
 
@@ -336,11 +424,11 @@ def try_resolve_status_binary_sync(
     mapping_raw = descriptor.get("mapping")
     mapping: Mapping[str, Any] | None = mapping_raw if isinstance(mapping_raw, Mapping) else None
     if mapping is not None and mapping_has_status_value_rules(mapping):
-        # Only claim a sync path when the rule list yields an on/off label.
-        # Matched ``then: null``, unmatched rules, and non-bool labels all defer to
-        # the async library resolver — do not fall through to raw/bit coercion.
-        display = evaluate_status_value_rules(mapping=mapping, flat_values=flat_values)
-        return status_label_to_bool(display)
+        # Claim a sync path only for on/off labels. Mode-only ``then`` tokens
+        # (COMPRESSOR_STATE_*) are skipped so later ON_SHORT/OFF_SHORT branches
+        # can win; explicit ``then: null`` and fully unmatched rules return None
+        # (defer to async resolver — do not fall through to raw coercion).
+        return evaluate_status_binary_from_rules(mapping=mapping, flat_values=flat_values)
     rule_value = resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
     if rule_value is not None:
         return rule_value
@@ -362,6 +450,57 @@ def try_resolve_status_binary_sync(
         return bool(int(actual))
     # Preferred bit/mask input exists — same sync eligibility as resolve_entity_bool.
     return coerce_status_bool(default_actual)
+
+
+def evaluate_status_binary_from_rules(
+    *,
+    mapping: Mapping[str, Any],
+    flat_values: Mapping[str, Any],
+) -> bool | None:
+    """Walk SPA status value rules for on/off, skipping non-bool mode labels.
+
+    Display evaluation keeps first-match semantics (``COMPRESSOR_STATE_HEATING``
+    wins for sensors). Binary diodes need the physical ON/OFF bit that often sits
+    *after* those mode branches — continue until a bool-mappable label appears.
+    Explicit ``then: null`` still means undefined (stop).
+    """
+    rules = _status_value_rule_list(mapping)
+    if rules is None:
+        return None
+
+    else_payload: Any = None
+    for rule in rules:
+        if not isinstance(rule, Mapping):
+            continue
+        conds = rule.get("if")
+        if conds is None:
+            conds = rule.get("elseif")
+        if (
+            isinstance(conds, list)
+            and conds
+            and all(isinstance(c, Mapping) and _spa_condition_matches(c, flat_values=flat_values) for c in conds)
+        ):
+            if "then" in rule and rule.get("then") is None:
+                return None
+            resolved = _status_payload_to_bool(rule.get("then"))
+            if resolved is not None:
+                return resolved
+            continue
+        if else_payload is None and "else" in rule:
+            else_payload = rule.get("else")
+
+    if else_payload is None:
+        return None
+    return _status_payload_to_bool(else_payload)
+
+
+def _status_payload_to_bool(payload: Any) -> bool | None:
+    """Map a rule ``then``/``else`` payload to on/off when the label is binary."""
+    if isinstance(payload, Mapping):
+        if "value" in payload:
+            return _status_payload_to_bool(payload.get("value"))
+        return None
+    return status_label_to_bool(payload)
 
 
 def status_label_to_bool(value: Any) -> bool | None:

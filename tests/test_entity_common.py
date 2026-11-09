@@ -280,6 +280,38 @@ def test_descriptor_current_raw_value_prefers_direct_mapping() -> None:
     assert descriptor_current_raw_value(store, descriptor) == 0
 
 
+def test_descriptor_current_raw_value_uses_active_any_branch_register() -> None:
+    """Conditional indoor-temp writes bind the active raw.any value word."""
+    store = FakeStore(flat_values={"P31.s13": 0, "P32.v0": 21, "P32.v221": 19})
+    descriptor = {
+        "pool": "P32",
+        "chan": "v",
+        "idx": 0,
+        "mapping": {
+            "paths": {"value": [], "command": []},
+            "raw": {
+                "any": [
+                    {
+                        "if": [
+                            {
+                                "expected": 0,
+                                "operation": "equalTo",
+                                "value": [{"bit": 2, "group": "P31", "number": 13, "use": "s"}],
+                            }
+                        ],
+                        "then": {"value": [{"group": "P32", "number": 0, "use": "v"}]},
+                    },
+                    {"else": {"value": [{"group": "P32", "number": 221, "use": "v"}]}},
+                ]
+            },
+        },
+    }
+    assert descriptor_current_raw_value(store, descriptor) == 21
+    store_else = FakeStore(flat_values={"P31.s13": 1 << 2, "P32.v0": 21, "P32.v221": 19})
+    assert descriptor_current_raw_value(store_else, descriptor) == 19
+    assert descriptor_refresh_keys(descriptor) >= {"P31.s13", "P32.v0", "P32.v221"}
+
+
 def test_descriptor_current_raw_value_composes_multi_register_feeder_runtime() -> None:
     """PARAM_P4_59-style mapping must uint16-compose low+high*65536 (#214/#327)."""
     store = FakeStore(flat_values={"P4.v59": -27473, "P4.v60": 0})
