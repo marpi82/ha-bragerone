@@ -20,6 +20,7 @@ from custom_components.habragerone import (  # noqa: E402
     async_setup_entry,
     async_unload_entry,
 )
+from custom_components.habragerone.bootstrap import BootstrapTransientError  # noqa: E402
 from custom_components.habragerone.const import (  # noqa: E402
     BOOTSTRAP_VERSION,
     CONF_BACKEND_PLATFORM,
@@ -165,6 +166,22 @@ async def test_async_setup_entry_raises_when_auth_fails(hass: HomeAssistant) -> 
 
     with patch_setup_dependencies(api=api), pytest.raises(ConfigEntryNotReady, match="Authentication failed"):
         await async_setup_entry(hass, entry)
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_raises_when_bootstrap_incomplete(hass: HomeAssistant) -> None:
+    """Transient bootstrap failures must not persist a partial descriptor cache."""
+    entry = make_config_entry(data={CONF_MODULES_META: None, CONF_BOOTSTRAP_VERSION: None})
+    entry.add_to_hass(hass)
+
+    with (
+        patch_setup_dependencies() as deps,
+        pytest.raises(ConfigEntryNotReady, match="Bootstrap incomplete"),
+    ):
+        deps["bootstrap"].side_effect = BootstrapTransientError("modules_parameters_prime failed with HTTP 503")
+        await async_setup_entry(hass, entry)
+
+    assert entry.data.get(CONF_BOOTSTRAP_VERSION) is None
 
 
 @pytest.mark.asyncio

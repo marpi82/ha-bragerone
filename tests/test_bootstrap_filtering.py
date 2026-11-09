@@ -12,6 +12,7 @@ from tests.conftest import install_pybragerone_stubs
 install_pybragerone_stubs()
 
 from custom_components.habragerone.bootstrap import (  # noqa: E402
+    BootstrapTransientError,
     _collect_symbols_from_menu,
     _normalize_filter_mode,
     async_build_bootstrap_payload,
@@ -788,10 +789,10 @@ def test_async_build_bootstrap_payload_rejects_schedules_and_undefined_status_ba
     )
 
 
-def test_async_build_bootstrap_payload_caps_undefined_status_and_resolve_failed_samples(
+def test_async_build_bootstrap_payload_caps_undefined_status_rejection_samples(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """undefined_status_rules / resolve_failed still drop entities after the 500-row sample fills."""
+    """undefined_status_rules still drop entities after the 500-row sample fills."""
 
     fillers = [f"SYM_FILL_{idx}" for idx in range(500)]
     status_bar_mapping = {
@@ -829,7 +830,7 @@ def test_async_build_bootstrap_payload_caps_undefined_status_and_resolve_failed_
             flat_values: object | None = None,
         ) -> dict[str, list[str]]:
             _ = device_menu, permissions, all_panels, web_ui_only, flat_values
-            return {"panel": [*fillers, "STATUS_BAR_COMPRESSOR", "SYM_RESOLVE_FAIL"]}
+            return {"panel": [*fillers, "STATUS_BAR_COMPRESSOR"]}
 
         async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
             payload: dict[str, dict[str, object]] = {
@@ -839,16 +840,6 @@ def test_async_build_bootstrap_payload_caps_undefined_status_and_resolve_failed_
                     "chan": "s",
                     "idx": 12,
                     "mapping": status_bar_mapping,
-                    "min": None,
-                    "max": None,
-                    "unit": None,
-                },
-                "SYM_RESOLVE_FAIL": {
-                    "label": "Boom",
-                    "pool": "P4",
-                    "chan": "v",
-                    "idx": 1,
-                    "mapping": {},
                     "min": None,
                     "max": None,
                     "unit": None,
@@ -871,10 +862,7 @@ def test_async_build_bootstrap_payload_caps_undefined_status_and_resolve_failed_
             _ = context
 
         async def resolve_value(self, symbol: str) -> SimpleNamespace:
-            if symbol == "SYM_RESOLVE_FAIL":
-                raise RuntimeError("resolve failed")
-            if symbol.startswith("SYM_FILL_"):
-                return SimpleNamespace(value=None, value_label=None)
+            _ = symbol
             return SimpleNamespace(value=None, value_label=None)
 
         def parameter_visibility_diagnostics(
@@ -933,7 +921,271 @@ def test_async_build_bootstrap_payload_caps_undefined_status_and_resolve_failed_
     assert all(row.get("reason") == "no_display_value" for row in rejections)
     # Still omitted even though the rejection sample no longer records them.
     assert "STATUS_BAR_COMPRESSOR" not in {row.get("symbol") for row in rejections}
-    assert "SYM_RESOLVE_FAIL" not in {row.get("symbol") for row in rejections}
+
+
+def test_async_build_bootstrap_payload_raises_on_prime_http_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Failed primes must not produce a cacheable empty descriptor set."""
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 503, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    with pytest.raises(BootstrapTransientError, match="HTTP 503"):
+        asyncio.run(
+            async_build_bootstrap_payload(
+                api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+                object_id=1,
+                modules=["M1"],
+                language="en",
+            )
+        )
+
+
+def test_async_build_bootstrap_payload_raises_on_prime_non_dict_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HTTP 200 with a non-dict body is treated as a retryable prime failure."""
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(self, module_ids: list[str], return_data: bool = False) -> tuple[int, object]:
+            _ = module_ids, return_data
+            return 200, ["not", "a", "dict"]
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    with pytest.raises(BootstrapTransientError, match="non-dict"):
+        asyncio.run(
+            async_build_bootstrap_payload(
+                api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+                object_id=1,
+                modules=["M1"],
+                language="en",
+            )
+        )
+
+
+def test_async_build_bootstrap_payload_raises_on_unexpected_prime_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-tuple prime responses must abort before any cache write."""
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(self, module_ids: list[str], return_data: bool = False) -> int:
+            _ = module_ids, return_data
+            return 200
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    with pytest.raises(BootstrapTransientError, match="unexpected payload"):
+        asyncio.run(
+            async_build_bootstrap_payload(
+                api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+                object_id=1,
+                modules=["M1"],
+                language="en",
+            )
+        )
+
+
+def test_async_build_bootstrap_payload_raises_on_resolve_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Per-symbol resolve exceptions abort bootstrap so a partial cache is never persisted."""
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P4.v1": 1}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": ["SYM_OK", "SYM_RESOLVE_FAIL"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                symbol: {
+                    "label": symbol,
+                    "pool": "P4",
+                    "chan": "v",
+                    "idx": 1,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+                for symbol in symbols
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            if symbol == "SYM_RESOLVE_FAIL":
+                raise RuntimeError("resolve failed")
+            return SimpleNamespace(value=1, value_label="1")
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    with pytest.raises(BootstrapTransientError, match="Symbol resolution failed"):
+        asyncio.run(
+            async_build_bootstrap_payload(
+                api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+                object_id=1,
+                modules=["M1"],
+                language="en",
+            )
+        )
 
 
 def test_async_build_bootstrap_payload_prefers_ui_footer_over_installer_twin(
@@ -1721,7 +1973,7 @@ def test_async_build_bootstrap_payload_includes_non_panel_actions_disabled_by_de
 def test_async_build_bootstrap_payload_enabled_default_edge_cases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Cover non-UI routes, visibility/resolve failures, and extras synthetic paths (#212)."""
+    """Cover non-UI routes, visibility failures, and extras synthetic paths (#212)."""
 
     class _FakeParamStore:
         def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
@@ -1779,9 +2031,9 @@ def test_async_build_bootstrap_payload_enabled_default_edge_cases(
             _ = device_menu, permissions, all_panels, flat_values
             # Full permission set includes installer-only symbols; everyday UI only sees SYM_UI.
             if web_ui_only:
-                return {"Kocioł": ["SYM_UI", "SYM_VIS_FAIL", "SYM_RESOLVE_FAIL"]}
+                return {"Kocioł": ["SYM_UI", "SYM_VIS_FAIL"]}
             return {
-                "Kocioł": ["SYM_UI", "SYM_VIS_FAIL", "SYM_RESOLVE_FAIL"],
+                "Kocioł": ["SYM_UI", "SYM_VIS_FAIL"],
                 "Installer": ["SYM_NON_UI"],
             }
 
@@ -1811,8 +2063,7 @@ def test_async_build_bootstrap_payload_enabled_default_edge_cases(
             _ = context
 
         async def resolve_value(self, symbol: str) -> SimpleNamespace:
-            if symbol == "SYM_RESOLVE_FAIL":
-                raise RuntimeError("resolve failed")
+            _ = symbol
             return SimpleNamespace(value=1, value_label="1")
 
         def parameter_visibility_diagnostics(
@@ -1883,10 +2134,6 @@ def test_async_build_bootstrap_payload_enabled_default_edge_cases(
     assert descriptors["SYM_UI"]["enabled_by_default"] is True
     # Visibility diagnostics blew up → fail-open to enabled for UI-route symbols.
     assert descriptors["SYM_VIS_FAIL"]["enabled_by_default"] is True
-    # resolve_value blew up → omit the entity (avoid unavailable placeholders).
-    assert "SYM_RESOLVE_FAIL" not in descriptors
-    rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
-    assert any(row.get("symbol") == "SYM_RESOLVE_FAIL" and row.get("reason") == "resolve_failed" for row in rejections)
     # Present in permission panels but not everyday UI routes → disabled by default.
     assert descriptors["SYM_NON_UI"]["enabled_by_default"] is False
     # Unresolved command-like extra becomes a synthetic disabled button.

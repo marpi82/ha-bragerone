@@ -42,6 +42,14 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
+class BootstrapTransientError(RuntimeError):
+    """Raised when bootstrap cannot finish safely and must be retried.
+
+    Failed primes or per-symbol resolve errors would otherwise produce a partial
+    descriptor cache that setup persists at ``BOOTSTRAP_VERSION`` and never rebuilds.
+    """
+
+
 def _device_menu_refs_from_module(module: Any) -> list[Any] | None:
     """Build ``DeviceMenuRef`` list from ``Module.devices`` when the library supports it (#438)."""
     devices_raw = getattr(module, "devices", None)
@@ -1409,6 +1417,11 @@ async def async_build_bootstrap_payload(
     those are omitted entirely (#341). Installer-only symbols stay created but
     disabled by default. ``entity_filter_mode``/``module_filter_modes`` are accepted
     only for call-site compatibility and are otherwise ignored.
+
+    Raises:
+        BootstrapTransientError: When ``modules_parameters_prime`` fails or any
+            candidate ``resolve_value`` raises. Callers must not persist a
+            partial cache; setup maps this to ``ConfigEntryNotReady``.
     """
     _ = entity_filter_mode, module_filter_modes
     from pybragerone.models.param import ParamStore
@@ -1428,12 +1441,18 @@ async def async_build_bootstrap_payload(
     resolver = ParamResolver.from_api(api=api, store=store, lang=language)
 
     prime_result = await api.modules_parameters_prime([module.devid for module in effective_modules], return_data=True)
-    if isinstance(prime_result, tuple) and len(prime_result) == 2:
-        st, data = prime_result
-        if st in (200, 204) and isinstance(data, dict):
-            store.ingest_prime_payload(data)
+    if not (isinstance(prime_result, tuple) and len(prime_result) == 2):
+        raise BootstrapTransientError("modules_parameters_prime returned an unexpected payload")
+    prime_status, prime_data = prime_result
+    if prime_status not in (200, 204):
+        raise BootstrapTransientError(f"modules_parameters_prime failed with HTTP {prime_status}")
+    if prime_status == 200 and not isinstance(prime_data, dict):
+        raise BootstrapTransientError("modules_parameters_prime returned a non-dict body")
+    if isinstance(prime_data, dict):
+        store.ingest_prime_payload(prime_data)
 
     flat_values = store.flatten()
+    resolve_failed_symbols: list[str] = []
     per_module_candidate_symbols: dict[str, set[str]] = {}
     per_module_panel_paths: dict[str, dict[str, str]] = {}
     per_module_ui_route_symbols: dict[str, set[str]] = {}
@@ -1745,6 +1764,7 @@ async def async_build_bootstrap_payload(
                     enabled_by_default = False
             except Exception:
                 LOGGER.debug("Value resolution failed for %s/%s", module.devid, symbol, exc_info=True)
+                resolve_failed_symbols.append(symbol)
                 if len(module_rejections) < 500:
                     module_rejections.append(
                         {
@@ -2074,6 +2094,10 @@ async def async_build_bootstrap_payload(
         )
     elif effective_modules:
         LOGGER.debug("Skipping connection_descriptors: pybragerone connection-label API unavailable")
+
+    if resolve_failed_symbols:
+        sample = ", ".join(resolve_failed_symbols[:5])
+        raise BootstrapTransientError(f"Symbol resolution failed for {len(resolve_failed_symbols)} candidate(s); sample={sample}")
 
     from .upstream_assets import async_probe_upstream_assets_fingerprint
 
