@@ -1170,22 +1170,19 @@ def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescr
             # until the next bootstrap rebuild (triggered separately by BOOTSTRAP_VERSION).
             descriptor[CONF_ENABLED_BY_DEFAULT] = True
         symbol = str(descriptor.get("symbol") or "")
+        # Drop leftover ``SYMBOL#valueN`` companions from older bootstraps (#339 walk-back).
+        if _is_composite_companion_symbol(symbol):
+            continue
         pool = descriptor.get("pool")
         chan = descriptor.get("chan")
         idx = descriptor.get("idx")
-        if _is_composite_companion_symbol(symbol):
-            _isolate_composite_companion(descriptor)
         mapping = descriptor.get("mapping") if isinstance(descriptor.get("mapping"), dict) else None
         kinds_raw = descriptor.get("menu_kinds")
         if isinstance(kinds_raw, list):
             menu_kinds = {str(kind).strip().lower() for kind in kinds_raw if isinstance(kind, str)}
         else:
             menu_kinds = set()
-        writable = (
-            False
-            if _is_composite_companion_symbol(symbol)
-            else _is_menu_command_action(symbol=symbol, symbol_kinds=menu_kinds, mapping=mapping)
-        )
+        writable = _is_menu_command_action(symbol=symbol, symbol_kinds=menu_kinds, mapping=mapping)
 
         if not _is_exposable_descriptor(writable=writable, pool=pool, chan=chan, idx=idx, mapping=mapping):
             continue
@@ -1900,7 +1897,7 @@ async def async_build_bootstrap_payload(
             "module_address": module.moduleAddress,
             "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
             # Lightweight manuf/dev/fw refs for REST menu construction (#438).
-            # BOOTSTRAP_VERSION 20: reject schedule composites / undefined STATUS_BAR diodes.
+            # BOOTSTRAP_VERSION 21: primary-only for SPA composites (no value2+ companions).
             "devices": (
                 [{"manuf_code": r.manuf_code, "dev_code": r.dev_code, "fw": r.fw} for r in menu_refs] if menu_refs else []
             ),
@@ -2054,17 +2051,10 @@ async def async_build_bootstrap_payload(
                 unit=unit_value,
             )
 
-            # SPA composites (value2/value3/…) → one entity per describe value_slot (#339 / py#466).
-            value_slots = _value_slots_from_payload(payload if isinstance(payload, Mapping) else {})
-            if len(value_slots) <= 1:
-                descriptors.append(descriptor)
-                continue
-
-            for slot in value_slots:
-                slot_desc = _descriptor_for_value_slot(descriptor, slot=slot, parent_label=label)
-                finalized = _finalize_slot_descriptor(slot_desc)
-                if finalized is not None:
-                    descriptors.append(finalized)
+            # Keep the primary slot only — do not materialize value2+ companions.
+            # Weather-curve endpoints and PC status already have dedicated entities;
+            # chart companions were duplicates / unavailable (#339 walk-back).
+            descriptors.append(descriptor)
 
     connection_labels, connection_labels_supported = await _resolve_connection_labels(resolver, language=language)
     connection_descriptors: list[dict[str, Any]] = []

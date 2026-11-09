@@ -548,10 +548,21 @@ def test_descriptor_for_value_slot_keeps_primary_symbol_and_suffixes_companions(
     assert "unit_code" not in enum_only
 
 
-def test_normalize_cached_descriptors_keeps_composite_companions_read_only() -> None:
-    """Cached #valueN rows stay sensors even when parent write metadata is present."""
+def test_normalize_cached_descriptors_drops_composite_companions() -> None:
+    """Cached #valueN companions from older bootstraps are removed (#339 walk-back)."""
     normalized = normalize_cached_descriptors(
         [
+            {
+                "symbol": "STATUS_POMPY",
+                "devid": "DEV1",
+                "pool": "P31",
+                "chan": "s",
+                "idx": 12,
+                "writable": False,
+                "mapping": {"component_type": "STATUS"},
+                "unit": {"0": "Off", "1": "On"},
+                "enabled_by_default": True,
+            },
             {
                 "symbol": "STATUS_POMPY#value2",
                 "devid": "DEV1",
@@ -569,17 +580,10 @@ def test_normalize_cached_descriptors_keeps_composite_companions_read_only() -> 
                 },
                 "unit": {"0": "Off", "1": "On"},
                 "enabled_by_default": False,
-            }
+            },
         ]
     )
-    assert len(normalized) == 1
-    companion = normalized[0]
-    assert companion["writable"] is False
-    assert companion["platform"] == "sensor"
-    assert companion["mapping"] == {}
-    assert companion["options"] == []
-    assert companion["min"] is None
-    assert companion["max"] is None
+    assert [row["symbol"] for row in normalized] == ["STATUS_POMPY"]
 
 
 def test_finalize_slot_descriptor_returns_none_when_not_exposable() -> None:
