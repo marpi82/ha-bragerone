@@ -309,6 +309,17 @@ def select_raw_any_branch(
     return explicit_else
 
 
+def _usable_register_reading(value: Any) -> bool:
+    """Return whether a store reading is usable (mirrors library serialize checks)."""
+    if value is None or isinstance(value, bool):
+        return False
+    if isinstance(value, int | float):
+        return True
+    if isinstance(value, str):
+        return bool(value.strip())
+    return False
+
+
 def first_selector_address_value(
     payload: Mapping[str, Any] | None,
     *,
@@ -326,8 +337,9 @@ def first_selector_address_value(
         address = _address_from_spa_selector(entry)
         if address is None:
             continue
-        if address in flat_values and flat_values.get(address) is not None:
-            return flat_values.get(address)
+        reading = flat_values.get(address)
+        if _usable_register_reading(reading):
+            return reading
     return None
 
 

@@ -288,10 +288,30 @@ def test_address_string_selectors_bind_and_refresh() -> None:
                     ]
                 }
             },
-            flat_values={"P32.v221": 19},
+            flat_values={"P32.v0": "  ", "P32.v221": 19},
         )
         == "P32.v221"
     )
+    from custom_components.habragerone.status_rules import first_selector_address_value
+
+    assert (
+        first_selector_address_value(
+            {
+                "value": [
+                    {"group": "P32", "number": 0, "use": "v"},
+                    {"group": "P32", "number": 221, "use": "v"},
+                ]
+            },
+            flat_values={"P32.v0": True, "P32.v221": 19},
+        )
+        == 19
+    )
+    from custom_components.habragerone.status_rules import _usable_register_reading, coerce_status_bool
+
+    assert _usable_register_reading({"x": 1}) is False
+    assert _usable_register_reading(None) is False
+    assert coerce_status_bool("Wyłączony") is False
+    assert coerce_status_bool("maybe") is False
     assert (
         _any_branch_active_value_address(
             mapping={

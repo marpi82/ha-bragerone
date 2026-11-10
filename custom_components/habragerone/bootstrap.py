@@ -1052,7 +1052,7 @@ def _any_branch_active_value_address(
     flat_values: Mapping[str, Any],
 ) -> str | None:
     """Return the active ``raw.any`` value-register address when branches bind selectors."""
-    from .status_rules import _address_from_spa_selector
+    from .status_rules import _address_from_spa_selector, _usable_register_reading
 
     if not isinstance(mapping, Mapping):
         return None
@@ -1077,7 +1077,7 @@ def _any_branch_active_value_address(
             continue
         if first is None:
             first = address
-        if address in flat_values and flat_values.get(address) is not None:
+        if _usable_register_reading(flat_values.get(address)):
             return address
     return first
 
