@@ -677,6 +677,68 @@ def test_descriptor_active_raw_limits_edge_cases() -> None:
 
     store = FakeStore(flat_values={"P32.v221": 19, "P32.n221": 15, "P32.x221": 25})
     assert descriptor_active_raw_limits(store, {"min": 1, "max": 2}) == (1, 2)
+    # Unusable first selector must not donate its n/x to the displayed second reading.
+    assert descriptor_active_raw_limits(
+        FakeStore(
+            flat_values={
+                "P32.v0": "  ",
+                "P32.n0": 100,
+                "P32.x0": 300,
+                "P32.v221": 190,
+                "P32.n221": 150,
+                "P32.x221": 250,
+            }
+        ),
+        {
+            "min": 10,
+            "max": 30,
+            "mapping": {
+                "raw": {
+                    "any": [
+                        {
+                            "else": {
+                                "value": [
+                                    {"group": "P32", "number": 0, "use": "v"},
+                                    {"group": "P32", "number": 221, "use": "v"},
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+        },
+    ) == (150, 250)
+    # Every value reading unusable → keep first existing family's n/x.
+    assert descriptor_active_raw_limits(
+        FakeStore(
+            flat_values={
+                "P32.v0": "  ",
+                "P32.n0": 100,
+                "P32.x0": 300,
+                "P32.v221": None,
+                "P32.n221": 150,
+                "P32.x221": 250,
+            }
+        ),
+        {
+            "min": 10,
+            "max": 30,
+            "mapping": {
+                "raw": {
+                    "any": [
+                        {
+                            "else": {
+                                "value": [
+                                    {"group": "P32", "number": 0, "use": "v"},
+                                    {"group": "P32", "number": 221, "use": "v"},
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+        },
+    ) == (100, 300)
     assert descriptor_active_raw_limits(store, {"min": 1, "max": 2, "mapping": {"raw": "bad"}}) == (1, 2)
     assert descriptor_active_raw_limits(
         store,

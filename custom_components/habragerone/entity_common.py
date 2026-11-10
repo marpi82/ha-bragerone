@@ -417,7 +417,7 @@ def descriptor_active_raw_limits(store: ParamStore, descriptor: Mapping[str, Any
     Conditional ``raw.any`` cards refresh limits from the selected family's ``n``/``x``
     channels. Falls back to the cached descriptor min/max.
     """
-    from .status_rules import _address_from_spa_selector, select_raw_any_branch
+    from .status_rules import _address_from_spa_selector, _usable_register_reading, select_raw_any_branch
 
     raw_min = descriptor.get("min")
     raw_max = descriptor.get("max")
@@ -437,6 +437,20 @@ def descriptor_active_raw_limits(store: ParamStore, descriptor: Mapping[str, Any
     value_payload = branch.get("value")
     if not isinstance(value_payload, list):
         return raw_min, raw_max
+
+    def _limits_from_family(pool: str, idx: int) -> tuple[Any, Any] | None:
+        fam = store.get_family(pool, idx)
+        if fam is None:
+            return None
+        fam_min = fam.get("n")
+        fam_max = fam.get("x")
+        out_min = fam_min if isinstance(fam_min, int | float) and not isinstance(fam_min, bool) else raw_min
+        out_max = fam_max if isinstance(fam_max, int | float) and not isinstance(fam_max, bool) else raw_max
+        return out_min, out_max
+
+    # Prefer the same usable selector as the displayed value; keep the first
+    # existing family as fallback when every value reading is unusable.
+    first_limits: tuple[Any, Any] | None = None
     for entry in value_payload:
         if not isinstance(entry, Mapping):
             continue
@@ -450,16 +464,15 @@ def descriptor_active_raw_limits(store: ParamStore, descriptor: Mapping[str, Any
             idx = int(rest[1:])
         except ValueError:
             continue
-        fam = store.get_family(pool, idx)
-        if fam is None:
+        limits = _limits_from_family(pool, idx)
+        if limits is None:
             continue
-        fam_min = fam.get("n")
-        fam_max = fam.get("x")
-        if isinstance(fam_min, int | float) and not isinstance(fam_min, bool):
-            raw_min = fam_min
-        if isinstance(fam_max, int | float) and not isinstance(fam_max, bool):
-            raw_max = fam_max
-        break
+        if first_limits is None:
+            first_limits = limits
+        if _usable_register_reading(flat_values.get(address)):
+            return limits
+    if first_limits is not None:
+        return first_limits
     return raw_min, raw_max
 
 
