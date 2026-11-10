@@ -33,7 +33,7 @@ from .const import (
     DOMAIN,
 )
 from .runtime import BragerRuntime
-from .status_rules import status_rule_selector_addresses
+from .status_rules import first_selector_address_value, select_raw_any_branch, status_rule_selector_addresses
 
 
 def collect_resolver_warm_symbols(items: Iterable[Any]) -> list[str]:
@@ -116,26 +116,18 @@ def _display_name_panel_prefix(descriptor: dict[str, Any]) -> str:
 
 def _address_from_value_selector(entry: Mapping[str, Any]) -> str | None:
     """Build ``P<n>.<chan><idx>`` from an SPA value-path address selector."""
-    group = entry.get("group")
-    number = entry.get("number")
-    use = entry.get("use")
-    if not isinstance(group, str) or not group.strip():
-        return None
-    if not isinstance(number, int):
-        return None
-    if not isinstance(use, str) or not use.strip():
-        return None
-    return f"{group.strip()}.{use.strip()[0]}{number}"
+    from .status_rules import _address_from_spa_selector
+
+    return _address_from_spa_selector(entry)
 
 
 def _is_address_selector_entry(entry: Any) -> bool:
-    """Return whether *entry* is a ``{group, number, use[, convert, times]}`` selector."""
+    """Return whether *entry* is a group/use selector or ``{"address": "..."}`` form."""
     if not isinstance(entry, Mapping):
         return False
-    group = entry.get("group")
-    number = entry.get("number")
-    use = entry.get("use")
-    return isinstance(group, str) and bool(group) and isinstance(number, int) and isinstance(use, str) and bool(use)
+    from .status_rules import _address_from_spa_selector
+
+    return _address_from_spa_selector(entry) is not None
 
 
 def _address_selectors_need_compose(entries: list[Any]) -> bool:
@@ -310,7 +302,18 @@ def attach_transport_availability_listener(
     return _unsubscribe
 
 
-def store_value_for_address(store: ParamStore, address: str) -> Any | None:
+def _scoped_flat_values(store: ParamStore, devid: str | None) -> dict[str, Any]:
+    """Return a module-scoped ParamStore snapshot when *devid* is known.
+
+    Never falls back to the merged ``flatten()`` view for a known devid — that
+    snapshot is last-write-wins across modules and can steer gates/bounds/units.
+    """
+    if isinstance(devid, str) and devid.strip():
+        return store.flatten_for_devid(devid.strip())
+    return store.flatten()
+
+
+def store_value_for_address(store: ParamStore, address: str, *, devid: str | None = None) -> Any | None:
     """Read one value from ParamStore using ``P<n>.<chan><idx>`` address syntax."""
     try:
         pool, rest = address.split(".", 1)
@@ -319,7 +322,7 @@ def store_value_for_address(store: ParamStore, address: str) -> Any | None:
     except Exception:
         return None
 
-    family = store.get_family(pool, idx)
+    family = store.get_family(pool, idx, devid=devid)
     if family is None:
         return None
     return family.get(chan)
@@ -331,9 +334,11 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
     Prefer SPA multi-register composition (``convert`` + ``times``) via
     :meth:`ParamResolver.compose_mapping_register_value` when the mapping carries
     multi-register / converted address-selector value paths (#327 /
-    ha-bragerone#214). Plain single ``{group, number, use}`` selectors fall through
-    to a direct store read so half-degree floats are preserved. Fall back to
-    direct ``pool/chan/idx``, then the first mapping input address.
+    ha-bragerone#214). Conditional ``raw.any`` cards (e.g. indoor-temp writes) bind
+    the active branch's value register. Plain single ``{group, number, use}``
+    selectors fall through to a direct store read so half-degree floats are
+    preserved. Fall back to direct ``pool/chan/idx``, then the first mapping input
+    address.
     """
     from pybragerone.models.param_resolver import ParamResolver
 
@@ -346,11 +351,19 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
             if composed is not None:
                 return composed
 
+    devid = str(descriptor.get("devid") or "").strip() or None
+    if isinstance(mapping, dict):
+        handled, active = _try_active_any_branch_value(store, mapping, devid=devid)
+        if handled:
+            # Conditional register cards must not fall back to the cached primary
+            # address when the active branch word is absent.
+            return active
+
     pool = descriptor.get("pool")
     chan = descriptor.get("chan")
     idx = descriptor.get("idx")
     if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
-        direct = store_value_for_address(store, f"{pool}.{chan}{idx}")
+        direct = store_value_for_address(store, f"{pool}.{chan}{idx}", devid=devid)
         if direct is not None:
             return direct
 
@@ -366,10 +379,119 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
         address = candidate.get("address")
         if not isinstance(address, str) or not address.strip():
             continue
-        value = store_value_for_address(store, address.strip())
+        value = store_value_for_address(store, address.strip(), devid=devid)
         if value is not None:
             return value
     return None
+
+
+def _any_rules_bind_register_values(any_rules: list[Any]) -> bool:
+    """Return True when ``raw.any`` then/else payloads bind address-selector values."""
+    from .status_rules import _address_from_spa_selector
+
+    for rule in any_rules:
+        if not isinstance(rule, Mapping):
+            continue
+        for key in ("then", "else"):
+            payload = rule.get(key)
+            if not isinstance(payload, Mapping):
+                continue
+            value = payload.get("value")
+            if isinstance(value, list) and any(
+                isinstance(entry, Mapping) and _address_from_spa_selector(entry) is not None for entry in value
+            ):
+                return True
+    return False
+
+
+def _try_active_any_branch_value(
+    store: ParamStore,
+    mapping: Mapping[str, Any],
+    *,
+    devid: str | None = None,
+) -> tuple[bool, Any | None]:
+    """Read the active ``raw.any`` value register when the card binds selectors.
+
+    Returns ``(handled, value)``. When *handled* is True the caller must not fall
+    back to the descriptor's cached ``pool/chan/idx``.
+    """
+    raw = mapping.get("raw")
+    if not isinstance(raw, Mapping):
+        return False, None
+    any_rules = raw.get("any")
+    if not isinstance(any_rules, list) or not any_rules:
+        return False, None
+    if not _any_rules_bind_register_values(any_rules):
+        return False, None
+    flat_values = _scoped_flat_values(store, devid)
+    branch = select_raw_any_branch(any_rules, flat_values=flat_values)
+    return True, first_selector_address_value(branch, flat_values=flat_values)
+
+
+def descriptor_active_raw_limits(store: ParamStore, descriptor: Mapping[str, Any]) -> tuple[Any, Any]:
+    """Return ``(raw_min, raw_max)`` for the active value register when available.
+
+    Conditional ``raw.any`` cards refresh limits from the selected family's ``n``/``x``
+    channels. Falls back to the cached descriptor min/max.
+    """
+    from .status_rules import _address_from_spa_selector, _usable_register_reading, select_raw_any_branch
+
+    raw_min = descriptor.get("min")
+    raw_max = descriptor.get("max")
+    mapping = descriptor.get("mapping")
+    if not isinstance(mapping, Mapping):
+        return raw_min, raw_max
+    raw = mapping.get("raw")
+    if not isinstance(raw, Mapping):
+        return raw_min, raw_max
+    any_rules = raw.get("any")
+    if not isinstance(any_rules, list) or not _any_rules_bind_register_values(any_rules):
+        return raw_min, raw_max
+    devid = str(descriptor.get("devid") or "").strip() or None
+    flat_values = _scoped_flat_values(store, devid)
+    branch = select_raw_any_branch(any_rules, flat_values=flat_values)
+    if not isinstance(branch, Mapping):
+        return raw_min, raw_max
+    value_payload = branch.get("value")
+    if not isinstance(value_payload, list):
+        return raw_min, raw_max
+
+    def _limits_from_family(pool: str, idx: int) -> tuple[Any, Any] | None:
+        fam = store.get_family(pool, idx, devid=devid)
+        if fam is None:
+            return None
+        fam_min = fam.get("n")
+        fam_max = fam.get("x")
+        out_min = fam_min if isinstance(fam_min, int | float) and not isinstance(fam_min, bool) else raw_min
+        out_max = fam_max if isinstance(fam_max, int | float) and not isinstance(fam_max, bool) else raw_max
+        return out_min, out_max
+
+    # Prefer the same usable selector as the displayed value; keep the first
+    # existing family as fallback when every value reading is unusable.
+    first_limits: tuple[Any, Any] | None = None
+    for entry in value_payload:
+        if not isinstance(entry, Mapping):
+            continue
+        address = _address_from_spa_selector(entry)
+        if address is None or "." not in address:
+            continue
+        pool, rest = address.split(".", 1)
+        if not pool or len(rest) < 2:
+            continue
+        try:
+            idx = int(rest[1:])
+        except ValueError:
+            continue
+        limits = _limits_from_family(pool, idx)
+        if limits is None:
+            continue
+        if first_limits is None:
+            first_limits = limits
+        if _usable_register_reading(flat_values.get(address)):
+            return limits
+    if first_limits is not None:
+        return first_limits
+    return raw_min, raw_max
 
 
 def get_runtime_and_descriptors(

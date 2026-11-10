@@ -32,7 +32,9 @@ from .const import (
 from .numeric_display import py_transform_to_ha
 from .status_rules import (
     evaluate_status_value_rules,
+    first_selector_address_value,
     mapping_has_status_label_rules,
+    select_raw_any_branch,
     status_value_rules_fingerprint,
 )
 
@@ -1028,6 +1030,100 @@ def _has_display_value(*, value: Any, value_label: Any, mapping: Mapping[str, An
     return bool(mapping is not None and mapping_has_status_label_rules(mapping))
 
 
+def _any_branch_store_value(*, mapping: Mapping[str, Any] | None, flat_values: Mapping[str, Any]) -> Any | None:
+    """Return the active ``raw.any`` value-register reading when present.
+
+    Cards such as ``ZADANA_TEMP_CO*_WRITE`` keep ``paths.value`` empty and put the
+    live setpoint behind a conditional branch object. Older library resolvers may
+    still yield ``null`` for that shape; the prime snapshot already holds the word.
+    """
+    if not isinstance(mapping, Mapping):
+        return None
+    raw = mapping.get("raw")
+    if not isinstance(raw, Mapping):
+        return None
+    branch = select_raw_any_branch(raw.get("any"), flat_values=flat_values)
+    return first_selector_address_value(branch, flat_values=flat_values)
+
+
+def _any_branch_active_value_address(
+    *,
+    mapping: Mapping[str, Any] | None,
+    flat_values: Mapping[str, Any],
+) -> str | None:
+    """Return the active ``raw.any`` value-register address when branches bind selectors."""
+    from .status_rules import _address_from_spa_selector, _usable_register_reading
+
+    if not isinstance(mapping, Mapping):
+        return None
+    raw = mapping.get("raw")
+    if not isinstance(raw, Mapping):
+        return None
+    branch = select_raw_any_branch(raw.get("any"), flat_values=flat_values)
+    if not isinstance(branch, Mapping):
+        return None
+    value_payload = branch.get("value")
+    if not isinstance(value_payload, list):
+        return None
+    # Prefer a populated selector within the active branch (matches
+    # ``first_selector_address_value``); keep the first address as fallback so
+    # missing readings stay bound to the guarded branch instead of another one.
+    first: str | None = None
+    for entry in value_payload:
+        if not isinstance(entry, Mapping):
+            continue
+        address = _address_from_spa_selector(entry)
+        if address is None:
+            continue
+        if first is None:
+            first = address
+        if _usable_register_reading(flat_values.get(address)):
+            return address
+    return first
+
+
+def _unit_code_for_address(*, address: str, flat_values: Mapping[str, Any]) -> Any | None:
+    """Return the companion ``u``-channel unit code for a value-register address."""
+    if "." not in address:
+        return None
+    pool, rest = address.split(".", 1)
+    if not pool or len(rest) < 2:
+        return None
+    try:
+        idx = int(rest[1:])
+    except ValueError:
+        return None
+    unit_key = f"{pool}.u{idx}"
+    unit_code = flat_values.get(unit_key)
+    if unit_code is None or unit_code == "":
+        return None
+    return unit_code
+
+
+def _apply_branch_register_bounds(
+    descriptor: EntityDescriptor,
+    *,
+    active_addr: str | None,
+    flat_values: Mapping[str, Any],
+) -> None:
+    """Copy active-branch ``n``/``x`` bounds onto the descriptor when present."""
+    if active_addr is None or "." not in active_addr:
+        return
+    pool_a, rest_a = active_addr.split(".", 1)
+    if not pool_a or len(rest_a) < 2:
+        return
+    try:
+        idx_a = int(rest_a[1:])
+    except ValueError:
+        return
+    fam_min = flat_values.get(f"{pool_a}.n{idx_a}")
+    fam_max = flat_values.get(f"{pool_a}.x{idx_a}")
+    if isinstance(fam_min, int | float) and not isinstance(fam_min, bool):
+        descriptor["min"] = fam_min
+    if isinstance(fam_max, int | float) and not isinstance(fam_max, bool):
+        descriptor["max"] = fam_max
+
+
 def _has_runtime_raw_value(
     *,
     payload: Mapping[str, Any],
@@ -1077,46 +1173,83 @@ def _has_named_command_rule(mapping: dict[str, Any] | None) -> bool:
     return False
 
 
+def _is_value_channel_selector(entry: Mapping[str, Any]) -> bool:
+    """Return True when *entry* is an SPA value-channel write target."""
+    address = entry.get("address")
+    if isinstance(address, str) and "." in address:
+        _pool, rest = address.split(".", 1)
+        if rest.strip().lower().startswith("v"):
+            try:
+                int(rest.strip()[1:])
+            except ValueError:
+                return False
+            else:
+                return True
+    group = entry.get("group") if entry.get("group") is not None else entry.get("pool")
+    number = entry.get("number")
+    if number is None:
+        number = entry.get("index")
+    if number is None:
+        number = entry.get("idx")
+    use = entry.get("use")
+    if use is None:
+        use = entry.get("path")
+    if use is None:
+        use = entry.get("pathType")
+    if use is None:
+        use = entry.get("chan")
+    if not isinstance(group, str) or not group.strip():
+        return False
+    if not isinstance(number, int):
+        return False
+    if not isinstance(use, str) or not use.strip():
+        return False
+    return use.strip().lower() in {"v", "value"}
+
+
+def _selector_list_has_value_write(entries: Any) -> bool:
+    if not isinstance(entries, list):
+        return False
+    return any(isinstance(entry, Mapping) and _is_value_channel_selector(entry) for entry in entries)
+
+
 def _mapping_has_parameter_write(mapping: dict[str, Any] | None) -> bool:
     """Return whether the ParamMap declares a write to a value channel.
 
     Live menus sometimes list editable PARAMs only under ``status`` (or omit
     kinds entirely for panel-only candidates). Those still carry
     ``paths.command`` entries such as ``{group: P6, number: 61, use: v}``.
+    Conditional write cards (``ZADANA_TEMP_CO*_WRITE``) keep ``paths.command``
+    empty and put the target register in ``command_rules`` / ``raw.any`` instead.
     """
     if not isinstance(mapping, dict):
         return False
     paths = mapping.get("paths")
-    if not isinstance(paths, Mapping):
-        return False
-    commands = paths.get("command")
-    if not isinstance(commands, list):
-        return False
-    for entry in commands:
-        if not isinstance(entry, Mapping):
-            continue
-        group = entry.get("group") if entry.get("group") is not None else entry.get("pool")
-        number = entry.get("number")
-        if number is None:
-            number = entry.get("index")
-        if number is None:
-            number = entry.get("idx")
-        use = entry.get("use")
-        if use is None:
-            use = entry.get("path")
-        if use is None:
-            use = entry.get("pathType")
-        if use is None:
-            use = entry.get("chan")
-        if not isinstance(group, str) or not group.strip():
-            continue
-        if not isinstance(number, int):
-            continue
-        if not isinstance(use, str) or not use.strip():
-            continue
-        use_norm = use.strip().lower()
-        if use_norm in {"v", "value"}:
-            return True
+    if isinstance(paths, Mapping) and _selector_list_has_value_write(paths.get("command")):
+        return True
+
+    command_rules = mapping.get("command_rules")
+    if isinstance(command_rules, list):
+        for rule in command_rules:
+            if not isinstance(rule, Mapping):
+                continue
+            if _selector_list_has_value_write(rule.get("value")) or _selector_list_has_value_write(rule.get("command")):
+                return True
+
+    raw = mapping.get("raw")
+    if isinstance(raw, Mapping):
+        any_rules = raw.get("any")
+        if isinstance(any_rules, list):
+            for rule in any_rules:
+                if not isinstance(rule, Mapping):
+                    continue
+                for payload_key in ("then", "else"):
+                    payload = rule.get(payload_key)
+                    if not isinstance(payload, Mapping):
+                        continue
+                    # ``value`` is the read source; only ``command`` marks a write target.
+                    if _selector_list_has_value_write(payload.get("command")):
+                        return True
     return False
 
 
@@ -1440,7 +1573,6 @@ async def async_build_bootstrap_payload(
     if isinstance(prime_data, dict):
         store.ingest_prime_payload(prime_data)
 
-    flat_values = store.flatten()
     resolve_failed_symbols: list[str] = []
     per_module_candidate_symbols: dict[str, set[str]] = {}
     per_module_panel_paths: dict[str, dict[str, str]] = {}
@@ -1456,6 +1588,7 @@ async def async_build_bootstrap_payload(
         module_permissions = [str(perm) for perm in getattr(module, "permissions", []) or []]
         panel_paths: dict[str, str] = {}
         menu_devices = _device_menu_refs_from_module(module)
+        module_flat_values = store.flatten_for_devid(str(module.devid))
 
         # Full permission-gated set: every panel the account can see, regardless of
         # whether it is reachable from the everyday web UI (#212).
@@ -1522,7 +1655,7 @@ async def async_build_bootstrap_payload(
                     all_panels=True,
                     web_ui_only=False,
                     routes_i18n=routes_i18n,
-                    flat_values=flat_values,
+                    flat_values=module_flat_values,
                     static_route_symbols=static_route_symbols,
                 )
                 _enrich_symbol_routes_from_shell_diagnostics(
@@ -1551,7 +1684,7 @@ async def async_build_bootstrap_payload(
                     all_panels=True,
                     web_ui_only=False,
                     routes_i18n=routes_i18n,
-                    flat_values=flat_values,
+                    flat_values=module_flat_values,
                     static_route_symbols=static_route_symbols,
                 )
                 _enrich_symbol_routes_from_shell_diagnostics(
@@ -1585,7 +1718,6 @@ async def async_build_bootstrap_payload(
         all_candidate_symbols.update(status_bar_tokens)
 
     details = await resolver.describe_symbols(sorted(all_candidate_symbols))
-    flat_values = store.flatten()
     per_module_symbols: dict[str, set[str]] = {}
 
     per_module_enabled_by_default: dict[str, dict[str, bool]] = {}
@@ -1594,6 +1726,8 @@ async def async_build_bootstrap_payload(
         module_symbols: set[str] = set()
         spa_visibility_rejected: set[str] = set()
         devid_text = str(module.devid)
+        # Branch/unit/bounds recovery must use this module's prime snapshot only.
+        flat_values = store.flatten_for_devid(devid_text)
         module_rejections: list[dict[str, Any]] = []
         module_accepts: list[dict[str, Any]] = []
         boiler_accepts: list[dict[str, Any]] = []
@@ -1680,9 +1814,14 @@ async def async_build_bootstrap_payload(
                 # SPA ``isParameterVisible`` requires ``parameter.value !== undefined``.
                 # Command-like writes without a display value are not shown on the web UI.
                 # This still gates entity creation (#212 only changes UI-visibility, not this).
+                # Conditional ``raw.any`` write cards may resolve to null while the active
+                # branch register is already primed — treat that store reading as display.
+                any_branch_value = _any_branch_store_value(mapping=mapping_dict, flat_values=flat_values)
+                if any_branch_value is not None and resolved_value is None:
+                    resolved_value = any_branch_value
                 if not _has_display_value(
-                    value=resolved.value,
-                    value_label=resolved.value_label,
+                    value=resolved_value,
+                    value_label=resolved_value_label,
                     mapping=mapping_dict,
                 ):
                     if len(module_rejections) < 500:
@@ -1697,6 +1836,8 @@ async def async_build_bootstrap_payload(
                         )
                     continue
                 has_runtime_raw = _has_runtime_raw_value(payload=payload, mapping=mapping_dict, flat_values=flat_values)
+                if not has_runtime_raw and any_branch_value is not None:
+                    has_runtime_raw = True
                 # Diode rule lists alone are not enough when the register is absent
                 # (HT STATUS_BAR_* heat-pump footers on a pellet boiler, unused valves).
                 # Always evaluate null guards and require the descriptor's own register —
@@ -1897,12 +2038,15 @@ async def async_build_bootstrap_payload(
             "module_address": module.moduleAddress,
             "permissions": [str(perm) for perm in getattr(module, "permissions", []) or []],
             # Lightweight manuf/dev/fw refs for REST menu construction (#438).
-            # BOOTSTRAP_VERSION 21: primary-only for SPA composites (no value2+ companions).
+            # BOOTSTRAP_VERSION 21+: primary-only for SPA composites (no value2+ companions).
             "devices": (
                 [{"manuf_code": r.manuf_code, "dev_code": r.dev_code, "fw": r.fw} for r in menu_refs] if menu_refs else []
             ),
         }
 
+        # Descriptor construction is a separate pass — refresh the module snapshot
+        # so unit/bounds recovery cannot inherit the previous module's flatten().
+        flat_values = store.flatten_for_devid(str(module.devid))
         routes_map = per_module_symbol_routes.get(module.devid, {})
         panel_paths_map = per_module_panel_paths.get(module.devid, {})
         panel_menu_keys = _menu_keys_by_panel_path(panel_paths_map, routes_map)
@@ -2005,6 +2149,22 @@ async def async_build_bootstrap_payload(
                 resolver,
                 payload if isinstance(payload, Mapping) else {},
             )
+            # Conditional write cards may omit unit metadata on the describe payload
+            # while the active branch register already carries a unit code (P*.u*).
+            if transform_scale is None:
+                active_addr = _any_branch_active_value_address(mapping=mapping, flat_values=flat_values)
+                branch_unit = _unit_code_for_address(address=active_addr, flat_values=flat_values) if active_addr else None
+                if branch_unit is not None:
+                    (
+                        unit_code,
+                        transform_scale,
+                        transform_offset,
+                        transform_precision,
+                    ) = await _resolve_descriptor_numeric_transform(
+                        resolver,
+                        {"unit_code": branch_unit, "mapping": mapping or {}},
+                    )
+                    _apply_branch_register_bounds(descriptor, active_addr=active_addr, flat_values=flat_values)
             _apply_descriptor_transform_fields(
                 descriptor,
                 unit_code=unit_code,

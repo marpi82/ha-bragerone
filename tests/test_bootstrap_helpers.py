@@ -254,6 +254,31 @@ def test_runtime_visibility_helpers() -> None:
     assert _has_display_value(value=schedule_list, value_label=None, mapping=None) is False
 
 
+def test_any_branch_store_value_reads_conditional_write_register() -> None:
+    from custom_components.habragerone.bootstrap import _any_branch_store_value
+
+    mapping = {
+        "raw": {
+            "any": [
+                {
+                    "if": [
+                        {
+                            "expected": 0,
+                            "operation": "equalTo",
+                            "value": [{"bit": 2, "group": "P31", "number": 13, "use": "s"}],
+                        }
+                    ],
+                    "then": {"value": [{"group": "P32", "number": 0, "use": "v"}]},
+                },
+                {"else": {"value": [{"group": "P32", "number": 221, "use": "v"}]}},
+            ]
+        }
+    }
+    assert _any_branch_store_value(mapping=mapping, flat_values={"P31.s13": 0, "P32.v0": 21}) == 21
+    assert _any_branch_store_value(mapping=mapping, flat_values={"P31.s13": 4, "P32.v221": 19}) == 19
+    assert _any_branch_store_value(mapping=None, flat_values={}) is None
+
+
 def test_rule_address_dedupe_key_and_measurement_unit_helpers() -> None:
     """Footer diodes share address+rule fingerprint; measurement units keep companions."""
     rules = [{"else": "OFF"}]

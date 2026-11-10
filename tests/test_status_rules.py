@@ -152,6 +152,8 @@ def test_read_target_actual_handles_address_bit_and_mask() -> None:
     # Bools are not bitmasks — leave the raw value untouched.
     assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": True}) is True
     assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": 1.5}) == 1.5
+    # Non-integer numeric strings leave the raw reading (bit/mask not applied).
+    assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": "10.5"}) == "10.5"
 
 
 def test_status_binary_has_sync_path() -> None:
@@ -227,6 +229,66 @@ def test_status_binary_has_sync_path() -> None:
             }
         }
     ) == {"P2.s0"}
+
+
+def test_compressor_status_binary_skips_mode_labels_for_on_off_bit() -> None:
+    """STATUS_BAR_COMPRESSOR mode tokens must not mask the physical ON/OFF bit."""
+    from custom_components.habragerone.status_rules import (
+        evaluate_status_binary_from_rules,
+        evaluate_status_value_rules,
+        status_rule_selector_addresses,
+        try_resolve_status_binary_sync,
+    )
+
+    mapping = {
+        "paths": {
+            "value": [
+                {
+                    "if": [{"expected": 2, "operation": "equalTo", "value": [{"group": "P31", "number": 12, "use": "s"}]}],
+                    "then": "COMPRESSOR_STATE_HEATING",
+                },
+                {
+                    "elseif": [{"expected": 1, "operation": "equalTo", "value": [{"group": "P31", "number": 12, "use": "s"}]}],
+                    "then": "COMPRESSOR_STATE_DEFROST",
+                },
+                {
+                    "elseif": [
+                        {
+                            "expected": 1,
+                            "operation": "equalTo",
+                            "value": [{"bit": 1, "group": "P31", "number": 54, "use": "s"}],
+                        }
+                    ],
+                    "then": "ON_SHORT",
+                },
+                {
+                    "elseif": [
+                        {
+                            "expected": 0,
+                            "operation": "equalTo",
+                            "value": [{"bit": 1, "group": "P31", "number": 54, "use": "s"}],
+                        }
+                    ],
+                    "then": "OFF_SHORT",
+                },
+                {"else": None},
+            ]
+        }
+    }
+    descriptor = {"mapping": mapping, "pool": "P31", "chan": "s", "idx": 12}
+
+    # Display still prefers the SPA mode label.
+    assert evaluate_status_value_rules(mapping=mapping, flat_values={"P31.s12": 2, "P31.s54": 2}) == "COMPRESSOR_STATE_HEATING"
+    # Binary skips mode labels and follows P31.s54 bit1.
+    assert evaluate_status_binary_from_rules(mapping=mapping, flat_values={"P31.s12": 2, "P31.s54": 2}) is True
+    assert evaluate_status_binary_from_rules(mapping=mapping, flat_values={"P31.s12": 2, "P31.s54": 0}) is False
+    assert (
+        try_resolve_status_binary_sync(descriptor=descriptor, flat_values={"P31.s12": 2, "P31.s54": 2}, default_actual=2) is True
+    )
+    assert (
+        try_resolve_status_binary_sync(descriptor=descriptor, flat_values={"P31.s12": 5, "P31.s54": 2}, default_actual=5) is True
+    )
+    assert status_rule_selector_addresses(mapping) == {"P31.s12", "P31.s54"}
     from custom_components.habragerone.status_rules import (
         _addresses_from_status_rules,
         status_value_rules_fingerprint,
@@ -413,11 +475,13 @@ def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:
 def test_resolve_entity_bool_evaluates_paths_value_mask_rules() -> None:
     """SPA pump-diode paths.value if/elseif/else+mask (prefix-agnostic)."""
     from custom_components.habragerone.status_rules import (
+        evaluate_status_binary_from_rules,
         mapping_has_status_value_rules,
         resolve_entity_bool,
         resolve_rule_bool,
         resolve_rule_display_value,
         status_binary_has_sync_path,
+        try_resolve_status_binary_sync,
     )
 
     rules = [
@@ -451,27 +515,28 @@ def test_resolve_entity_bool_evaluates_paths_value_mask_rules() -> None:
     # Library evaluator also handles ClauseOperation / greaterThan.
     from custom_components.habragerone.status_rules import evaluate_status_value_rules
 
-    gt = evaluate_status_value_rules(
-        mapping={
-            "paths": {
-                "value": [
-                    {
-                        "if": [
-                            {
-                                "expected": 5,
-                                "operation": "ClauseOperation['greaterThan']",
-                                "value": [{"group": "P2", "number": 0, "use": "v"}],
-                            }
-                        ],
-                        "then": "ON",
-                        "else": "OFF",
-                    }
-                ]
-            }
-        },
-        flat_values={"P2.v0": 9},
-    )
+    gt_mapping = {
+        "paths": {
+            "value": [
+                {
+                    "if": [
+                        {
+                            "expected": 5,
+                            "operation": "ClauseOperation['greaterThan']",
+                            "value": [{"group": "P2", "number": 0, "use": "v"}],
+                        }
+                    ],
+                    "then": "ON",
+                    "else": "OFF",
+                }
+            ]
+        }
+    }
+    gt = evaluate_status_value_rules(mapping=gt_mapping, flat_values={"P2.v0": 9})
     assert gt == "ON"
+    # Binary sync must defer unsupported predicates (not treat them as false → else OFF).
+    assert evaluate_status_binary_from_rules(mapping=gt_mapping, flat_values={"P2.v0": 9}) is None
+    assert try_resolve_status_binary_sync(descriptor={"mapping": gt_mapping}, flat_values={"P2.v0": 9}, default_actual=9) is None
 
     # Inline else on the same rule as a nonmatching if.
     inline = {

@@ -2,8 +2,23 @@
 
 from __future__ import annotations
 
+import contextlib
+import re
 from collections.abc import Mapping
 from typing import Any
+
+_JS_BRACKET_MEMBER_RE = re.compile(r"\[\s*['\"]([A-Za-z_$][\w$]*)['\"]\s*\]")
+_COMPARISON_OPS = frozenset(
+    {
+        "equalTo",
+        "notEqualTo",
+        "greaterThan",
+        "greaterThanOrEqualTo",
+        "lessThan",
+        "lessThanOrEqualTo",
+    }
+)
+_BINARY_SYNC_OPS = frozenset({"equalTo", "notEqualTo"})
 
 
 def resolve_rule_display_value(
@@ -189,8 +204,25 @@ def _looks_like_status_rule_list(entries: Any) -> bool:
     return any(isinstance(entry, Mapping) and any(key in entry for key in ("if", "elseif", "then", "else")) for entry in entries)
 
 
+def _limit_companion_addresses(address: str) -> set[str]:
+    """Return ``n``/``x`` companions for a value-register address (``P32.v221``)."""
+    if "." not in address:
+        return set()
+    pool, rest = address.split(".", 1)
+    if len(rest) < 2 or rest[0] != "v" or not rest[1:].isdigit():
+        return set()
+    idx = rest[1:]
+    return {f"{pool}.n{idx}", f"{pool}.x{idx}"}
+
+
 def _addresses_from_status_rules(rules: list[Any]) -> set[str]:
-    """Collect ``P<n>.<chan><idx>`` addresses from if/elseif value selectors."""
+    """Collect ``P<n>.<chan><idx>`` addresses from rule conditions and payloads.
+
+    Includes if/elseif selectors plus ``then``/``else`` address lists so entities
+    that bind a conditional value register (e.g. ``ZADANA_TEMP_CO*_WRITE``) refresh
+    when either the gate bit or the active setpoint word changes. Value-register
+    bindings also pull ``n``/``x`` companions so HA number limits stay live.
+    """
     out: set[str] = set()
     for rule in rules:
         if not isinstance(rule, Mapping):
@@ -211,11 +243,114 @@ def _addresses_from_status_rules(rules: list[Any]) -> set[str]:
                     address = _address_from_spa_selector(sel)
                     if address is not None:
                         out.add(address)
+        for payload_key in ("then", "else"):
+            if payload_key not in rule:
+                continue
+            payload_addrs = _addresses_from_rule_payload(rule.get(payload_key))
+            out.update(payload_addrs)
+            for address in payload_addrs:
+                out.update(_limit_companion_addresses(address))
     return out
 
 
+def _addresses_from_rule_payload(payload: Any) -> set[str]:
+    """Collect addresses from a ``then``/``else`` label or address-selector payload."""
+    out: set[str] = set()
+    if isinstance(payload, Mapping):
+        if "value" in payload:
+            out.update(_addresses_from_rule_payload(payload.get("value")))
+            # Command selectors on the same branch also bind the write register.
+            if "command" in payload:
+                out.update(_addresses_from_rule_payload(payload.get("command")))
+            return out
+        if "command" in payload and "group" not in payload and "address" not in payload:
+            out.update(_addresses_from_rule_payload(payload.get("command")))
+            return out
+        address = _address_from_spa_selector(payload)
+        if address is not None:
+            out.add(address)
+        return out
+    if isinstance(payload, list):
+        for entry in payload:
+            if isinstance(entry, Mapping):
+                out.update(_addresses_from_rule_payload(entry))
+    return out
+
+
+def select_raw_any_branch(
+    any_rules: Any,
+    *,
+    flat_values: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    """Return the active ``raw.any`` then/else payload mapping, if any.
+
+    Mirrors library ``ParamResolver._select_raw_any_branch`` with the local SPA
+    condition matcher so HA stays usable against stubs / older pins.
+    """
+    if not isinstance(any_rules, list):
+        return None
+    explicit_else: Mapping[str, Any] | None = None
+    for rule in any_rules:
+        if not isinstance(rule, Mapping):
+            continue
+        conds = rule.get("if")
+        if conds is None:
+            conds = rule.get("elseif")
+        if (
+            isinstance(conds, list)
+            and conds
+            and all(isinstance(c, Mapping) and _spa_condition_matches(c, flat_values=flat_values) for c in conds)
+        ):
+            then_val = rule.get("then")
+            return then_val if isinstance(then_val, Mapping) else None
+        if explicit_else is None:
+            else_val = rule.get("else")
+            if isinstance(else_val, Mapping):
+                explicit_else = else_val
+    return explicit_else
+
+
+def _usable_register_reading(value: Any) -> bool:
+    """Return whether a store reading is usable (mirrors library serialize checks)."""
+    if value is None or isinstance(value, bool):
+        return False
+    if isinstance(value, int | float):
+        return True
+    if isinstance(value, str):
+        return bool(value.strip())
+    return False
+
+
+def first_selector_address_value(
+    payload: Mapping[str, Any] | None,
+    *,
+    flat_values: Mapping[str, Any],
+) -> Any | None:
+    """Read the first address-selector entry under ``payload['value']`` from *flat_values*."""
+    if not isinstance(payload, Mapping):
+        return None
+    value_payload = payload.get("value")
+    if not isinstance(value_payload, list):
+        return None
+    for entry in value_payload:
+        if not isinstance(entry, Mapping):
+            continue
+        address = _address_from_spa_selector(entry)
+        if address is None:
+            continue
+        reading = flat_values.get(address)
+        if _usable_register_reading(reading):
+            return reading
+    return None
+
+
 def _address_from_spa_selector(entry: Mapping[str, Any]) -> str | None:
-    """Build ``P<n>.<chan><idx>`` from an SPA ``{group, number, use}`` selector."""
+    """Build ``P<n>.<chan><idx>`` from an SPA selector or ``{"address": "..."}`` form."""
+    address = entry.get("address")
+    if isinstance(address, str) and "." in address:
+        pool, rest = address.split(".", 1)
+        if pool.strip() and rest.strip():
+            return f"{pool.strip()}.{rest.strip()}"
     group = entry.get("group")
     number = entry.get("number")
     use = entry.get("use")
@@ -226,6 +361,77 @@ def _address_from_spa_selector(entry: Mapping[str, Any]) -> str | None:
     if not isinstance(use, str) or not use.strip():
         return None
     return f"{group.strip()}.{use.strip()[0]}{number}"
+
+
+def spa_operation_name(operation: Any) -> str | None:
+    """Normalize SPA / JS operation tokens (``t.equalTo``, ``ClauseOperation['equalTo']``)."""
+    if operation is None:
+        return None
+    text = operation.strip() if isinstance(operation, str) else str(operation).strip()
+    if not text:
+        return None
+    bracket = _JS_BRACKET_MEMBER_RE.search(text)
+    if bracket is not None:
+        return bracket.group(1)
+    if "." in text:
+        text = text.rsplit(".", 1)[-1]
+    return text or None
+
+
+def _spa_condition_selector_supported(cond: Mapping[str, Any]) -> bool:
+    """Return whether a local matcher can evaluate the condition's value selectors.
+
+    ``value: {storeGetter: ...}`` needs runtime context the flat-values matcher
+    does not have — treating it as false would silently take the else branch.
+    """
+    values = cond.get("value")
+    return not isinstance(values, Mapping)
+
+
+def raw_any_conditions_are_supported(any_rules: Any) -> bool:
+    """Return whether every ``raw.any`` if/elseif predicate is locally evaluable."""
+    if not isinstance(any_rules, list):
+        return True
+    for rule in any_rules:
+        if not isinstance(rule, Mapping):
+            continue
+        for key in ("if", "elseif"):
+            conds = rule.get(key)
+            if not isinstance(conds, list):
+                continue
+            for cond in conds:
+                if not isinstance(cond, Mapping):
+                    return False
+                op = spa_operation_name(cond.get("operation"))
+                if op not in _COMPARISON_OPS:
+                    return False
+                if not _spa_condition_selector_supported(cond):
+                    return False
+    return True
+
+
+def command_rule_conditions_are_supported(command_rules: Any) -> bool:
+    """Return whether every cached ``command_rules`` predicate is locally evaluable.
+
+    Unsupported ops must not drive write-target selection — that would bypass the
+    validated ``raw.any`` fallback and can target a different setpoint than the
+    displayed reading.
+    """
+    if not isinstance(command_rules, list):
+        return True
+    for rule in command_rules:
+        if not isinstance(rule, Mapping):
+            continue
+        conditions = rule.get("conditions")
+        if not isinstance(conditions, list) or not conditions:
+            continue
+        for cond in conditions:
+            if not isinstance(cond, Mapping):
+                return False
+            op = spa_operation_name(cond.get("operation"))
+            if op not in _COMPARISON_OPS:
+                return False
+    return True
 
 
 def _eval_spa_value_rules(rules: list[Any], *, flat_values: Mapping[str, Any]) -> Any | None:
@@ -279,17 +485,14 @@ def _spa_condition_matches(cond: Mapping[str, Any], *, flat_values: Mapping[str,
         address = f"{group}.{use[0]}{number}"
         # Absent register: only null/undefined equality can match (pump-diode guard).
         if address not in flat_values:
-            op = operation.strip()
-            if "." in op:
-                op = op.rsplit(".", 1)[-1]
-            if op == "equalTo" and expected is None:
+            if spa_operation_name(operation) == "equalTo" and expected is None:
                 return True
             continue
         actual = read_target_actual(
             {"address": address, "bit": sel.get("bit"), "mask": sel.get("mask")},
             flat_values=flat_values,
         )
-        if compare_condition(operation=operation, actual=actual, expected=expected):
+        if compare_condition(operation=str(operation), actual=actual, expected=expected):
             return True
     return False
 
@@ -301,6 +504,12 @@ def resolve_rule_bool(
     default_actual: Any,
 ) -> bool | None:
     """Resolve rule output to boolean for binary-state entities."""
+    mapping = descriptor.get("mapping")
+    if isinstance(mapping, Mapping) and mapping_has_status_value_rules(mapping):
+        # Multi-state SPA footers (e.g. STATUS_BAR_COMPRESSOR) emit mode labels
+        # such as COMPRESSOR_STATE_HEATING before ON_SHORT/OFF_SHORT — for binary
+        # entities skip non-bool labels and keep walking.
+        return evaluate_status_binary_from_rules(mapping=mapping, flat_values=flat_values)
     display = resolve_rule_display_value(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
     return status_label_to_bool(display)
 
@@ -336,11 +545,11 @@ def try_resolve_status_binary_sync(
     mapping_raw = descriptor.get("mapping")
     mapping: Mapping[str, Any] | None = mapping_raw if isinstance(mapping_raw, Mapping) else None
     if mapping is not None and mapping_has_status_value_rules(mapping):
-        # Only claim a sync path when the rule list yields an on/off label.
-        # Matched ``then: null``, unmatched rules, and non-bool labels all defer to
-        # the async library resolver — do not fall through to raw/bit coercion.
-        display = evaluate_status_value_rules(mapping=mapping, flat_values=flat_values)
-        return status_label_to_bool(display)
+        # Claim a sync path only for on/off labels. Mode-only ``then`` tokens
+        # (COMPRESSOR_STATE_*) are skipped so later ON_SHORT/OFF_SHORT branches
+        # can win; explicit ``then: null`` and fully unmatched rules return None
+        # (defer to async resolver — do not fall through to raw coercion).
+        return evaluate_status_binary_from_rules(mapping=mapping, flat_values=flat_values)
     rule_value = resolve_rule_bool(descriptor=descriptor, flat_values=flat_values, default_actual=default_actual)
     if rule_value is not None:
         return rule_value
@@ -362,6 +571,87 @@ def try_resolve_status_binary_sync(
         return bool(int(actual))
     # Preferred bit/mask input exists — same sync eligibility as resolve_entity_bool.
     return coerce_status_bool(default_actual)
+
+
+def evaluate_status_binary_from_rules(
+    *,
+    mapping: Mapping[str, Any],
+    flat_values: Mapping[str, Any],
+) -> bool | None:
+    """Walk SPA status value rules for on/off, skipping non-bool mode labels.
+
+    Display evaluation keeps first-match semantics (``COMPRESSOR_STATE_HEATING``
+    wins for sensors). Binary diodes need the physical ON/OFF bit that often sits
+    *after* those mode branches — continue until a bool-mappable label appears.
+    Explicit ``then: null`` still means undefined (stop). Unsupported predicate
+    operations defer to the async library resolver (return ``None``) instead of
+    treating the condition as false.
+    """
+    rules = _status_value_rule_list(mapping)
+    if rules is None:
+        return None
+
+    else_payload: Any = None
+    # ``_status_value_rule_list`` already keeps Mapping entries only.
+    for rule in rules:
+        conds = rule.get("if")
+        if conds is None:
+            conds = rule.get("elseif")
+        if isinstance(conds, list) and conds:
+            match = _spa_conditions_match_for_binary(conds, flat_values=flat_values)
+            if match is None:
+                return None
+            if match:
+                then_payload = rule.get("then") if "then" in rule else None
+                if "then" in rule and _status_payload_is_null(then_payload):
+                    return None
+                resolved = _status_payload_to_bool(then_payload)
+                if resolved is not None:
+                    return resolved
+                continue
+        if else_payload is None and "else" in rule:
+            else_payload = rule.get("else")
+
+    if else_payload is None:
+        return None
+    return _status_payload_to_bool(else_payload)
+
+
+def _spa_conditions_match_for_binary(
+    conds: list[Any],
+    *,
+    flat_values: Mapping[str, Any],
+) -> bool | None:
+    """Return whether all conditions match, or ``None`` when an op is unsupported."""
+    for cond in conds:
+        if not isinstance(cond, Mapping):
+            return False
+        op = spa_operation_name(cond.get("operation"))
+        # Binary diodes only evaluate equalTo / notEqualTo locally; other ops
+        # (and unknown tokens) defer to the async library resolver.
+        if op not in _BINARY_SYNC_OPS:
+            return None
+        if not _spa_condition_matches(cond, flat_values=flat_values):
+            return False
+    return True
+
+
+def _status_payload_is_null(payload: Any) -> bool:
+    """Return True for literal null and SPA ``{"value": null}`` wrappers."""
+    if payload is None:
+        return True
+    if isinstance(payload, Mapping) and "value" in payload:
+        return _status_payload_is_null(payload.get("value"))
+    return False
+
+
+def _status_payload_to_bool(payload: Any) -> bool | None:
+    """Map a rule ``then``/``else`` payload to on/off when the label is binary."""
+    if isinstance(payload, Mapping):
+        if "value" in payload:
+            return _status_payload_to_bool(payload.get("value"))
+        return None
+    return status_label_to_bool(payload)
 
 
 def status_label_to_bool(value: Any) -> bool | None:
@@ -537,13 +827,19 @@ def _condition_matches(cond: Mapping[str, Any], *, flat_values: Mapping[str, Any
 
 
 def _as_bitmask_int(value: Any) -> int | None:
-    """Coerce JSON numbers (including floats like ``64.0``) to ints for bit ops."""
+    r"""Coerce JSON numbers (including floats/strings like ``64.0`` / ``"0"``) to ints."""
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
         return value
     if isinstance(value, float) and value.is_integer():
         return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        with contextlib.suppress(TypeError, ValueError):
+            as_float = float(text)
+            if as_float.is_integer():
+                return int(as_float)
     return None
 
 
@@ -585,13 +881,25 @@ def coerce_status_bool(value: Any) -> bool:
 
 def compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
     """Evaluate one rule operation against actual and expected values."""
-    op = operation.strip()
-    if "." in op:
-        op = op.rsplit(".", 1)[-1]
+    op = spa_operation_name(operation)
     if op == "equalTo":
         return bool(actual == expected)
     if op == "notEqualTo":
         return bool(actual != expected)
+    if op in {"greaterThan", "greaterThanOrEqualTo", "lessThan", "lessThanOrEqualTo"}:
+        # Mixed types must not raise — treat as non-match (same as library resolver).
+        if actual is None or expected is None:
+            return False
+        try:
+            if op == "greaterThan":
+                return bool(actual > expected)
+            if op == "greaterThanOrEqualTo":
+                return bool(actual >= expected)
+            if op == "lessThan":
+                return bool(actual < expected)
+            return bool(actual <= expected)
+        except TypeError:
+            return False
     return False
 
 

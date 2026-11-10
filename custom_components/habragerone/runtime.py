@@ -1158,19 +1158,87 @@ class BragerRuntime:
         else:
             typed_command_rules = []
         has_command_rule = len(typed_command_rules) > 0
-        flat_values = self.store.flatten()
+        from .entity_common import _scoped_flat_values
+
+        # Scope gate/bounds evaluation to this module — merged flatten() is LWW
+        # across devices and can steer writes/limits from another boiler.
+        flat_values = _scoped_flat_values(self.store, devid)
         default_actual: Any = None
         if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
             default_actual = flat_values.get(f"{pool}.{chan}{idx}")
-        active_rule = _select_active_command_rule(
-            command_rules=typed_command_rules,
-            flat_values=flat_values,
-            devid=devid,
-            modules_meta=self.modules_meta,
-            default_actual=default_actual,
-        )
+
+        from .status_rules import command_rule_conditions_are_supported
+
+        # Prefer command_rules destination only when every predicate is locally
+        # evaluable (same ops as raw.any / read path). Unsupported ops must not
+        # pick an else/named target and bypass the validated raw.any fallback.
+        command_rules_supported = command_rule_conditions_are_supported(typed_command_rules)
+        active_rule: dict[str, Any] = {}
+        write_addr: tuple[str, str, int] | None = None
+        if typed_command_rules and command_rules_supported:
+            active_rule = _select_active_command_rule(
+                command_rules=typed_command_rules,
+                flat_values=flat_values,
+                devid=devid,
+                modules_meta=self.modules_meta,
+                default_actual=default_actual,
+            )
+            # Write destination is the rule's ``command`` selector — ``value`` is the
+            # read register and may differ (e.g. display v0 / command v221).
+            if isinstance(active_rule.get("command"), list):
+                write_addr = _parameter_address_from_rule_payload(active_rule.get("command"))
+        elif typed_command_rules and not command_rules_supported:
+            # Named-command routes still need an active rule for display intents;
+            # refuse destination selection from unsupported predicates.
+            active_rule = {}
+
         active_command = _rule_command_name(active_rule)
         has_raw_command_route = isinstance(active_command, str) and bool(active_command.strip())
+
+        # Named-command routes do not need a parameter address — skipping raw.any
+        # avoids unrelated display guards (matches/storeGetter) blocking the write.
+        if write_addr is None and not has_raw_command_route and isinstance(mapping, dict):
+            write_addr = _parameter_address_from_active_any_branch_command(mapping, flat_values=flat_values)
+        if typed_command_rules and not command_rules_supported and write_addr is None and not has_raw_command_route:
+            # Do not fall through to the cached primary address — that may not be
+            # the active setpoint when predicates could not be evaluated.
+            raise HomeAssistantError("Unsupported command_rule predicate without a usable raw.any destination; refusing write")
+
+        # Supported address-selecting conditionals must resolve an explicit destination.
+        # Falling through to the cached primary can write an inactive setpoint when no
+        # guard matched or the active branch has a display value but no command.
+        # Value-keyed named commands (string ``command``) still use the later
+        # ``_select_command_rule`` path and are not blocked here.
+        had_address_command_rules = any(isinstance(rule.get("command"), list) for rule in typed_command_rules)
+        conditional_write_binding = bool(command_rules_supported and had_address_command_rules)
+        if not conditional_write_binding and isinstance(mapping, dict):
+            raw_mapping = mapping.get("raw")
+            any_rules = raw_mapping.get("any") if isinstance(raw_mapping, Mapping) else None
+            conditional_write_binding = isinstance(any_rules, list) and bool(any_rules)
+        if conditional_write_binding and write_addr is None and not has_raw_command_route:
+            raise HomeAssistantError("Unresolved conditional write destination; refusing write")
+        raw_min: Any = (
+            descriptor.get("min")
+            if isinstance(descriptor.get("min"), int | float) and not isinstance(descriptor.get("min"), bool)
+            else None
+        )
+        raw_max: Any = (
+            descriptor.get("max")
+            if isinstance(descriptor.get("max"), int | float) and not isinstance(descriptor.get("max"), bool)
+            else None
+        )
+        if write_addr is not None:
+            pool, chan, idx = write_addr
+            has_parameter_address = True
+            # Keep bounds module-scoped — never inherit another devid's n/x.
+            fam = self.store.get_family(pool, idx, devid=devid)
+            if fam is not None:
+                fam_min = fam.get("n")
+                fam_max = fam.get("x")
+                if isinstance(fam_min, int | float) and not isinstance(fam_min, bool):
+                    raw_min = fam_min
+                if isinstance(fam_max, int | float) and not isinstance(fam_max, bool):
+                    raw_max = fam_max
 
         context = WriteContext(
             symbol=symbol,
@@ -1178,16 +1246,8 @@ class BragerRuntime:
             has_command_rule=has_command_rule,
             enum_mapping=enum_mapping,
             transform=descriptor_numeric_transform(descriptor),
-            raw_min=(
-                descriptor.get("min")
-                if isinstance(descriptor.get("min"), int | float) and not isinstance(descriptor.get("min"), bool)
-                else None
-            ),
-            raw_max=(
-                descriptor.get("max")
-                if isinstance(descriptor.get("max"), int | float) and not isinstance(descriptor.get("max"), bool)
-                else None
-            ),
+            raw_min=raw_min,
+            raw_max=raw_max,
         )
         try:
             prepared = prepare_write(input_display_value, context=context)
@@ -1398,6 +1458,58 @@ class BragerRuntime:
                     LOGGER.exception("Runtime listener callback failed for update %s.%s%s", update.pool, update.chan, update.idx)
 
 
+def _parameter_address_from_rule_payload(payload: Any) -> tuple[str, str, int] | None:
+    """Extract ``(pool, chan, idx)`` from a command-rule value/command selector list."""
+    if isinstance(payload, Mapping):
+        payload = [payload]
+    if not isinstance(payload, list):
+        return None
+    for entry in payload:
+        if not isinstance(entry, Mapping):
+            continue
+        address = entry.get("address")
+        if isinstance(address, str) and "." in address:
+            pool, rest = address.split(".", 1)
+            if pool and rest:
+                chan = rest[0]
+                try:
+                    return pool, chan, int(rest[1:])
+                except ValueError:
+                    continue
+        group = entry.get("group")
+        number = entry.get("number")
+        use = entry.get("use")
+        if isinstance(group, str) and isinstance(number, int) and isinstance(use, str) and use:
+            return group, use[0], number
+    return None
+
+
+def _parameter_address_from_active_any_branch_command(
+    mapping: Mapping[str, Any],
+    *,
+    flat_values: Mapping[str, Any],
+) -> tuple[str, str, int] | None:
+    """Resolve the active ``raw.any`` branch ``command`` selector address.
+
+    Raises:
+        HomeAssistantError: When branch predicates cannot be evaluated safely.
+    """
+    from .status_rules import raw_any_conditions_are_supported, select_raw_any_branch
+
+    raw = mapping.get("raw")
+    if not isinstance(raw, Mapping):
+        return None
+    any_rules = raw.get("any")
+    if not isinstance(any_rules, list) or not any_rules:
+        return None
+    if not raw_any_conditions_are_supported(any_rules):
+        raise HomeAssistantError("Unsupported raw.any predicate; refusing write to avoid the wrong setpoint")
+    branch = select_raw_any_branch(any_rules, flat_values=flat_values)
+    if not isinstance(branch, Mapping):
+        return None
+    return _parameter_address_from_rule_payload(branch.get("command"))
+
+
 def _select_command_rule(*, command_rules: list[dict[str, Any]], desired_value: Any) -> dict[str, Any]:
     desired_normalized = str(desired_value).strip().lower()
     for rule in command_rules:
@@ -1511,44 +1623,40 @@ def _read_target_actual(
     devid: str,
     modules_meta: Mapping[str, Mapping[str, Any]],
 ) -> Any:
+    from .status_rules import read_target_actual
+
     address = target.get("address")
+    key: str | None
     if isinstance(address, str) and address.strip():
-        value = flat_values.get(address.strip())
+        key = address.strip()
     else:
         group = target.get("group")
         use = target.get("use")
         number = target.get("number")
         key = f"{group}.{use}{number}" if isinstance(group, str) and isinstance(use, str) and isinstance(number, int) else None
-        value = flat_values.get(key) if isinstance(key, str) else None
 
-    if value is None:
-        getter = target.get("storeGetter")
-        if isinstance(getter, str) and getter.endswith("connectedAt"):
-            value = modules_meta.get(devid, {}).get("connectedAt")
+    if key is not None and key in flat_values:
+        return read_target_actual(
+            {"address": key, "bit": target.get("bit"), "mask": target.get("mask")},
+            flat_values=flat_values,
+        )
 
-    bit = target.get("bit")
-    if isinstance(bit, int):
-        bitmask_value: int | None = None
-        if isinstance(value, bool):
-            bitmask_value = None
-        elif isinstance(value, int):
-            bitmask_value = value
-        elif isinstance(value, float) and value.is_integer():
-            bitmask_value = int(value)
-        if bitmask_value is not None:
-            return (bitmask_value >> bit) & 1
-    return value
+    getter = target.get("storeGetter")
+    if isinstance(getter, str) and getter.endswith("connectedAt"):
+        return modules_meta.get(devid, {}).get("connectedAt")
+    if key is not None:
+        return read_target_actual(
+            {"address": key, "bit": target.get("bit"), "mask": target.get("mask")},
+            flat_values=flat_values,
+        )
+    return None
 
 
 def _compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
-    op = operation.strip()
-    if "." in op:
-        op = op.rsplit(".", 1)[-1]
-    if op == "equalTo":
-        return bool(actual == expected)
-    if op == "notEqualTo":
-        return bool(actual != expected)
-    return False
+    """Delegate to status_rules so write selection matches the read-path ops."""
+    from .status_rules import compare_condition
+
+    return compare_condition(operation=operation, actual=actual, expected=expected)
 
 
 def _module_events_rest_ok(result: Any) -> bool:

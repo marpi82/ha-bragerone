@@ -27,6 +27,10 @@ class _FakeParamStore:
     def flatten(self) -> dict[str, object]:
         return {"P4.v1": 42}
 
+    def flatten_for_devid(self, devid: str) -> dict[str, object]:
+        _ = devid
+        return self.flatten()
+
 
 class _FakeResolver:
     gated_groups: ClassVar[object] = {"Panel": ["SYM1"]}
