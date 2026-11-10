@@ -647,6 +647,14 @@ def test_bootstrap_any_branch_address_and_unit_helpers() -> None:
     assert _unit_code_for_address(address="P32.vX", flat_values={}) is None
     assert _unit_code_for_address(address="P32.v221", flat_values={"P32.u221": ""}) is None
     assert _unit_code_for_address(address="P32.v221", flat_values={"P32.u221": 12}) == 12
+    # Callers must pass a module-scoped snapshot — foreign u/n/x must not leak in.
+    foreign = {"P32.u221": 99, "P32.n221": 10, "P32.x221": 300}
+    local = {"P32.u221": 12, "P32.n221": 150, "P32.x221": 250}
+    assert _unit_code_for_address(address="P32.v221", flat_values=local) == 12
+    assert _unit_code_for_address(address="P32.v221", flat_values=foreign) == 99
+    local_bounds: dict[str, object] = {"min": 0, "max": 400}
+    _apply_branch_register_bounds(local_bounds, active_addr="P32.v221", flat_values=local)
+    assert local_bounds == {"min": 150, "max": 250}
     assert _is_value_channel_selector({"address": "P32.v221"}) is True
     assert _is_value_channel_selector({"address": "P32.vX"}) is False
     assert _is_value_channel_selector({"address": "P32.s1"}) is False
@@ -943,12 +951,12 @@ def test_descriptor_active_paths_scope_to_module_devid() -> None:
     assert descriptor_current_raw_value(store, descriptor_b) == 180
     assert descriptor_active_raw_limits(store, descriptor_b) == (100, 200)
 
-    # Devid-scoped family miss falls back to the unscoped store snapshot.
+    # Devid-scoped family miss keeps cached limits — never inherit another module's n/x.
     hybrid = FakeStore()
     hybrid.upsert("P5.v0", 10, devid="modA")
-    hybrid._flat["P32.v0"] = 190
-    hybrid._flat["P32.n0"] = 150
-    hybrid._flat["P32.x0"] = 250
+    hybrid.upsert("P32.v0", 999, devid="modB")
+    hybrid.upsert("P32.n0", 10, devid="modB")
+    hybrid.upsert("P32.x0", 300, devid="modB")
     assert descriptor_active_raw_limits(
         hybrid,
         {
@@ -972,7 +980,7 @@ def test_descriptor_active_paths_scope_to_module_devid() -> None:
                 }
             },
         },
-    ) == (150, 250)
+    ) == (1, 2)
 
     # Mapping-input fallback skips junk selectors and returns None when empty.
     assert (

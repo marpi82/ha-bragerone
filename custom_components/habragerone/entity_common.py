@@ -305,13 +305,11 @@ def attach_transport_availability_listener(
 def _scoped_flat_values(store: ParamStore, devid: str | None) -> dict[str, Any]:
     """Return a module-scoped ParamStore snapshot when *devid* is known.
 
-    Falls back to the merged ``flatten()`` view when the devid bucket is empty
-    (unit-test FakeStore fixtures and legacy unscoped primes).
+    Never falls back to the merged ``flatten()`` view for a known devid — that
+    snapshot is last-write-wins across modules and can steer gates/bounds/units.
     """
     if isinstance(devid, str) and devid.strip():
-        scoped = store.flatten_for_devid(devid.strip())
-        if scoped:
-            return scoped
+        return store.flatten_for_devid(devid.strip())
     return store.flatten()
 
 
@@ -325,8 +323,6 @@ def store_value_for_address(store: ParamStore, address: str, *, devid: str | Non
         return None
 
     family = store.get_family(pool, idx, devid=devid)
-    if family is None and devid:
-        family = store.get_family(pool, idx)
     if family is None:
         return None
     return family.get(chan)
@@ -462,8 +458,6 @@ def descriptor_active_raw_limits(store: ParamStore, descriptor: Mapping[str, Any
 
     def _limits_from_family(pool: str, idx: int) -> tuple[Any, Any] | None:
         fam = store.get_family(pool, idx, devid=devid)
-        if fam is None and devid:
-            fam = store.get_family(pool, idx)
         if fam is None:
             return None
         fam_min = fam.get("n")

@@ -1215,9 +1215,8 @@ class BragerRuntime:
         if write_addr is not None:
             pool, chan, idx = write_addr
             has_parameter_address = True
+            # Keep bounds module-scoped — never inherit another devid's n/x.
             fam = self.store.get_family(pool, idx, devid=devid)
-            if fam is None:
-                fam = self.store.get_family(pool, idx)
             if fam is not None:
                 fam_min = fam.get("n")
                 fam_max = fam.get("x")

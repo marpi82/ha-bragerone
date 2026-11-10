@@ -1573,7 +1573,6 @@ async def async_build_bootstrap_payload(
     if isinstance(prime_data, dict):
         store.ingest_prime_payload(prime_data)
 
-    flat_values = store.flatten()
     resolve_failed_symbols: list[str] = []
     per_module_candidate_symbols: dict[str, set[str]] = {}
     per_module_panel_paths: dict[str, dict[str, str]] = {}
@@ -1589,6 +1588,7 @@ async def async_build_bootstrap_payload(
         module_permissions = [str(perm) for perm in getattr(module, "permissions", []) or []]
         panel_paths: dict[str, str] = {}
         menu_devices = _device_menu_refs_from_module(module)
+        module_flat_values = store.flatten_for_devid(str(module.devid))
 
         # Full permission-gated set: every panel the account can see, regardless of
         # whether it is reachable from the everyday web UI (#212).
@@ -1655,7 +1655,7 @@ async def async_build_bootstrap_payload(
                     all_panels=True,
                     web_ui_only=False,
                     routes_i18n=routes_i18n,
-                    flat_values=flat_values,
+                    flat_values=module_flat_values,
                     static_route_symbols=static_route_symbols,
                 )
                 _enrich_symbol_routes_from_shell_diagnostics(
@@ -1684,7 +1684,7 @@ async def async_build_bootstrap_payload(
                     all_panels=True,
                     web_ui_only=False,
                     routes_i18n=routes_i18n,
-                    flat_values=flat_values,
+                    flat_values=module_flat_values,
                     static_route_symbols=static_route_symbols,
                 )
                 _enrich_symbol_routes_from_shell_diagnostics(
@@ -1718,7 +1718,6 @@ async def async_build_bootstrap_payload(
         all_candidate_symbols.update(status_bar_tokens)
 
     details = await resolver.describe_symbols(sorted(all_candidate_symbols))
-    flat_values = store.flatten()
     per_module_symbols: dict[str, set[str]] = {}
 
     per_module_enabled_by_default: dict[str, dict[str, bool]] = {}
@@ -1727,6 +1726,8 @@ async def async_build_bootstrap_payload(
         module_symbols: set[str] = set()
         spa_visibility_rejected: set[str] = set()
         devid_text = str(module.devid)
+        # Branch/unit/bounds recovery must use this module's prime snapshot only.
+        flat_values = store.flatten_for_devid(devid_text)
         module_rejections: list[dict[str, Any]] = []
         module_accepts: list[dict[str, Any]] = []
         boiler_accepts: list[dict[str, Any]] = []
@@ -2043,6 +2044,9 @@ async def async_build_bootstrap_payload(
             ),
         }
 
+        # Descriptor construction is a separate pass — refresh the module snapshot
+        # so unit/bounds recovery cannot inherit the previous module's flatten().
+        flat_values = store.flatten_for_devid(str(module.devid))
         routes_map = per_module_symbol_routes.get(module.devid, {})
         panel_paths_map = per_module_panel_paths.get(module.devid, {})
         panel_menu_keys = _menu_keys_by_panel_path(panel_paths_map, routes_map)

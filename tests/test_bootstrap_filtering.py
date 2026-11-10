@@ -89,6 +89,10 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 42}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._current_devid = ""
@@ -217,6 +221,10 @@ def test_async_build_bootstrap_payload_keeps_only_primary_composite_slot(
 
         def flatten(self) -> dict[str, object]:
             return {"P31.s12": 1, "P30.v25": 40}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -347,6 +355,10 @@ def test_async_build_bootstrap_payload_dedupes_rules_per_module_only(
         def flatten(self) -> dict[str, object]:
             return {"P0.s1": 0}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
         def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
@@ -463,6 +475,10 @@ def test_async_build_bootstrap_payload_discovers_status_bar_and_dedupes_rules(
 
         def flatten(self) -> dict[str, object]:
             return {"P0.s1": 0}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -623,6 +639,10 @@ def test_async_build_bootstrap_payload_rejects_schedules_and_undefined_status_ba
         def flatten(self) -> dict[str, object]:
             # Live pump status present; heat-pump compressor register absent.
             return {"P5.s11": 1}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -803,6 +823,10 @@ def test_async_build_bootstrap_payload_rejects_status_label_without_register(
         def flatten(self) -> dict[str, object]:
             return {}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
         def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
@@ -918,6 +942,10 @@ def test_async_build_bootstrap_payload_keeps_status_bar_when_register_is_live(
 
         def flatten(self) -> dict[str, object]:
             return {"P31.s12": 0}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -1038,6 +1066,10 @@ def test_async_build_bootstrap_payload_rejects_null_guard_despite_secondary_inpu
             # Primary existence guard target absent; companion input populated.
             return {"P31.s12": 1}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
         def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
@@ -1153,6 +1185,10 @@ def test_async_build_bootstrap_payload_caps_undefined_status_rejection_samples(
 
         def flatten(self) -> dict[str, object]:
             return {}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -1275,6 +1311,10 @@ def test_async_build_bootstrap_payload_raises_on_prime_http_failure(
         def flatten(self) -> dict[str, object]:
             return {}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
         def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
@@ -1333,6 +1373,10 @@ def test_async_build_bootstrap_payload_accepts_prime_204_without_body(
 
         def flatten(self) -> dict[str, object]:
             return {}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -1435,6 +1479,10 @@ def test_async_build_bootstrap_payload_raises_on_prime_non_dict_body(
         def flatten(self) -> dict[str, object]:
             return {}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
         def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
@@ -1489,6 +1537,10 @@ def test_async_build_bootstrap_payload_raises_on_unexpected_prime_payload(
         def flatten(self) -> dict[str, object]:
             return {}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
         def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
@@ -1542,6 +1594,10 @@ def test_async_build_bootstrap_payload_raises_on_resolve_failure(
 
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 1}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -1645,6 +1701,10 @@ def test_async_build_bootstrap_payload_raises_on_resolve_failure_after_rejection
 
         def flatten(self) -> dict[str, object]:
             return {}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -1760,6 +1820,10 @@ def test_async_build_bootstrap_payload_prefers_ui_footer_over_installer_twin(
 
         def flatten(self) -> dict[str, object]:
             return {"P0.s1": 0}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -1888,6 +1952,10 @@ def test_async_build_bootstrap_payload_tolerates_status_bar_discovery_failure(
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 1}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeGateway:
         def model_dump(self, mode: str = "json") -> dict[str, object]:
             _ = mode
@@ -2008,6 +2076,10 @@ def test_async_build_bootstrap_payload_skips_duplicate_sample_when_rejections_fu
 
         def flatten(self) -> dict[str, object]:
             return {"P0.s1": 0}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -2150,6 +2222,10 @@ def test_async_build_bootstrap_payload_caps_spa_visibility_rejection_samples(
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 42}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         def __init__(self) -> None:
             self._current_devid = ""
@@ -2264,6 +2340,10 @@ def test_async_build_bootstrap_payload_does_not_recreate_spa_hidden_ui_write_as_
 
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 42}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeAssets:
         async def get_module_menu(
@@ -2403,6 +2483,10 @@ def test_async_build_bootstrap_payload_includes_non_panel_actions_disabled_by_de
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 42}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeAssets:
         async def get_module_menu(
             self,
@@ -2539,6 +2623,10 @@ def test_async_build_bootstrap_payload_enabled_default_edge_cases(
 
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 42}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeAssets:
         async def get_module_menu(
@@ -2715,6 +2803,10 @@ def test_async_build_bootstrap_payload_skips_extra_write_without_command_rule(
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 42}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeAssets:
         async def get_module_menu(
             self,
@@ -2860,6 +2952,10 @@ def test_async_build_bootstrap_payload_skips_extra_with_non_action_command_name(
 
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 42}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeAssets:
         async def get_module_menu(
@@ -3010,6 +3106,10 @@ def test_async_build_bootstrap_payload_accepts_sample_cap(
         def flatten(self) -> dict[str, object]:
             return {"P4.v1": 42}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     symbols_all = [f"SYM_{idx}" for idx in range(510)]
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
@@ -3121,6 +3221,10 @@ def test_ui_route_index_ignores_bootstrap_flat_values(monkeypatch: pytest.Monkey
 
         def flatten(self) -> dict[str, object]:
             return {"P6.v219": 0}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeAssets:
         async def get_module_menu(self, *, device_menu: str, permissions: list[str] | None) -> dict[str, object]:
@@ -3270,6 +3374,10 @@ def test_async_build_bootstrap_payload_admits_any_branch_register_when_resolve_n
                 "P32.x221": 250,
             }
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
         def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
@@ -3373,6 +3481,160 @@ def test_async_build_bootstrap_payload_admits_any_branch_register_when_resolve_n
     assert descriptor.get("transform_scale") == 0.1
 
 
+def test_async_build_bootstrap_scopes_any_branch_recovery_per_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two modules sharing addresses must recover unit/bounds from their own snapshot."""
+
+    mapping = {
+        "paths": {"command": [], "value": []},
+        "command_rules": [],
+        "raw": {
+            "any": [
+                {
+                    "else": {
+                        "command": [{"group": "P32", "number": 221, "use": "v"}],
+                        "value": [{"group": "P32", "number": 221, "use": "v"}],
+                    }
+                }
+            ]
+        },
+    }
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            # Merged LWW snapshot would prefer M2 — bootstrap must not use this.
+            return {
+                "P32.v221": 180,
+                "P32.u221": 99,
+                "P32.n221": 10,
+                "P32.x221": 300,
+            }
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            if devid == "M1":
+                return {
+                    "P32.v221": 190,
+                    "P32.u221": 12,
+                    "P32.n221": 150,
+                    "P32.x221": 250,
+                }
+            return {
+                "P32.v221": 180,
+                "P32.u221": 99,
+                "P32.n221": 10,
+                "P32.x221": 300,
+            }
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": ["ZADANA_TEMP_CO0_WRITE"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                symbol: {
+                    "label": "Indoor setpoint",
+                    "pool": "P32",
+                    "chan": "v",
+                    "idx": 0,
+                    "mapping": mapping,
+                    "min": 0,
+                    "max": 400,
+                    "unit": None,
+                }
+                for symbol in symbols
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=None, value_label=None)
+
+        async def _resolve_unit_meta(self, *, raw_unit_code: object) -> dict[str, object] | None:
+            _ = raw_unit_code
+            return {"value": "e => e * 0.1", "text": "°C"}
+
+        @staticmethod
+        def _parse_numeric_transform(raw_expr: object) -> SimpleNamespace | None:
+            _ = raw_expr
+            return SimpleNamespace(shift=0.0, factor=0.1, precision=1)
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            modules = []
+            for devid in ("M1", "M2"):
+                modules.append(
+                    SimpleNamespace(
+                        devid=devid,
+                        name=devid,
+                        moduleTitle=devid,
+                        moduleVersion="1.0",
+                        gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                        moduleInterface="if1",
+                        moduleAddress="addr1",
+                        permissions=[],
+                        deviceMenu=devid,
+                        connectedAt="now",
+                    )
+                )
+            return modules
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1", "M2"],
+            language="en",
+        )
+    )
+
+    by_devid = {item["devid"]: item for item in payload["entity_descriptors"] if item["symbol"] == "ZADANA_TEMP_CO0_WRITE"}
+    assert by_devid["M1"]["min"] == 150
+    assert by_devid["M1"]["max"] == 250
+    assert by_devid["M1"].get("unit_code") == 12
+    assert by_devid["M2"]["min"] == 10
+    assert by_devid["M2"]["max"] == 300
+    assert by_devid["M2"].get("unit_code") == 99
+
+
 def test_async_build_bootstrap_skips_any_branch_unit_when_transform_present(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3399,6 +3661,10 @@ def test_async_build_bootstrap_skips_any_branch_unit_when_transform_present(
 
         def flatten(self) -> dict[str, object]:
             return {"P32.v221": 190, "P32.u221": 99, "P32.n221": 1, "P32.x221": 2}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod

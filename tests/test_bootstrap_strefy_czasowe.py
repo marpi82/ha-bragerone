@@ -309,6 +309,10 @@ def test_async_build_bootstrap_payload_enriches_shell_routes_and_route_path(
         def flatten(self) -> dict[str, object]:
             return {"P6.v219": 1}
 
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
     shell_menu = SimpleNamespace(
         routes=[
             SimpleNamespace(

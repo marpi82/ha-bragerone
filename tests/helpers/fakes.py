@@ -394,9 +394,12 @@ class FakeStore:
 
     def flatten_for_devid(self, devid: str) -> dict[str, object]:
         bucket = self._by_devid.get(devid)
-        if bucket is None:
-            return {}
-        return dict(bucket)
+        if bucket is not None:
+            return dict(bucket)
+        # Legacy fixtures populate only ``_flat`` with no per-module buckets.
+        if not self._by_devid:
+            return dict(self._flat)
+        return {}
 
     def upsert(self, key: str, value: object, *, devid: str | None = None) -> None:
         """Mirror ``ParamStore.upsert`` so dispatch can apply deltas before flatten()."""
@@ -407,7 +410,15 @@ class FakeStore:
 
     def get_family(self, pool: str, idx: int, *, devid: str | None = None) -> dict[str, object] | None:
         """Return channel map for one ParamStore family (``P<n>.<chan><idx>`` keys)."""
-        source = self._by_devid[devid] if devid is not None and devid in self._by_devid else self._flat
+        if devid is not None:
+            if devid in self._by_devid:
+                source = self._by_devid[devid]
+            elif not self._by_devid:
+                source = self._flat
+            else:
+                return None
+        else:
+            source = self._flat
         family: dict[str, object] = {}
         for key, value in source.items():
             if not isinstance(key, str) or "." not in key:
