@@ -855,14 +855,20 @@ def compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
         return bool(actual == expected)
     if op == "notEqualTo":
         return bool(actual != expected)
-    if op == "greaterThan":
-        return actual is not None and expected is not None and actual > expected
-    if op == "greaterThanOrEqualTo":
-        return actual is not None and expected is not None and actual >= expected
-    if op == "lessThan":
-        return actual is not None and expected is not None and actual < expected
-    if op == "lessThanOrEqualTo":
-        return actual is not None and expected is not None and actual <= expected
+    if op in {"greaterThan", "greaterThanOrEqualTo", "lessThan", "lessThanOrEqualTo"}:
+        # Mixed types must not raise — treat as non-match (same as library resolver).
+        if actual is None or expected is None:
+            return False
+        try:
+            if op == "greaterThan":
+                return bool(actual > expected)
+            if op == "greaterThanOrEqualTo":
+                return bool(actual >= expected)
+            if op == "lessThan":
+                return bool(actual < expected)
+            return bool(actual <= expected)
+        except TypeError:
+            return False
     return False
 
 

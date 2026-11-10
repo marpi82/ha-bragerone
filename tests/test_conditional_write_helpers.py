@@ -132,6 +132,10 @@ def test_binary_condition_helpers_cover_reject_paths() -> None:
         )
         is True
     )
+    # paths.command value-channel selectors mark writable; malformed selectors do not.
+    assert _mapping_has_parameter_write({"paths": {"command": [{"group": "P1", "number": 0, "use": "v"}]}}) is True
+    assert _mapping_has_parameter_write({"paths": {"command": [{"group": "P1", "number": "x", "use": "v"}]}}) is False
+    assert _mapping_has_parameter_write({"paths": {"command": [{"group": "P1", "number": 0, "use": ""}]}}) is False
     # raw Mapping with non-list any must fall through as non-writable.
     assert _mapping_has_parameter_write({"raw": {"any": {"else": {}}}}) is False
     assert (
@@ -219,7 +223,12 @@ async def test_async_write_uses_rule_command_list_and_address_string() -> None:
 
 
 def test_address_string_selectors_bind_and_refresh() -> None:
-    from custom_components.habragerone.entity_common import descriptor_refresh_keys
+    from custom_components.habragerone.bootstrap import _any_branch_store_value
+    from custom_components.habragerone.entity_common import (
+        _address_from_value_selector,
+        _is_address_selector_entry,
+        descriptor_refresh_keys,
+    )
 
     store = FakeStore(flat_values={"P32.v0": 21, "P32.v221": 19, "P31.s13": 4})
     descriptor = {
@@ -244,6 +253,19 @@ def test_address_string_selectors_bind_and_refresh() -> None:
     assert "P32.v221" in keys
     assert "P32.n221" in keys
     assert "P32.x221" in keys
+    assert _address_from_value_selector({"address": "P32.v221"}) == "P32.v221"
+    assert _is_address_selector_entry({"address": "P32.v0"}) is True
+    assert _is_address_selector_entry("bad") is False
+    assert _any_branch_store_value(mapping=None, flat_values={}) is None
+    keys_paths = descriptor_refresh_keys(
+        {
+            "pool": "P1",
+            "chan": "v",
+            "idx": 0,
+            "mapping": {"paths": {"value": [{"address": "P9.v3"}]}},
+        }
+    )
+    assert "P9.v3" in keys_paths
 
 
 @pytest.mark.asyncio
@@ -760,6 +782,7 @@ def test_spa_operation_helpers_and_compare_ops() -> None:
     )
     assert command_rule_conditions_are_supported("nope") is True
     assert command_rule_conditions_are_supported([{"conditions": []}]) is True
+    assert command_rule_conditions_are_supported(["skip", {"conditions": []}]) is True
     assert (
         command_rule_conditions_are_supported(
             [{"conditions": [{"operation": "ClauseOperation['equalTo']", "expected": 1, "targets": []}]}]
@@ -774,3 +797,19 @@ def test_spa_operation_helpers_and_compare_ops() -> None:
     assert compare_condition(operation="lessThanOrEqualTo", actual=1, expected=1) is True
     assert compare_condition(operation="unknown", actual=1, expected=1) is False
     assert compare_condition(operation="ClauseOperation['equalTo']", actual=1, expected=1) is True
+    assert compare_condition(operation="greaterThan", actual="WORK", expected=5) is False
+    assert compare_condition(operation="lessThan", actual=None, expected=5) is False
+    from custom_components.habragerone.status_rules import (
+        _addresses_from_rule_payload,
+        _limit_companion_addresses,
+        status_rule_selector_addresses,
+    )
+
+    assert _limit_companion_addresses("nope") == set()
+    assert _limit_companion_addresses("P32.s13") == set()
+    assert _limit_companion_addresses("P32.vX") == set()
+    assert _limit_companion_addresses("P32.v221") == {"P32.n221", "P32.x221"}
+    assert _addresses_from_rule_payload({"command": [{"group": "P32", "number": 9, "use": "v"}]}) == {"P32.v9"}
+    assert status_rule_selector_addresses(
+        {"raw": {"any": [{"else": {"command": [{"address": "P32.v10"}], "value": [{"address": "P32.v10"}]}}]}}
+    ) >= {"P32.v10", "P32.n10", "P32.x10"}
