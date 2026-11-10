@@ -1168,9 +1168,10 @@ class BragerRuntime:
         # Prefer command_rules destination only when every predicate is locally
         # evaluable (same ops as raw.any / read path). Unsupported ops must not
         # pick an else/named target and bypass the validated raw.any fallback.
+        command_rules_supported = command_rule_conditions_are_supported(typed_command_rules)
         active_rule: dict[str, Any] = {}
         write_addr: tuple[str, str, int] | None = None
-        if typed_command_rules and command_rule_conditions_are_supported(typed_command_rules):
+        if typed_command_rules and command_rules_supported:
             active_rule = _select_active_command_rule(
                 command_rules=typed_command_rules,
                 flat_values=flat_values,
@@ -1183,7 +1184,7 @@ class BragerRuntime:
             write_addr = _parameter_address_from_rule_payload(active_rule.get("value"))
             if write_addr is None and isinstance(active_rule.get("command"), list):
                 write_addr = _parameter_address_from_rule_payload(active_rule.get("command"))
-        elif typed_command_rules and not command_rule_conditions_are_supported(typed_command_rules):
+        elif typed_command_rules and not command_rules_supported:
             # Named-command routes still need an active rule for display intents;
             # refuse destination selection from unsupported predicates.
             active_rule = {}
@@ -1193,6 +1194,10 @@ class BragerRuntime:
 
         if write_addr is None and isinstance(mapping, dict):
             write_addr = _parameter_address_from_active_any_branch_command(mapping, flat_values=flat_values)
+        if typed_command_rules and not command_rules_supported and write_addr is None:
+            # Do not fall through to the cached primary address — that may not be
+            # the active setpoint when predicates could not be evaluated.
+            raise HomeAssistantError("Unsupported command_rule predicate without a usable raw.any destination; refusing write")
         raw_min: Any = (
             descriptor.get("min")
             if isinstance(descriptor.get("min"), int | float) and not isinstance(descriptor.get("min"), bool)

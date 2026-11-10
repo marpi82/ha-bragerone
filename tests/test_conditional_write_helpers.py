@@ -478,6 +478,20 @@ async def test_async_write_skips_unsupported_command_rule_predicates() -> None:
     with pytest.raises(HomeAssistantError, match="Unsupported"):
         await runtime.async_write(descriptor=broken, input_display_value=1)
 
+    # Unsupported command_rules with no raw.any must not fall through to cached pool/chan/idx.
+    no_fallback = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=0, raw_max=400)
+    no_fallback["mapping"]["command_rules"] = [
+        {
+            "conditions": [{"operation": "matches", "expected": "x", "targets": [{"address": "P1.v0"}]}],
+            "command": [{"group": "P99", "number": 1, "use": "v"}],
+        }
+    ]
+    no_fallback["mapping"]["raw"] = {}
+    calls_before = len(api.calls)
+    with pytest.raises(HomeAssistantError, match="Unsupported command_rule predicate without a usable"):
+        await runtime.async_write(descriptor=no_fallback, input_display_value=1)
+    assert len(api.calls) == calls_before
+
 
 def test_clause_operation_equal_to_selects_then_branch() -> None:
     assert select_raw_any_branch(
