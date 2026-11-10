@@ -136,6 +136,8 @@ def test_binary_condition_helpers_cover_reject_paths() -> None:
     assert _mapping_has_parameter_write({"paths": {"command": [{"group": "P1", "number": 0, "use": "v"}]}}) is True
     assert _mapping_has_parameter_write({"paths": {"command": [{"group": "P1", "number": "x", "use": "v"}]}}) is False
     assert _mapping_has_parameter_write({"paths": {"command": [{"group": "P1", "number": 0, "use": ""}]}}) is False
+    assert _mapping_has_parameter_write(None) is False
+    assert _mapping_has_parameter_write("bad") is False  # type: ignore[arg-type]
     # raw Mapping with non-list any must fall through as non-writable.
     assert _mapping_has_parameter_write({"raw": {"any": {"else": {}}}}) is False
     assert (
@@ -266,6 +268,53 @@ def test_address_string_selectors_bind_and_refresh() -> None:
         }
     )
     assert "P9.v3" in keys_paths
+
+    from custom_components.habragerone.bootstrap import _any_branch_active_value_address
+
+    # Prefer populated selector inside the active branch; do not cross guards.
+    assert (
+        _any_branch_active_value_address(
+            mapping={
+                "raw": {
+                    "any": [
+                        {
+                            "else": {
+                                "value": [
+                                    {"group": "P32", "number": 0, "use": "v"},
+                                    {"group": "P32", "number": 221, "use": "v"},
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            flat_values={"P32.v221": 19},
+        )
+        == "P32.v221"
+    )
+    assert (
+        _any_branch_active_value_address(
+            mapping={
+                "raw": {
+                    "any": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 0,
+                                    "operation": "equalTo",
+                                    "value": [{"bit": 2, "group": "P31", "number": 13, "use": "s"}],
+                                }
+                            ],
+                            "then": {"value": [{"group": "P32", "number": 0, "use": "v"}]},
+                        },
+                        {"else": {"value": [{"group": "P32", "number": 221, "use": "v"}]}},
+                    ]
+                }
+            },
+            flat_values={"P31.s13": 0, "P32.v221": 19},
+        )
+        == "P32.v0"
+    )
 
 
 @pytest.mark.asyncio

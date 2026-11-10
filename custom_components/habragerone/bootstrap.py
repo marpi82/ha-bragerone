@@ -1065,13 +1065,21 @@ def _any_branch_active_value_address(
     value_payload = branch.get("value")
     if not isinstance(value_payload, list):
         return None
+    # Prefer a populated selector within the active branch (matches
+    # ``first_selector_address_value``); keep the first address as fallback so
+    # missing readings stay bound to the guarded branch instead of another one.
+    first: str | None = None
     for entry in value_payload:
         if not isinstance(entry, Mapping):
             continue
         address = _address_from_spa_selector(entry)
-        if address is not None:
+        if address is None:
+            continue
+        if first is None:
+            first = address
+        if address in flat_values and flat_values.get(address) is not None:
             return address
-    return None
+    return first
 
 
 def _unit_code_for_address(*, address: str, flat_values: Mapping[str, Any]) -> Any | None:
