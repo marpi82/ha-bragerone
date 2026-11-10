@@ -152,6 +152,8 @@ def test_read_target_actual_handles_address_bit_and_mask() -> None:
     # Bools are not bitmasks — leave the raw value untouched.
     assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": True}) is True
     assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": 1.5}) == 1.5
+    # Non-integer numeric strings leave the raw reading (bit/mask not applied).
+    assert read_target_actual({"address": "P1.s0", "bit": 0}, flat_values={"P1.s0": "10.5"}) == "10.5"
 
 
 def test_status_binary_has_sync_path() -> None:
