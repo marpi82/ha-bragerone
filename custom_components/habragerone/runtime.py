@@ -1162,21 +1162,35 @@ class BragerRuntime:
         default_actual: Any = None
         if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
             default_actual = flat_values.get(f"{pool}.{chan}{idx}")
-        active_rule = _select_active_command_rule(
-            command_rules=typed_command_rules,
-            flat_values=flat_values,
-            devid=devid,
-            modules_meta=self.modules_meta,
-            default_actual=default_actual,
-        )
+
+        from .status_rules import command_rule_conditions_are_supported
+
+        # Prefer command_rules destination only when every predicate is locally
+        # evaluable (same ops as raw.any / read path). Unsupported ops must not
+        # pick an else/named target and bypass the validated raw.any fallback.
+        active_rule: dict[str, Any] = {}
+        write_addr: tuple[str, str, int] | None = None
+        if typed_command_rules and command_rule_conditions_are_supported(typed_command_rules):
+            active_rule = _select_active_command_rule(
+                command_rules=typed_command_rules,
+                flat_values=flat_values,
+                devid=devid,
+                modules_meta=self.modules_meta,
+                default_actual=default_actual,
+            )
+            # Conditional write cards bind the target register in the active rule /
+            # raw.any ``command`` selectors — override cached pool/chan/idx.
+            write_addr = _parameter_address_from_rule_payload(active_rule.get("value"))
+            if write_addr is None and isinstance(active_rule.get("command"), list):
+                write_addr = _parameter_address_from_rule_payload(active_rule.get("command"))
+        elif typed_command_rules and not command_rule_conditions_are_supported(typed_command_rules):
+            # Named-command routes still need an active rule for display intents;
+            # refuse destination selection from unsupported predicates.
+            active_rule = {}
+
         active_command = _rule_command_name(active_rule)
         has_raw_command_route = isinstance(active_command, str) and bool(active_command.strip())
 
-        # Conditional write cards bind the target register in the active rule /
-        # raw.any ``command`` selectors — override cached pool/chan/idx.
-        write_addr = _parameter_address_from_rule_payload(active_rule.get("value"))
-        if write_addr is None and isinstance(active_rule.get("command"), list):
-            write_addr = _parameter_address_from_rule_payload(active_rule.get("command"))
         if write_addr is None and isinstance(mapping, dict):
             write_addr = _parameter_address_from_active_any_branch_command(mapping, flat_values=flat_values)
         raw_min: Any = (
@@ -1614,14 +1628,10 @@ def _read_target_actual(
 
 
 def _compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
-    op = operation.strip()
-    if "." in op:
-        op = op.rsplit(".", 1)[-1]
-    if op == "equalTo":
-        return bool(actual == expected)
-    if op == "notEqualTo":
-        return bool(actual != expected)
-    return False
+    """Delegate to status_rules so write selection matches the read-path ops."""
+    from .status_rules import compare_condition
+
+    return compare_condition(operation=operation, actual=actual, expected=expected)
 
 
 def _module_events_rest_ok(result: Any) -> bool:

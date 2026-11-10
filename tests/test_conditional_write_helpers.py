@@ -242,6 +242,150 @@ def test_address_string_selectors_bind_and_refresh() -> None:
     assert descriptor_current_raw_value(store, descriptor) == 19
     keys = descriptor_refresh_keys(descriptor)
     assert "P32.v221" in keys
+    assert "P32.n221" in keys
+    assert "P32.x221" in keys
+
+
+@pytest.mark.asyncio
+async def test_async_write_command_rules_clause_operation_matches_read_path() -> None:
+    """Populated command_rules must use SPA predicate ops, not equality-only matching."""
+    from tests.helpers.descriptors import writable_parameter_descriptor
+    from tests.helpers.fakes import make_runtime
+
+    runtime, api, _gateway, store = make_runtime()
+    store.upsert("P31.s13", 0)
+    store.upsert("P32.v0", 21)
+    store.upsert("P32.v221", 19)
+    descriptor = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=0, raw_max=400)
+    descriptor["mapping"]["command_rules"] = [
+        {
+            "kind": "if",
+            "conditions": [
+                {
+                    "operation": "ClauseOperation['equalTo']",
+                    "expected": 0,
+                    "targets": [{"address": "P31.s13", "bit": 2}],
+                }
+            ],
+            "command": [{"group": "P32", "number": 0, "use": "v"}],
+            "value": [{"group": "P32", "number": 0, "use": "v"}],
+        },
+        {
+            "kind": "else",
+            "conditions": [],
+            "command": [{"group": "P32", "number": 221, "use": "v"}],
+            "value": [{"group": "P32", "number": 221, "use": "v"}],
+        },
+    ]
+    descriptor["mapping"]["raw"] = {
+        "any": [
+            {
+                "if": [
+                    {
+                        "expected": 0,
+                        "operation": "ClauseOperation['equalTo']",
+                        "value": [{"bit": 2, "group": "P31", "number": 13, "use": "s"}],
+                    }
+                ],
+                "then": {
+                    "command": [{"group": "P32", "number": 0, "use": "v"}],
+                    "value": [{"group": "P32", "number": 0, "use": "v"}],
+                },
+            },
+            {
+                "else": {
+                    "command": [{"group": "P32", "number": 221, "use": "v"}],
+                    "value": [{"group": "P32", "number": 221, "use": "v"}],
+                }
+            },
+        ]
+    }
+    await runtime.async_write(descriptor=descriptor, input_display_value=22)
+    assert api.calls[-1]["parameter"] == "v0"
+
+    store.upsert("P2.v0", 9)
+    descriptor_gt = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=0, raw_max=400)
+    descriptor_gt["mapping"]["command_rules"] = [
+        {
+            "kind": "if",
+            "conditions": [
+                {
+                    "operation": "greaterThan",
+                    "expected": 5,
+                    "targets": [{"address": "P2.v0"}],
+                }
+            ],
+            "command": [{"group": "P32", "number": 0, "use": "v"}],
+        },
+        {
+            "kind": "else",
+            "conditions": [],
+            "command": [{"group": "P32", "number": 221, "use": "v"}],
+        },
+    ]
+    await runtime.async_write(descriptor=descriptor_gt, input_display_value=18)
+    assert api.calls[-1]["parameter"] == "v0"
+
+
+@pytest.mark.asyncio
+async def test_async_write_skips_unsupported_command_rule_predicates() -> None:
+    """Unsupported command_rules ops must fall through to validated raw.any."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    from tests.helpers.descriptors import writable_parameter_descriptor
+    from tests.helpers.fakes import make_runtime
+
+    runtime, api, _gateway, store = make_runtime()
+    store.upsert("P31.s13", 0)
+    descriptor = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=0, raw_max=400)
+    descriptor["mapping"]["command_rules"] = [
+        {
+            "kind": "if",
+            "conditions": [{"operation": "ClauseOperation['matches']", "expected": "/x/", "targets": [{"address": "P1.v0"}]}],
+            "command": [{"group": "P32", "number": 221, "use": "v"}],
+        },
+        {
+            "kind": "else",
+            "conditions": [],
+            "command": [{"group": "P32", "number": 221, "use": "v"}],
+        },
+    ]
+    descriptor["mapping"]["raw"] = {
+        "any": [
+            {
+                "if": [
+                    {
+                        "expected": 0,
+                        "operation": "equalTo",
+                        "value": [{"bit": 2, "group": "P31", "number": 13, "use": "s"}],
+                    }
+                ],
+                "then": {"command": [{"group": "P32", "number": 0, "use": "v"}]},
+            },
+            {"else": {"command": [{"group": "P32", "number": 221, "use": "v"}]}},
+        ]
+    }
+    await runtime.async_write(descriptor=descriptor, input_display_value=21)
+    assert api.calls[-1]["parameter"] == "v0"
+
+    # Unsupported predicates with no usable raw.any must refuse rather than guess.
+    broken = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=0, raw_max=400)
+    broken["mapping"]["command_rules"] = [
+        {
+            "conditions": [{"operation": "matches", "expected": "x", "targets": [{"address": "P1.v0"}]}],
+            "command": [{"group": "P99", "number": 1, "use": "v"}],
+        }
+    ]
+    broken["mapping"]["raw"] = {
+        "any": [
+            {
+                "if": [{"operation": "matches", "expected": "x", "value": [{"group": "P1", "number": 0, "use": "v"}]}],
+                "then": {"command": [{"group": "P99", "number": 1, "use": "v"}]},
+            }
+        ]
+    }
+    with pytest.raises(HomeAssistantError, match="Unsupported"):
+        await runtime.async_write(descriptor=broken, input_display_value=1)
 
 
 def test_clause_operation_equal_to_selects_then_branch() -> None:
@@ -584,6 +728,7 @@ def test_descriptor_active_raw_limits_edge_cases() -> None:
 def test_spa_operation_helpers_and_compare_ops() -> None:
     from custom_components.habragerone.status_rules import (
         _address_from_spa_selector,
+        command_rule_conditions_are_supported,
         compare_condition,
         raw_any_conditions_are_supported,
         spa_operation_name,
@@ -613,8 +758,19 @@ def test_spa_operation_helpers_and_compare_ops() -> None:
         raw_any_conditions_are_supported([{"if": [{"operation": "ClauseOperation['matches']", "expected": 1, "value": []}]}])
         is False
     )
+    assert command_rule_conditions_are_supported("nope") is True
+    assert command_rule_conditions_are_supported([{"conditions": []}]) is True
+    assert (
+        command_rule_conditions_are_supported(
+            [{"conditions": [{"operation": "ClauseOperation['equalTo']", "expected": 1, "targets": []}]}]
+        )
+        is True
+    )
+    assert command_rule_conditions_are_supported([{"conditions": [{"operation": "matches", "expected": 1}]}]) is False
+    assert command_rule_conditions_are_supported([{"conditions": ["bad"]}]) is False
     assert compare_condition(operation="greaterThan", actual=3, expected=1) is True
     assert compare_condition(operation="greaterThanOrEqualTo", actual=1, expected=1) is True
     assert compare_condition(operation="lessThan", actual=1, expected=3) is True
     assert compare_condition(operation="lessThanOrEqualTo", actual=1, expected=1) is True
     assert compare_condition(operation="unknown", actual=1, expected=1) is False
+    assert compare_condition(operation="ClauseOperation['equalTo']", actual=1, expected=1) is True

@@ -223,3 +223,46 @@ async def test_number_runtime_update_schedules_refresh_for_matching_key(hass: Ho
     bare = BragerSymbolNumber(entry=entry, runtime=runtime, descriptor=descriptor)
     await bare.async_will_remove_from_hass()
     assert bare._unsubscribe_connectivity is None
+
+
+@pytest.mark.asyncio
+async def test_number_bounds_only_update_refreshes_conditional_limits(hass: HomeAssistant) -> None:
+    """Bounds-only deltas (P32.x221) must wake conditional number entities."""
+    runtime, *_rest = make_runtime(
+        flat_values={
+            "P31.s13": 4,
+            "P32.v221": 190,
+            "P32.n221": 150,
+            "P32.x221": 250,
+        }
+    )
+    descriptor = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=100, raw_max=300)
+    descriptor["mapping"] = {
+        "command_rules": [],
+        "raw": {
+            "any": [
+                {
+                    "else": {
+                        "value": [{"group": "P32", "number": 221, "use": "v"}],
+                        "command": [{"group": "P32", "number": 221, "use": "v"}],
+                    }
+                }
+            ]
+        },
+    }
+    descriptor.update({"transform_scale": 0.1, "transform_offset": 0.0, "transform_precision": 1})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerSymbolNumber(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "number.indoor_setpoint"
+    entity.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+    await entity.async_added_to_hass()
+    await entity.async_update()
+    assert entity._attr_native_max_value == 25.0
+
+    entity.async_schedule_update_ha_state.reset_mock()
+    runtime.store.upsert("P32.x221", 280)
+    entity._on_runtime_update(FakeParamUpdate(pool="P32", chan="x", idx=221))
+    entity.async_schedule_update_ha_state.assert_called_once_with(True)
+    await entity.async_update()
+    assert entity._attr_native_max_value == 28.0

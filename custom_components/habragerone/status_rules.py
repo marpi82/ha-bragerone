@@ -203,12 +203,24 @@ def _looks_like_status_rule_list(entries: Any) -> bool:
     return any(isinstance(entry, Mapping) and any(key in entry for key in ("if", "elseif", "then", "else")) for entry in entries)
 
 
+def _limit_companion_addresses(address: str) -> set[str]:
+    """Return ``n``/``x`` companions for a value-register address (``P32.v221``)."""
+    if "." not in address:
+        return set()
+    pool, rest = address.split(".", 1)
+    if len(rest) < 2 or rest[0] != "v" or not rest[1:].isdigit():
+        return set()
+    idx = rest[1:]
+    return {f"{pool}.n{idx}", f"{pool}.x{idx}"}
+
+
 def _addresses_from_status_rules(rules: list[Any]) -> set[str]:
     """Collect ``P<n>.<chan><idx>`` addresses from rule conditions and payloads.
 
     Includes if/elseif selectors plus ``then``/``else`` address lists so entities
     that bind a conditional value register (e.g. ``ZADANA_TEMP_CO*_WRITE``) refresh
-    when either the gate bit or the active setpoint word changes.
+    when either the gate bit or the active setpoint word changes. Value-register
+    bindings also pull ``n``/``x`` companions so HA number limits stay live.
     """
     out: set[str] = set()
     for rule in rules:
@@ -233,7 +245,10 @@ def _addresses_from_status_rules(rules: list[Any]) -> set[str]:
         for payload_key in ("then", "else"):
             if payload_key not in rule:
                 continue
-            out.update(_addresses_from_rule_payload(rule.get(payload_key)))
+            payload_addrs = _addresses_from_rule_payload(rule.get(payload_key))
+            out.update(payload_addrs)
+            for address in payload_addrs:
+                out.update(_limit_companion_addresses(address))
     return out
 
 
@@ -243,6 +258,12 @@ def _addresses_from_rule_payload(payload: Any) -> set[str]:
     if isinstance(payload, Mapping):
         if "value" in payload:
             out.update(_addresses_from_rule_payload(payload.get("value")))
+            # Command selectors on the same branch also bind the write register.
+            if "command" in payload:
+                out.update(_addresses_from_rule_payload(payload.get("command")))
+            return out
+        if "command" in payload and "group" not in payload and "address" not in payload:
+            out.update(_addresses_from_rule_payload(payload.get("command")))
             return out
         address = _address_from_spa_selector(payload)
         if address is not None:
@@ -361,6 +382,30 @@ def raw_any_conditions_are_supported(any_rules: Any) -> bool:
                 op = spa_operation_name(cond.get("operation"))
                 if op not in _COMPARISON_OPS:
                     return False
+    return True
+
+
+def command_rule_conditions_are_supported(command_rules: Any) -> bool:
+    """Return whether every cached ``command_rules`` predicate is locally evaluable.
+
+    Unsupported ops must not drive write-target selection — that would bypass the
+    validated ``raw.any`` fallback and can target a different setpoint than the
+    displayed reading.
+    """
+    if not isinstance(command_rules, list):
+        return True
+    for rule in command_rules:
+        if not isinstance(rule, Mapping):
+            continue
+        conditions = rule.get("conditions")
+        if not isinstance(conditions, list) or not conditions:
+            continue
+        for cond in conditions:
+            if not isinstance(cond, Mapping):
+                return False
+            op = spa_operation_name(cond.get("operation"))
+            if op not in _COMPARISON_OPS:
+                return False
     return True
 
 
