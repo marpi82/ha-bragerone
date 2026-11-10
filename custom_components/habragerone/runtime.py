@@ -1172,22 +1172,43 @@ class BragerRuntime:
         active_command = _rule_command_name(active_rule)
         has_raw_command_route = isinstance(active_command, str) and bool(active_command.strip())
 
+        # Conditional write cards bind the target register in the active rule /
+        # raw.any ``command`` selectors — override cached pool/chan/idx.
+        write_addr = _parameter_address_from_rule_payload(active_rule.get("value"))
+        if write_addr is None and isinstance(active_rule.get("command"), list):
+            write_addr = _parameter_address_from_rule_payload(active_rule.get("command"))
+        if write_addr is None and isinstance(mapping, dict):
+            write_addr = _parameter_address_from_active_any_branch_command(mapping, flat_values=flat_values)
+        raw_min: Any = (
+            descriptor.get("min")
+            if isinstance(descriptor.get("min"), int | float) and not isinstance(descriptor.get("min"), bool)
+            else None
+        )
+        raw_max: Any = (
+            descriptor.get("max")
+            if isinstance(descriptor.get("max"), int | float) and not isinstance(descriptor.get("max"), bool)
+            else None
+        )
+        if write_addr is not None:
+            pool, chan, idx = write_addr
+            has_parameter_address = True
+            fam = self.store.get_family(pool, idx)
+            if fam is not None:
+                fam_min = fam.get("n")
+                fam_max = fam.get("x")
+                if isinstance(fam_min, int | float) and not isinstance(fam_min, bool):
+                    raw_min = fam_min
+                if isinstance(fam_max, int | float) and not isinstance(fam_max, bool):
+                    raw_max = fam_max
+
         context = WriteContext(
             symbol=symbol,
             has_parameter_address=has_parameter_address,
             has_command_rule=has_command_rule,
             enum_mapping=enum_mapping,
             transform=descriptor_numeric_transform(descriptor),
-            raw_min=(
-                descriptor.get("min")
-                if isinstance(descriptor.get("min"), int | float) and not isinstance(descriptor.get("min"), bool)
-                else None
-            ),
-            raw_max=(
-                descriptor.get("max")
-                if isinstance(descriptor.get("max"), int | float) and not isinstance(descriptor.get("max"), bool)
-                else None
-            ),
+            raw_min=raw_min,
+            raw_max=raw_max,
         )
         try:
             prepared = prepare_write(input_display_value, context=context)
@@ -1396,6 +1417,49 @@ class BragerRuntime:
                     callback(update)
                 except Exception:
                     LOGGER.exception("Runtime listener callback failed for update %s.%s%s", update.pool, update.chan, update.idx)
+
+
+def _parameter_address_from_rule_payload(payload: Any) -> tuple[str, str, int] | None:
+    """Extract ``(pool, chan, idx)`` from a command-rule value/command selector list."""
+    if isinstance(payload, Mapping):
+        payload = [payload]
+    if not isinstance(payload, list):
+        return None
+    for entry in payload:
+        if not isinstance(entry, Mapping):
+            continue
+        address = entry.get("address")
+        if isinstance(address, str) and "." in address:
+            pool, rest = address.split(".", 1)
+            if pool and rest:
+                chan = rest[0]
+                try:
+                    return pool, chan, int(rest[1:])
+                except ValueError:
+                    continue
+        group = entry.get("group")
+        number = entry.get("number")
+        use = entry.get("use")
+        if isinstance(group, str) and isinstance(number, int) and isinstance(use, str) and use:
+            return group, use[0], number
+    return None
+
+
+def _parameter_address_from_active_any_branch_command(
+    mapping: Mapping[str, Any],
+    *,
+    flat_values: Mapping[str, Any],
+) -> tuple[str, str, int] | None:
+    """Resolve the active ``raw.any`` branch ``command`` selector address."""
+    from .status_rules import select_raw_any_branch
+
+    raw = mapping.get("raw")
+    if not isinstance(raw, Mapping):
+        return None
+    branch = select_raw_any_branch(raw.get("any"), flat_values=flat_values)
+    if not isinstance(branch, Mapping):
+        return None
+    return _parameter_address_from_rule_payload(branch.get("command"))
 
 
 def _select_command_rule(*, command_rules: list[dict[str, Any]], desired_value: Any) -> dict[str, Any]:

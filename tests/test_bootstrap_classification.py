@@ -638,6 +638,21 @@ def test_mapping_has_parameter_write_accepts_conditional_any_branch_targets() ->
     }
     assert _mapping_has_parameter_write(mapping) is True
     assert _is_menu_command_action(symbol="ZADANA_TEMP_CO0_WRITE", symbol_kinds=set(), mapping=mapping) is True
+    # Read-only any-branch with value selectors but no command must stay non-writable.
+    read_only = {
+        "paths": {"command": [], "value": []},
+        "command_rules": [],
+        "raw": {
+            "any": [
+                {
+                    "else": {
+                        "value": [{"group": "P32", "number": 0, "use": "v"}],
+                    }
+                }
+            ]
+        },
+    }
+    assert _mapping_has_parameter_write(read_only) is False
 
 
 def test_normalize_cached_descriptors_treats_status_menu_param_with_write_path_as_select() -> None:

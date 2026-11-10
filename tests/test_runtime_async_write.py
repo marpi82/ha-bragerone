@@ -78,6 +78,79 @@ async def test_async_write_applies_inverse_numeric_transform() -> None:
 
 
 @pytest.mark.asyncio
+async def test_async_write_uses_active_any_branch_command_address() -> None:
+    """Conditional indoor-temp writes must target the active branch register."""
+    runtime, api, _gateway, store = make_runtime()
+    store.upsert("P31.s13", 0)
+    store.upsert("P32.n0", 100)
+    store.upsert("P32.x0", 300)
+    store.upsert("P32.n221", 150)
+    store.upsert("P32.x221", 250)
+    descriptor = writable_parameter_descriptor(
+        symbol="ZADANA_TEMP_CO0_WRITE",
+        pool="P32",
+        chan="v",
+        idx=0,
+        raw_min=100,
+        raw_max=300,
+        command_rules=[
+            {
+                "kind": "if",
+                "conditions": [
+                    {
+                        "operation": "equalTo",
+                        "expected": 0,
+                        "targets": [{"address": "P31.s13", "bit": 2}],
+                    }
+                ],
+                "value": [{"group": "P32", "number": 0, "use": "v"}],
+            },
+            {
+                "kind": "else",
+                "conditions": [],
+                "value": [{"group": "P32", "number": 221, "use": "v"}],
+            },
+        ],
+    )
+    descriptor["mapping"]["raw"] = {
+        "name": "parameters.ZADANA_TEMP_CO0_WRITE",
+        "any": [
+            {
+                "if": [
+                    {
+                        "expected": 0,
+                        "operation": "equalTo",
+                        "value": [{"bit": 2, "group": "P31", "number": 13, "use": "s"}],
+                    }
+                ],
+                "then": {
+                    "command": [{"group": "P32", "number": 0, "use": "v"}],
+                    "value": [{"group": "P32", "number": 0, "use": "v"}],
+                },
+            },
+            {
+                "else": {
+                    "command": [{"group": "P32", "number": 221, "use": "v"}],
+                    "value": [{"group": "P32", "number": 221, "use": "v"}],
+                }
+            },
+        ],
+    }
+    descriptor.update({"transform_scale": 0.1, "transform_offset": 0.0})
+
+    await runtime.async_write(descriptor=descriptor, input_display_value=21.0)
+    assert api.calls[-1]["pool"] == "P32"
+    assert api.calls[-1]["parameter"] == "v0"
+    assert api.calls[-1]["value"] == 210
+
+    store.upsert("P31.s13", 1 << 2)
+    await runtime.async_write(descriptor=descriptor, input_display_value=19.0)
+    assert api.calls[-1]["pool"] == "P32"
+    assert api.calls[-1]["parameter"] == "v221"
+    assert api.calls[-1]["value"] == 190
+
+
+@pytest.mark.asyncio
 async def test_async_write_schedules_activity_refresh() -> None:
     """Successful writes refresh the activity feed (SPA logs parameter changes)."""
     api = FakeApi()

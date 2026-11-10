@@ -309,6 +309,9 @@ def test_descriptor_current_raw_value_uses_active_any_branch_register() -> None:
     assert descriptor_current_raw_value(store, descriptor) == 21
     store_else = FakeStore(flat_values={"P31.s13": 1 << 2, "P32.v0": 21, "P32.v221": 19})
     assert descriptor_current_raw_value(store_else, descriptor) == 19
+    # Active branch missing must not fall back to the inactive primary register.
+    store_missing = FakeStore(flat_values={"P31.s13": 1 << 2, "P32.v0": 21})
+    assert descriptor_current_raw_value(store_missing, descriptor) is None
     assert descriptor_refresh_keys(descriptor) >= {"P31.s13", "P32.v0", "P32.v221"}
 
 

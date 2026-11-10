@@ -3232,3 +3232,122 @@ def test_ui_route_index_ignores_bootstrap_flat_values(monkeypatch: pytest.Monkey
     assert structural_calls == [(False, False), (True, False)]
     assert descriptor[CONF_UI_ROUTE_SYMBOL] is True
     assert descriptor["enabled_by_default"] is True
+
+
+def test_async_build_bootstrap_payload_admits_any_branch_register_when_resolve_null(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Older resolvers may yield null for ZADANA raw.any; prime store still has the word."""
+
+    mapping = {
+        "paths": {"command": [], "value": []},
+        "command_rules": [
+            {"kind": "else", "value": [{"group": "P32", "number": 221, "use": "v"}]},
+        ],
+        "raw": {
+            "any": [
+                {
+                    "else": {
+                        "command": [{"group": "P32", "number": 221, "use": "v"}],
+                        "value": [{"group": "P32", "number": 221, "use": "v"}],
+                    }
+                }
+            ]
+        },
+    }
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            # Active branch register present; cached primary P32.v0 absent.
+            return {"P31.s13": 4, "P32.v221": 19}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": ["ZADANA_TEMP_CO0_WRITE"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                symbol: {
+                    "label": "Indoor setpoint",
+                    "pool": "P32",
+                    "chan": "v",
+                    "idx": 0,
+                    "mapping": mapping,
+                    "min": 0,
+                    "max": 400,
+                    "unit": None,
+                }
+                for symbol in symbols
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=None, value_label=None)
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+
+    symbols = {item["symbol"] for item in payload["entity_descriptors"]}
+    assert "ZADANA_TEMP_CO0_WRITE" in symbols

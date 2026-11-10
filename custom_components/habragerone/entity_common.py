@@ -349,8 +349,10 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
                 return composed
 
     if isinstance(mapping, dict):
-        active = _active_any_branch_value(store, mapping)
-        if active is not None:
+        handled, active = _try_active_any_branch_value(store, mapping)
+        if handled:
+            # Conditional register cards must not fall back to the cached primary
+            # address when the active branch word is absent.
             return active
 
     pool = descriptor.get("pool")
@@ -379,17 +381,40 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
     return None
 
 
-def _active_any_branch_value(store: ParamStore, mapping: Mapping[str, Any]) -> Any | None:
-    """Read the value register from the active ``raw.any`` branch when present."""
+def _any_rules_bind_register_values(any_rules: list[Any]) -> bool:
+    """Return True when ``raw.any`` then/else payloads bind address-selector values."""
+    for rule in any_rules:
+        if not isinstance(rule, Mapping):
+            continue
+        for key in ("then", "else"):
+            payload = rule.get(key)
+            if not isinstance(payload, Mapping):
+                continue
+            value = payload.get("value")
+            if isinstance(value, list) and any(
+                isinstance(entry, Mapping) and isinstance(entry.get("group"), str) for entry in value
+            ):
+                return True
+    return False
+
+
+def _try_active_any_branch_value(store: ParamStore, mapping: Mapping[str, Any]) -> tuple[bool, Any | None]:
+    """Read the active ``raw.any`` value register when the card binds selectors.
+
+    Returns ``(handled, value)``. When *handled* is True the caller must not fall
+    back to the descriptor's cached ``pool/chan/idx``.
+    """
     raw = mapping.get("raw")
     if not isinstance(raw, Mapping):
-        return None
+        return False, None
     any_rules = raw.get("any")
     if not isinstance(any_rules, list) or not any_rules:
-        return None
+        return False, None
+    if not _any_rules_bind_register_values(any_rules):
+        return False, None
     flat_values = store.flatten()
     branch = select_raw_any_branch(any_rules, flat_values=flat_values)
-    return first_selector_address_value(branch, flat_values=flat_values)
+    return True, first_selector_address_value(branch, flat_values=flat_values)
 
 
 def get_runtime_and_descriptors(

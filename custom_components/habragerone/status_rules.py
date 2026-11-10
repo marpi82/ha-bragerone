@@ -462,36 +462,61 @@ def evaluate_status_binary_from_rules(
     Display evaluation keeps first-match semantics (``COMPRESSOR_STATE_HEATING``
     wins for sensors). Binary diodes need the physical ON/OFF bit that often sits
     *after* those mode branches — continue until a bool-mappable label appears.
-    Explicit ``then: null`` still means undefined (stop).
+    Explicit ``then: null`` still means undefined (stop). Unsupported predicate
+    operations defer to the async library resolver (return ``None``) instead of
+    treating the condition as false.
     """
     rules = _status_value_rule_list(mapping)
     if rules is None:
         return None
 
     else_payload: Any = None
+    # ``_status_value_rule_list`` already keeps Mapping entries only.
     for rule in rules:
-        if not isinstance(rule, Mapping):
-            continue
         conds = rule.get("if")
         if conds is None:
             conds = rule.get("elseif")
-        if (
-            isinstance(conds, list)
-            and conds
-            and all(isinstance(c, Mapping) and _spa_condition_matches(c, flat_values=flat_values) for c in conds)
-        ):
-            if "then" in rule and rule.get("then") is None:
+        if isinstance(conds, list) and conds:
+            match = _spa_conditions_match_for_binary(conds, flat_values=flat_values)
+            if match is None:
                 return None
-            resolved = _status_payload_to_bool(rule.get("then"))
-            if resolved is not None:
-                return resolved
-            continue
+            if match:
+                if "then" in rule and rule.get("then") is None:
+                    return None
+                resolved = _status_payload_to_bool(rule.get("then"))
+                if resolved is not None:
+                    return resolved
+                continue
         if else_payload is None and "else" in rule:
             else_payload = rule.get("else")
 
     if else_payload is None:
         return None
     return _status_payload_to_bool(else_payload)
+
+
+def _spa_conditions_match_for_binary(
+    conds: list[Any],
+    *,
+    flat_values: Mapping[str, Any],
+) -> bool | None:
+    """Return whether all conditions match, or ``None`` when an op is unsupported."""
+    for cond in conds:
+        if not isinstance(cond, Mapping):
+            return False
+        operation = cond.get("operation")
+        if not isinstance(operation, str):
+            return False
+        op = operation.strip()
+        if "." in op:
+            op = op.rsplit(".", 1)[-1]
+        # Bracket form ``ClauseOperation['greaterThan']`` — local matcher only
+        # implements equalTo / notEqualTo; defer so the library path can run.
+        if "[" in operation or op not in {"equalTo", "notEqualTo"}:
+            return None
+        if not _spa_condition_matches(cond, flat_values=flat_values):
+            return False
+    return True
 
 
 def _status_payload_to_bool(payload: Any) -> bool | None:

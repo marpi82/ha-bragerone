@@ -1159,9 +1159,8 @@ def _mapping_has_parameter_write(mapping: dict[str, Any] | None) -> bool:
                     payload = rule.get(payload_key)
                     if not isinstance(payload, Mapping):
                         continue
-                    if _selector_list_has_value_write(payload.get("command")) or _selector_list_has_value_write(
-                        payload.get("value")
-                    ):
+                    # ``value`` is the read source; only ``command`` marks a write target.
+                    if _selector_list_has_value_write(payload.get("command")):
                         return True
     return False
 

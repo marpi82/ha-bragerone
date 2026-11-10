@@ -473,11 +473,13 @@ def test_resolve_entity_bool_prefers_rules_then_input_bit() -> None:
 def test_resolve_entity_bool_evaluates_paths_value_mask_rules() -> None:
     """SPA pump-diode paths.value if/elseif/else+mask (prefix-agnostic)."""
     from custom_components.habragerone.status_rules import (
+        evaluate_status_binary_from_rules,
         mapping_has_status_value_rules,
         resolve_entity_bool,
         resolve_rule_bool,
         resolve_rule_display_value,
         status_binary_has_sync_path,
+        try_resolve_status_binary_sync,
     )
 
     rules = [
@@ -511,27 +513,28 @@ def test_resolve_entity_bool_evaluates_paths_value_mask_rules() -> None:
     # Library evaluator also handles ClauseOperation / greaterThan.
     from custom_components.habragerone.status_rules import evaluate_status_value_rules
 
-    gt = evaluate_status_value_rules(
-        mapping={
-            "paths": {
-                "value": [
-                    {
-                        "if": [
-                            {
-                                "expected": 5,
-                                "operation": "ClauseOperation['greaterThan']",
-                                "value": [{"group": "P2", "number": 0, "use": "v"}],
-                            }
-                        ],
-                        "then": "ON",
-                        "else": "OFF",
-                    }
-                ]
-            }
-        },
-        flat_values={"P2.v0": 9},
-    )
+    gt_mapping = {
+        "paths": {
+            "value": [
+                {
+                    "if": [
+                        {
+                            "expected": 5,
+                            "operation": "ClauseOperation['greaterThan']",
+                            "value": [{"group": "P2", "number": 0, "use": "v"}],
+                        }
+                    ],
+                    "then": "ON",
+                    "else": "OFF",
+                }
+            ]
+        }
+    }
+    gt = evaluate_status_value_rules(mapping=gt_mapping, flat_values={"P2.v0": 9})
     assert gt == "ON"
+    # Binary sync must defer unsupported predicates (not treat them as false → else OFF).
+    assert evaluate_status_binary_from_rules(mapping=gt_mapping, flat_values={"P2.v0": 9}) is None
+    assert try_resolve_status_binary_sync(descriptor={"mapping": gt_mapping}, flat_values={"P2.v0": 9}, default_actual=9) is None
 
     # Inline else on the same rule as a nonmatching if.
     inline = {
