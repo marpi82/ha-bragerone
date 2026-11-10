@@ -1183,10 +1183,9 @@ class BragerRuntime:
                 modules_meta=self.modules_meta,
                 default_actual=default_actual,
             )
-            # Conditional write cards bind the target register in the active rule /
-            # raw.any ``command`` selectors — override cached pool/chan/idx.
-            write_addr = _parameter_address_from_rule_payload(active_rule.get("value"))
-            if write_addr is None and isinstance(active_rule.get("command"), list):
+            # Write destination is the rule's ``command`` selector — ``value`` is the
+            # read register and may differ (e.g. display v0 / command v221).
+            if isinstance(active_rule.get("command"), list):
                 write_addr = _parameter_address_from_rule_payload(active_rule.get("command"))
         elif typed_command_rules and not command_rules_supported:
             # Named-command routes still need an active rule for display intents;
@@ -1608,33 +1607,33 @@ def _read_target_actual(
     devid: str,
     modules_meta: Mapping[str, Mapping[str, Any]],
 ) -> Any:
+    from .status_rules import read_target_actual
+
     address = target.get("address")
+    key: str | None
     if isinstance(address, str) and address.strip():
-        value = flat_values.get(address.strip())
+        key = address.strip()
     else:
         group = target.get("group")
         use = target.get("use")
         number = target.get("number")
         key = f"{group}.{use}{number}" if isinstance(group, str) and isinstance(use, str) and isinstance(number, int) else None
-        value = flat_values.get(key) if isinstance(key, str) else None
 
-    if value is None:
-        getter = target.get("storeGetter")
-        if isinstance(getter, str) and getter.endswith("connectedAt"):
-            value = modules_meta.get(devid, {}).get("connectedAt")
+    if key is not None and key in flat_values:
+        return read_target_actual(
+            {"address": key, "bit": target.get("bit"), "mask": target.get("mask")},
+            flat_values=flat_values,
+        )
 
-    bit = target.get("bit")
-    if isinstance(bit, int):
-        bitmask_value: int | None = None
-        if isinstance(value, bool):
-            bitmask_value = None
-        elif isinstance(value, int):
-            bitmask_value = value
-        elif isinstance(value, float) and value.is_integer():
-            bitmask_value = int(value)
-        if bitmask_value is not None:
-            return (bitmask_value >> bit) & 1
-    return value
+    getter = target.get("storeGetter")
+    if isinstance(getter, str) and getter.endswith("connectedAt"):
+        return modules_meta.get(devid, {}).get("connectedAt")
+    if key is not None:
+        return read_target_actual(
+            {"address": key, "bit": target.get("bit"), "mask": target.get("mask")},
+            flat_values=flat_values,
+        )
+    return None
 
 
 def _compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:

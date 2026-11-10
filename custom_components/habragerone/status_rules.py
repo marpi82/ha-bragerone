@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -377,6 +378,16 @@ def spa_operation_name(operation: Any) -> str | None:
     return text or None
 
 
+def _spa_condition_selector_supported(cond: Mapping[str, Any]) -> bool:
+    """Return whether a local matcher can evaluate the condition's value selectors.
+
+    ``value: {storeGetter: ...}`` needs runtime context the flat-values matcher
+    does not have — treating it as false would silently take the else branch.
+    """
+    values = cond.get("value")
+    return not isinstance(values, Mapping)
+
+
 def raw_any_conditions_are_supported(any_rules: Any) -> bool:
     """Return whether every ``raw.any`` if/elseif predicate is locally evaluable."""
     if not isinstance(any_rules, list):
@@ -393,6 +404,8 @@ def raw_any_conditions_are_supported(any_rules: Any) -> bool:
                     return False
                 op = spa_operation_name(cond.get("operation"))
                 if op not in _COMPARISON_OPS:
+                    return False
+                if not _spa_condition_selector_supported(cond):
                     return False
     return True
 
@@ -814,13 +827,19 @@ def _condition_matches(cond: Mapping[str, Any], *, flat_values: Mapping[str, Any
 
 
 def _as_bitmask_int(value: Any) -> int | None:
-    """Coerce JSON numbers (including floats like ``64.0``) to ints for bit ops."""
+    r"""Coerce JSON numbers (including floats/strings like ``64.0`` / ``"0"``) to ints."""
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
         return value
     if isinstance(value, float) and value.is_integer():
         return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        with contextlib.suppress(TypeError, ValueError):
+            as_float = float(text)
+            if as_float.is_integer():
+                return int(as_float)
     return None
 
 

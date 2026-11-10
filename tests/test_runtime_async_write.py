@@ -330,3 +330,61 @@ def test_read_target_actual_extracts_bit_from_address() -> None:
         modules_meta={},
     )
     assert actual == 1
+
+
+def test_read_target_actual_applies_mask_and_numeric_strings() -> None:
+    assert (
+        _read_target_actual(
+            {"address": "P31.s13", "mask": 4},
+            flat_values={"P31.s13": 2},
+            devid="DEV1",
+            modules_meta={},
+        )
+        == 0
+    )
+    assert (
+        _read_target_actual(
+            {"address": "P31.s13", "bit": 2},
+            flat_values={"P31.s13": "0"},
+            devid="DEV1",
+            modules_meta={},
+        )
+        == 0
+    )
+    assert (
+        _read_target_actual(
+            {"address": "P31.s13", "mask": 4},
+            flat_values={"P31.s13": "0"},
+            devid="DEV1",
+            modules_meta={},
+        )
+        == 0
+    )
+    # Missing address falls through to connectedAt getter or None.
+    assert (
+        _read_target_actual(
+            {"address": "P9.v0", "storeGetter": "modules.connectedAt"},
+            flat_values={},
+            devid="DEV1",
+            modules_meta={"DEV1": {"connectedAt": "now"}},
+        )
+        == "now"
+    )
+    assert (
+        _read_target_actual(
+            {"address": "P9.v0"},
+            flat_values={},
+            devid="DEV1",
+            modules_meta={},
+        )
+        is None
+    )
+    assert (
+        _read_target_actual(
+            {"storeGetter": "other"},
+            flat_values={},
+            devid="DEV1",
+            modules_meta={},
+        )
+        is None
+    )

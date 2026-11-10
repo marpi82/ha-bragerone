@@ -338,6 +338,66 @@ def test_address_string_selectors_bind_and_refresh() -> None:
 
 
 @pytest.mark.asyncio
+async def test_async_write_prefers_command_over_value_and_honors_mask() -> None:
+    """Write routing must use command selectors and mask/numeric-string gates."""
+    from tests.helpers.descriptors import writable_parameter_descriptor
+    from tests.helpers.fakes import make_runtime
+
+    runtime, api, _gateway, store = make_runtime()
+    # Matching if: read register v0, write register v221 — must follow command.
+    store.upsert("P31.s13", 2)  # mask 4 → 0, equalTo 0 selects then
+    descriptor = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=0, raw_max=400)
+    descriptor["mapping"]["command_rules"] = [
+        {
+            "kind": "if",
+            "conditions": [
+                {
+                    "operation": "equalTo",
+                    "expected": 0,
+                    "targets": [{"address": "P31.s13", "mask": 4}],
+                }
+            ],
+            "command": [{"group": "P32", "number": 221, "use": "v"}],
+            "value": [{"group": "P32", "number": 0, "use": "v"}],
+        },
+        {
+            "kind": "else",
+            "conditions": [],
+            "command": [{"group": "P32", "number": 0, "use": "v"}],
+            "value": [{"group": "P32", "number": 0, "use": "v"}],
+        },
+    ]
+    await runtime.async_write(descriptor=descriptor, input_display_value=19)
+    assert api.calls[-1]["parameter"] == "v221"
+
+    # Numeric-string status word with bit gate.
+    store.upsert("P31.s13", "0")
+    descriptor_str = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=0, raw_max=400)
+    descriptor_str["mapping"]["command_rules"] = [
+        {
+            "kind": "if",
+            "conditions": [
+                {
+                    "operation": "equalTo",
+                    "expected": 0,
+                    "targets": [{"address": "P31.s13", "bit": 2}],
+                }
+            ],
+            "command": [{"group": "P32", "number": 0, "use": "v"}],
+            "value": [{"group": "P32", "number": 221, "use": "v"}],
+        },
+        {
+            "kind": "else",
+            "conditions": [],
+            "command": [{"group": "P32", "number": 221, "use": "v"}],
+            "value": [{"group": "P32", "number": 221, "use": "v"}],
+        },
+    ]
+    await runtime.async_write(descriptor=descriptor_str, input_display_value=18)
+    assert api.calls[-1]["parameter"] == "v0"
+
+
+@pytest.mark.asyncio
 async def test_async_write_command_rules_clause_operation_matches_read_path() -> None:
     """Populated command_rules must use SPA predicate ops, not equality-only matching."""
     from tests.helpers.descriptors import writable_parameter_descriptor
@@ -1024,6 +1084,23 @@ def test_spa_operation_helpers_and_compare_ops() -> None:
         )
         is True
     )
+    # storeGetter value shapes need runtime context — refuse local write routing.
+    assert (
+        raw_any_conditions_are_supported(
+            [
+                {
+                    "if": [
+                        {
+                            "operation": "equalTo",
+                            "expected": "online",
+                            "value": {"storeGetter": "module.state"},
+                        }
+                    ]
+                }
+            ]
+        )
+        is False
+    )
     assert (
         raw_any_conditions_are_supported([{"if": [{"operation": "ClauseOperation['matches']", "expected": 1, "value": []}]}])
         is False
@@ -1061,3 +1138,41 @@ def test_spa_operation_helpers_and_compare_ops() -> None:
     assert status_rule_selector_addresses(
         {"raw": {"any": [{"else": {"command": [{"address": "P32.v10"}], "value": [{"address": "P32.v10"}]}}]}}
     ) >= {"P32.v10", "P32.n10", "P32.x10"}
+
+
+@pytest.mark.asyncio
+async def test_async_write_refuses_store_getter_raw_any_guards() -> None:
+    """storeGetter raw.any gates are unsupported locally — refuse rather than take else."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    from tests.helpers.descriptors import writable_parameter_descriptor
+    from tests.helpers.fakes import make_runtime
+
+    runtime, _api, _gateway, _store = make_runtime()
+    descriptor = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=0, raw_max=400)
+    descriptor["mapping"]["command_rules"] = []
+    descriptor["mapping"]["raw"] = {
+        "any": [
+            {
+                "if": [
+                    {
+                        "expected": "online",
+                        "operation": "equalTo",
+                        "value": {"storeGetter": "module.state"},
+                    }
+                ],
+                "then": {
+                    "command": [{"group": "P32", "number": 0, "use": "v"}],
+                    "value": [{"group": "P32", "number": 0, "use": "v"}],
+                },
+            },
+            {
+                "else": {
+                    "command": [{"group": "P32", "number": 221, "use": "v"}],
+                    "value": [{"group": "P32", "number": 221, "use": "v"}],
+                }
+            },
+        ]
+    }
+    with pytest.raises(HomeAssistantError, match=r"Unsupported raw\.any predicate"):
+        await runtime.async_write(descriptor=descriptor, input_display_value=19)
