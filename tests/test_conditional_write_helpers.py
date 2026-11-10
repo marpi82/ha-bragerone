@@ -1176,3 +1176,99 @@ async def test_async_write_refuses_store_getter_raw_any_guards() -> None:
     }
     with pytest.raises(HomeAssistantError, match=r"Unsupported raw\.any predicate"):
         await runtime.async_write(descriptor=descriptor, input_display_value=19)
+
+
+@pytest.mark.asyncio
+async def test_async_write_refuses_unresolved_conditional_destinations() -> None:
+    """Supported conditionals without an active command must not hit the cached address."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    from tests.helpers.descriptors import writable_parameter_descriptor
+    from tests.helpers.fakes import make_runtime
+
+    runtime, api, _gateway, store = make_runtime()
+    store.upsert("P31.s13", 0)
+    # Active branch has a display value but no command selector.
+    value_only = writable_parameter_descriptor(pool="P32", chan="v", idx=99, raw_min=0, raw_max=400)
+    value_only["mapping"]["command_rules"] = []
+    value_only["mapping"]["raw"] = {
+        "any": [
+            {
+                "if": [
+                    {
+                        "expected": 0,
+                        "operation": "equalTo",
+                        "value": [{"bit": 2, "group": "P31", "number": 13, "use": "s"}],
+                    }
+                ],
+                "then": {"value": [{"group": "P32", "number": 0, "use": "v"}]},
+            },
+            {"else": {"command": [{"group": "P32", "number": 221, "use": "v"}]}},
+        ]
+    }
+    calls_before = len(api.calls)
+    with pytest.raises(HomeAssistantError, match="Unresolved conditional write destination"):
+        await runtime.async_write(descriptor=value_only, input_display_value=19)
+    assert len(api.calls) == calls_before
+
+    # Supported command_rules with no matching command selector and no raw.any.
+    no_dest = writable_parameter_descriptor(pool="P32", chan="v", idx=99, raw_min=0, raw_max=400)
+    no_dest["mapping"]["command_rules"] = [
+        {
+            "kind": "if",
+            "conditions": [
+                {
+                    "operation": "equalTo",
+                    "expected": 1,
+                    "targets": [{"address": "P31.s13", "bit": 2}],
+                }
+            ],
+            "command": [{"group": "P32", "number": 0, "use": "v"}],
+        },
+        {"kind": "else", "conditions": [], "value": [{"group": "P32", "number": 221, "use": "v"}]},
+    ]
+    no_dest["mapping"]["raw"] = {}
+    with pytest.raises(HomeAssistantError, match="Unresolved conditional write destination"):
+        await runtime.async_write(descriptor=no_dest, input_display_value=19)
+    assert len(api.calls) == calls_before
+
+
+@pytest.mark.asyncio
+async def test_async_write_named_command_skips_unsupported_raw_any_fallback() -> None:
+    """Resolved named commands must not be blocked by unrelated raw.any display guards."""
+    from tests.helpers.descriptors import command_rule_descriptor
+    from tests.helpers.fakes import make_runtime
+
+    runtime, api, _gateway, store = make_runtime()
+    store.upsert("P5.s0", 0)
+    descriptor = command_rule_descriptor(
+        command_rules=[
+            {
+                "conditions": [{"operation": "equalTo", "expected": 0, "targets": [{"address": "P5.s0", "bit": 0}]}],
+                "command": "BOILER_START",
+                "value": "OFF",
+            },
+            {
+                "conditions": [{"operation": "equalTo", "expected": 1, "targets": [{"address": "P5.s0", "bit": 0}]}],
+                "command": "BOILER_STOP",
+                "value": "ON",
+            },
+        ],
+    )
+    descriptor["mapping"]["raw"] = {
+        "any": [
+            {
+                "if": [
+                    {
+                        "expected": "x",
+                        "operation": "matches",
+                        "value": [{"group": "P1", "number": 0, "use": "v"}],
+                    }
+                ],
+                "then": {"value": [{"group": "P32", "number": 0, "use": "v"}]},
+            }
+        ]
+    }
+    await runtime.async_write(descriptor=descriptor, input_display_value=True)
+    assert len(api.calls) == 1
+    assert api.calls[0]["command"] == "BOILER_START"

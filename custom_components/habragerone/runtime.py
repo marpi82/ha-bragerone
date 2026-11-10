@@ -1195,12 +1195,28 @@ class BragerRuntime:
         active_command = _rule_command_name(active_rule)
         has_raw_command_route = isinstance(active_command, str) and bool(active_command.strip())
 
-        if write_addr is None and isinstance(mapping, dict):
+        # Named-command routes do not need a parameter address — skipping raw.any
+        # avoids unrelated display guards (matches/storeGetter) blocking the write.
+        if write_addr is None and not has_raw_command_route and isinstance(mapping, dict):
             write_addr = _parameter_address_from_active_any_branch_command(mapping, flat_values=flat_values)
-        if typed_command_rules and not command_rules_supported and write_addr is None:
+        if typed_command_rules and not command_rules_supported and write_addr is None and not has_raw_command_route:
             # Do not fall through to the cached primary address — that may not be
             # the active setpoint when predicates could not be evaluated.
             raise HomeAssistantError("Unsupported command_rule predicate without a usable raw.any destination; refusing write")
+
+        # Supported address-selecting conditionals must resolve an explicit destination.
+        # Falling through to the cached primary can write an inactive setpoint when no
+        # guard matched or the active branch has a display value but no command.
+        # Value-keyed named commands (string ``command``) still use the later
+        # ``_select_command_rule`` path and are not blocked here.
+        had_address_command_rules = any(isinstance(rule.get("command"), list) for rule in typed_command_rules)
+        conditional_write_binding = bool(command_rules_supported and had_address_command_rules)
+        if not conditional_write_binding and isinstance(mapping, dict):
+            raw_mapping = mapping.get("raw")
+            any_rules = raw_mapping.get("any") if isinstance(raw_mapping, Mapping) else None
+            conditional_write_binding = isinstance(any_rules, list) and bool(any_rules)
+        if conditional_write_binding and write_addr is None and not has_raw_command_route:
+            raise HomeAssistantError("Unresolved conditional write destination; refusing write")
         raw_min: Any = (
             descriptor.get("min")
             if isinstance(descriptor.get("min"), int | float) and not isinstance(descriptor.get("min"), bool)
