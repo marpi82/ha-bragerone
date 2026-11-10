@@ -302,7 +302,20 @@ def attach_transport_availability_listener(
     return _unsubscribe
 
 
-def store_value_for_address(store: ParamStore, address: str) -> Any | None:
+def _scoped_flat_values(store: ParamStore, devid: str | None) -> dict[str, Any]:
+    """Return a module-scoped ParamStore snapshot when *devid* is known.
+
+    Falls back to the merged ``flatten()`` view when the devid bucket is empty
+    (unit-test FakeStore fixtures and legacy unscoped primes).
+    """
+    if isinstance(devid, str) and devid.strip():
+        scoped = store.flatten_for_devid(devid.strip())
+        if scoped:
+            return scoped
+    return store.flatten()
+
+
+def store_value_for_address(store: ParamStore, address: str, *, devid: str | None = None) -> Any | None:
     """Read one value from ParamStore using ``P<n>.<chan><idx>`` address syntax."""
     try:
         pool, rest = address.split(".", 1)
@@ -311,7 +324,9 @@ def store_value_for_address(store: ParamStore, address: str) -> Any | None:
     except Exception:
         return None
 
-    family = store.get_family(pool, idx)
+    family = store.get_family(pool, idx, devid=devid)
+    if family is None and devid:
+        family = store.get_family(pool, idx)
     if family is None:
         return None
     return family.get(chan)
@@ -340,8 +355,9 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
             if composed is not None:
                 return composed
 
+    devid = str(descriptor.get("devid") or "").strip() or None
     if isinstance(mapping, dict):
-        handled, active = _try_active_any_branch_value(store, mapping)
+        handled, active = _try_active_any_branch_value(store, mapping, devid=devid)
         if handled:
             # Conditional register cards must not fall back to the cached primary
             # address when the active branch word is absent.
@@ -351,7 +367,7 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
     chan = descriptor.get("chan")
     idx = descriptor.get("idx")
     if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
-        direct = store_value_for_address(store, f"{pool}.{chan}{idx}")
+        direct = store_value_for_address(store, f"{pool}.{chan}{idx}", devid=devid)
         if direct is not None:
             return direct
 
@@ -367,7 +383,7 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
         address = candidate.get("address")
         if not isinstance(address, str) or not address.strip():
             continue
-        value = store_value_for_address(store, address.strip())
+        value = store_value_for_address(store, address.strip(), devid=devid)
         if value is not None:
             return value
     return None
@@ -392,7 +408,12 @@ def _any_rules_bind_register_values(any_rules: list[Any]) -> bool:
     return False
 
 
-def _try_active_any_branch_value(store: ParamStore, mapping: Mapping[str, Any]) -> tuple[bool, Any | None]:
+def _try_active_any_branch_value(
+    store: ParamStore,
+    mapping: Mapping[str, Any],
+    *,
+    devid: str | None = None,
+) -> tuple[bool, Any | None]:
     """Read the active ``raw.any`` value register when the card binds selectors.
 
     Returns ``(handled, value)``. When *handled* is True the caller must not fall
@@ -406,7 +427,7 @@ def _try_active_any_branch_value(store: ParamStore, mapping: Mapping[str, Any]) 
         return False, None
     if not _any_rules_bind_register_values(any_rules):
         return False, None
-    flat_values = store.flatten()
+    flat_values = _scoped_flat_values(store, devid)
     branch = select_raw_any_branch(any_rules, flat_values=flat_values)
     return True, first_selector_address_value(branch, flat_values=flat_values)
 
@@ -430,7 +451,8 @@ def descriptor_active_raw_limits(store: ParamStore, descriptor: Mapping[str, Any
     any_rules = raw.get("any")
     if not isinstance(any_rules, list) or not _any_rules_bind_register_values(any_rules):
         return raw_min, raw_max
-    flat_values = store.flatten()
+    devid = str(descriptor.get("devid") or "").strip() or None
+    flat_values = _scoped_flat_values(store, devid)
     branch = select_raw_any_branch(any_rules, flat_values=flat_values)
     if not isinstance(branch, Mapping):
         return raw_min, raw_max
@@ -439,7 +461,9 @@ def descriptor_active_raw_limits(store: ParamStore, descriptor: Mapping[str, Any
         return raw_min, raw_max
 
     def _limits_from_family(pool: str, idx: int) -> tuple[Any, Any] | None:
-        fam = store.get_family(pool, idx)
+        fam = store.get_family(pool, idx, devid=devid)
+        if fam is None and devid:
+            fam = store.get_family(pool, idx)
         if fam is None:
             return None
         fam_min = fam.get("n")

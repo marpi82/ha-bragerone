@@ -1158,7 +1158,11 @@ class BragerRuntime:
         else:
             typed_command_rules = []
         has_command_rule = len(typed_command_rules) > 0
-        flat_values = self.store.flatten()
+        from .entity_common import _scoped_flat_values
+
+        # Scope gate/bounds evaluation to this module — merged flatten() is LWW
+        # across devices and can steer writes/limits from another boiler.
+        flat_values = _scoped_flat_values(self.store, devid)
         default_actual: Any = None
         if isinstance(pool, str) and isinstance(chan, str) and isinstance(idx, int):
             default_actual = flat_values.get(f"{pool}.{chan}{idx}")
@@ -1211,7 +1215,9 @@ class BragerRuntime:
         if write_addr is not None:
             pool, chan, idx = write_addr
             has_parameter_address = True
-            fam = self.store.get_family(pool, idx)
+            fam = self.store.get_family(pool, idx, devid=devid)
+            if fam is None:
+                fam = self.store.get_family(pool, idx)
             if fam is not None:
                 fam_min = fam.get("n")
                 fam_max = fam.get("x")

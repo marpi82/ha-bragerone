@@ -405,10 +405,11 @@ class FakeStore:
             bucket[str(key)] = value
         self._flat[str(key)] = value
 
-    def get_family(self, pool: str, idx: int) -> dict[str, object] | None:
+    def get_family(self, pool: str, idx: int, *, devid: str | None = None) -> dict[str, object] | None:
         """Return channel map for one ParamStore family (``P<n>.<chan><idx>`` keys)."""
+        source = self._by_devid[devid] if devid is not None and devid in self._by_devid else self._flat
         family: dict[str, object] = {}
-        for key, value in self._flat.items():
+        for key, value in source.items():
             if not isinstance(key, str) or "." not in key:
                 continue
             key_pool, rest = key.split(".", 1)

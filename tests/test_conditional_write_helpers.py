@@ -892,6 +892,101 @@ def test_descriptor_active_raw_limits_edge_cases() -> None:
     ) == (1, 2)
 
 
+def test_descriptor_active_paths_scope_to_module_devid() -> None:
+    """Multi-module stores must not let another devid's gates/limits steer a card."""
+    from custom_components.habragerone.entity_common import (
+        descriptor_active_raw_limits,
+        descriptor_current_raw_value,
+    )
+
+    store = FakeStore()
+    # Module A: gate matches then → P32.v0 with bounds 150/250.
+    store.upsert("P5.v0", 10, devid="modA")
+    store.upsert("P32.v0", 190, devid="modA")
+    store.upsert("P32.n0", 150, devid="modA")
+    store.upsert("P32.x0", 250, devid="modA")
+    store.upsert("P32.v221", 100, devid="modA")
+    store.upsert("P32.n221", 50, devid="modA")
+    store.upsert("P32.x221", 120, devid="modA")
+    # Module B upserted later into the merged flatten() view: gate fails → else,
+    # and a wider n/x that must not leak into modA.
+    store.upsert("P5.v0", 1, devid="modB")
+    store.upsert("P32.v0", 210, devid="modB")
+    store.upsert("P32.n0", 10, devid="modB")
+    store.upsert("P32.x0", 300, devid="modB")
+    store.upsert("P32.v221", 180, devid="modB")
+    store.upsert("P32.n221", 100, devid="modB")
+    store.upsert("P32.x221", 200, devid="modB")
+
+    mapping = {
+        "raw": {
+            "any": [
+                {
+                    "if": [
+                        {
+                            "expected": 5,
+                            "operation": "greaterThan",
+                            "value": [{"group": "P5", "number": 0, "use": "v"}],
+                        }
+                    ],
+                    "then": {"value": [{"group": "P32", "number": 0, "use": "v"}]},
+                },
+                {"else": {"value": [{"group": "P32", "number": 221, "use": "v"}]}},
+            ]
+        }
+    }
+    descriptor_a = {"devid": "modA", "min": 1, "max": 2, "mapping": mapping}
+    descriptor_b = {"devid": "modB", "min": 1, "max": 2, "mapping": mapping}
+
+    assert descriptor_current_raw_value(store, descriptor_a) == 190
+    assert descriptor_active_raw_limits(store, descriptor_a) == (150, 250)
+    assert descriptor_current_raw_value(store, descriptor_b) == 180
+    assert descriptor_active_raw_limits(store, descriptor_b) == (100, 200)
+
+    # Devid-scoped family miss falls back to the unscoped store snapshot.
+    hybrid = FakeStore()
+    hybrid.upsert("P5.v0", 10, devid="modA")
+    hybrid._flat["P32.v0"] = 190
+    hybrid._flat["P32.n0"] = 150
+    hybrid._flat["P32.x0"] = 250
+    assert descriptor_active_raw_limits(
+        hybrid,
+        {
+            "devid": "modA",
+            "min": 1,
+            "max": 2,
+            "mapping": {
+                "raw": {
+                    "any": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 5,
+                                    "operation": "greaterThan",
+                                    "value": [{"group": "P5", "number": 0, "use": "v"}],
+                                }
+                            ],
+                            "then": {"value": [{"group": "P32", "number": 0, "use": "v"}]},
+                        }
+                    ]
+                }
+            },
+        },
+    ) == (150, 250)
+
+    # Mapping-input fallback skips junk selectors and returns None when empty.
+    assert (
+        descriptor_current_raw_value(
+            FakeStore(flat_values={}),
+            {
+                "devid": "modA",
+                "mapping": {"inputs": ["skip", {"address": "  "}, {"address": "P9.v0"}]},
+            },
+        )
+        is None
+    )
+
+
 def test_spa_operation_helpers_and_compare_ops() -> None:
     from custom_components.habragerone.status_rules import (
         _address_from_spa_selector,
