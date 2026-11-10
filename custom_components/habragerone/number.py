@@ -15,6 +15,7 @@ from .const import DOMAIN
 from .entity_common import (
     attach_route_visibility_listener,
     attach_transport_availability_listener,
+    descriptor_active_raw_limits,
     descriptor_current_raw_value,
     descriptor_display_name,
     descriptor_enabled_by_default,
@@ -139,7 +140,20 @@ class BragerSymbolNumber(NumberEntity):
             self._unsubscribe_transport = None
 
     async def async_update(self) -> None:
-        """Refresh numeric value from ParamStore using cached unit transform."""
+        """Refresh numeric value and active-register limits from ParamStore."""
+        raw_min, raw_max = descriptor_active_raw_limits(self._runtime.store, self._descriptor)
+        if isinstance(raw_min, int | float) and not isinstance(raw_min, bool):
+            self._attr_native_min_value = apply_display_transform(
+                raw_min,
+                transform=self._transform,
+                precision=self._precision,
+            )
+        if isinstance(raw_max, int | float) and not isinstance(raw_max, bool):
+            self._attr_native_max_value = apply_display_transform(
+                raw_max,
+                transform=self._transform,
+                precision=self._precision,
+            )
         raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
         self._attr_available = entity_is_available(
             self._runtime,

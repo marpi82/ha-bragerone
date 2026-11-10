@@ -3262,7 +3262,13 @@ def test_async_build_bootstrap_payload_admits_any_branch_register_when_resolve_n
 
         def flatten(self) -> dict[str, object]:
             # Active branch register present; cached primary P32.v0 absent.
-            return {"P31.s13": 4, "P32.v221": 19}
+            return {
+                "P31.s13": 4,
+                "P32.v221": 190,
+                "P32.u221": 12,
+                "P32.n221": 150,
+                "P32.x221": 250,
+            }
 
     class _FakeResolver(_BootstrapResolverRouteStubMixin):
         @classmethod
@@ -3302,6 +3308,10 @@ def test_async_build_bootstrap_payload_admits_any_branch_register_when_resolve_n
         async def resolve_value(self, symbol: str) -> SimpleNamespace:
             _ = symbol
             return SimpleNamespace(value=None, value_label=None)
+
+        async def _resolve_unit_meta(self, *, raw_unit_code: object) -> dict[str, object] | None:
+            _ = raw_unit_code
+            return {"value": "e => e * 0.1", "text": "°C"}
 
         def parameter_visibility_diagnostics(
             self,
@@ -3351,3 +3361,7 @@ def test_async_build_bootstrap_payload_admits_any_branch_register_when_resolve_n
 
     symbols = {item["symbol"] for item in payload["entity_descriptors"]}
     assert "ZADANA_TEMP_CO0_WRITE" in symbols
+    descriptor = next(item for item in payload["entity_descriptors"] if item["symbol"] == "ZADANA_TEMP_CO0_WRITE")
+    assert descriptor["min"] == 150
+    assert descriptor["max"] == 250
+    assert descriptor.get("unit_code") == 12

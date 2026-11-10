@@ -100,6 +100,50 @@ async def test_number_listener_lifecycle_and_state_refresh(hass: HomeAssistant) 
 
 
 @pytest.mark.asyncio
+async def test_number_refreshes_limits_from_active_any_branch(hass: HomeAssistant) -> None:
+    runtime, *_rest = make_runtime(
+        flat_values={
+            "P31.s13": 4,
+            "P32.v0": 210,
+            "P32.n0": 100,
+            "P32.x0": 300,
+            "P32.v221": 190,
+            "P32.n221": 150,
+            "P32.x221": 250,
+        }
+    )
+    descriptor = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=100, raw_max=300)
+    descriptor["mapping"] = {
+        "command_rules": [],
+        "raw": {
+            "any": [
+                {
+                    "if": [
+                        {
+                            "expected": 0,
+                            "operation": "equalTo",
+                            "value": [{"bit": 2, "group": "P31", "number": 13, "use": "s"}],
+                        }
+                    ],
+                    "then": {"value": [{"group": "P32", "number": 0, "use": "v"}]},
+                },
+                {"else": {"value": [{"group": "P32", "number": 221, "use": "v"}]}},
+            ]
+        },
+    }
+    descriptor.update({"transform_scale": 0.1, "transform_offset": 0.0, "transform_precision": 1})
+    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
+    entity = BragerSymbolNumber(entry=entry, runtime=runtime, descriptor=descriptor)
+    entity.hass = hass
+    entity.entity_id = "number.indoor_setpoint"
+
+    await entity.async_update()
+    assert entity.native_value == 19.0
+    assert entity._attr_native_min_value == 15.0
+    assert entity._attr_native_max_value == 25.0
+
+
+@pytest.mark.asyncio
 async def test_number_applies_cached_unit_transform(hass: HomeAssistant) -> None:
     runtime, api, _gateway, _store = make_runtime(flat_values={"P10.v2": 333})
     descriptor = writable_parameter_descriptor(

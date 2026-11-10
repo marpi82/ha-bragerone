@@ -1046,6 +1046,76 @@ def _any_branch_store_value(*, mapping: Mapping[str, Any] | None, flat_values: M
     return first_selector_address_value(branch, flat_values=flat_values)
 
 
+def _any_branch_active_value_address(
+    *,
+    mapping: Mapping[str, Any] | None,
+    flat_values: Mapping[str, Any],
+) -> str | None:
+    """Return the active ``raw.any`` value-register address when branches bind selectors."""
+    from .status_rules import _address_from_spa_selector
+
+    if not isinstance(mapping, Mapping):
+        return None
+    raw = mapping.get("raw")
+    if not isinstance(raw, Mapping):
+        return None
+    branch = select_raw_any_branch(raw.get("any"), flat_values=flat_values)
+    if not isinstance(branch, Mapping):
+        return None
+    value_payload = branch.get("value")
+    if not isinstance(value_payload, list):
+        return None
+    for entry in value_payload:
+        if not isinstance(entry, Mapping):
+            continue
+        address = _address_from_spa_selector(entry)
+        if address is not None:
+            return address
+    return None
+
+
+def _unit_code_for_address(*, address: str, flat_values: Mapping[str, Any]) -> Any | None:
+    """Return the companion ``u``-channel unit code for a value-register address."""
+    if "." not in address:
+        return None
+    pool, rest = address.split(".", 1)
+    if not pool or len(rest) < 2:
+        return None
+    try:
+        idx = int(rest[1:])
+    except ValueError:
+        return None
+    unit_key = f"{pool}.u{idx}"
+    unit_code = flat_values.get(unit_key)
+    if unit_code is None or unit_code == "":
+        return None
+    return unit_code
+
+
+def _apply_branch_register_bounds(
+    descriptor: EntityDescriptor,
+    *,
+    active_addr: str | None,
+    flat_values: Mapping[str, Any],
+) -> None:
+    """Copy active-branch ``n``/``x`` bounds onto the descriptor when present."""
+    if active_addr is None or "." not in active_addr:
+        return
+    pool_a, rest_a = active_addr.split(".", 1)
+    if not pool_a or len(rest_a) < 2:
+        return
+    try:
+        idx_a = int(rest_a[1:])
+    except ValueError:
+        return
+    fam_min = flat_values.get(f"{pool_a}.n{idx_a}")
+    fam_max = flat_values.get(f"{pool_a}.x{idx_a}")
+    if isinstance(fam_min, int | float) and not isinstance(fam_min, bool):
+        descriptor["min"] = fam_min
+    if isinstance(fam_max, int | float) and not isinstance(fam_max, bool):
+        descriptor["max"] = fam_max
+
+
 def _has_runtime_raw_value(
     *,
     payload: Mapping[str, Any],
@@ -1096,7 +1166,17 @@ def _has_named_command_rule(mapping: dict[str, Any] | None) -> bool:
 
 
 def _is_value_channel_selector(entry: Mapping[str, Any]) -> bool:
-    """Return True when *entry* is an SPA ``{group, number, use:v}`` write target."""
+    """Return True when *entry* is an SPA value-channel write target."""
+    address = entry.get("address")
+    if isinstance(address, str) and "." in address:
+        _pool, rest = address.split(".", 1)
+        if rest.strip().lower().startswith("v"):
+            try:
+                int(rest.strip()[1:])
+            except ValueError:
+                return False
+            else:
+                return True
     group = entry.get("group") if entry.get("group") is not None else entry.get("pool")
     number = entry.get("number")
     if number is None:
@@ -2057,6 +2137,22 @@ async def async_build_bootstrap_payload(
                 resolver,
                 payload if isinstance(payload, Mapping) else {},
             )
+            # Conditional write cards may omit unit metadata on the describe payload
+            # while the active branch register already carries a unit code (P*.u*).
+            if transform_scale is None:
+                active_addr = _any_branch_active_value_address(mapping=mapping, flat_values=flat_values)
+                branch_unit = _unit_code_for_address(address=active_addr, flat_values=flat_values) if active_addr else None
+                if branch_unit is not None:
+                    (
+                        unit_code,
+                        transform_scale,
+                        transform_offset,
+                        transform_precision,
+                    ) = await _resolve_descriptor_numeric_transform(
+                        resolver,
+                        {"unit_code": branch_unit, "mapping": mapping or {}},
+                    )
+                    _apply_branch_register_bounds(descriptor, active_addr=active_addr, flat_values=flat_values)
             _apply_descriptor_transform_fields(
                 descriptor,
                 unit_code=unit_code,

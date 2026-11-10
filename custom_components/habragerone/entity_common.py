@@ -116,26 +116,18 @@ def _display_name_panel_prefix(descriptor: dict[str, Any]) -> str:
 
 def _address_from_value_selector(entry: Mapping[str, Any]) -> str | None:
     """Build ``P<n>.<chan><idx>`` from an SPA value-path address selector."""
-    group = entry.get("group")
-    number = entry.get("number")
-    use = entry.get("use")
-    if not isinstance(group, str) or not group.strip():
-        return None
-    if not isinstance(number, int):
-        return None
-    if not isinstance(use, str) or not use.strip():
-        return None
-    return f"{group.strip()}.{use.strip()[0]}{number}"
+    from .status_rules import _address_from_spa_selector
+
+    return _address_from_spa_selector(entry)
 
 
 def _is_address_selector_entry(entry: Any) -> bool:
-    """Return whether *entry* is a ``{group, number, use[, convert, times]}`` selector."""
+    """Return whether *entry* is a group/use selector or ``{"address": "..."}`` form."""
     if not isinstance(entry, Mapping):
         return False
-    group = entry.get("group")
-    number = entry.get("number")
-    use = entry.get("use")
-    return isinstance(group, str) and bool(group) and isinstance(number, int) and isinstance(use, str) and bool(use)
+    from .status_rules import _address_from_spa_selector
+
+    return _address_from_spa_selector(entry) is not None
 
 
 def _address_selectors_need_compose(entries: list[Any]) -> bool:
@@ -383,6 +375,8 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
 
 def _any_rules_bind_register_values(any_rules: list[Any]) -> bool:
     """Return True when ``raw.any`` then/else payloads bind address-selector values."""
+    from .status_rules import _address_from_spa_selector
+
     for rule in any_rules:
         if not isinstance(rule, Mapping):
             continue
@@ -392,7 +386,7 @@ def _any_rules_bind_register_values(any_rules: list[Any]) -> bool:
                 continue
             value = payload.get("value")
             if isinstance(value, list) and any(
-                isinstance(entry, Mapping) and isinstance(entry.get("group"), str) for entry in value
+                isinstance(entry, Mapping) and _address_from_spa_selector(entry) is not None for entry in value
             ):
                 return True
     return False
@@ -415,6 +409,58 @@ def _try_active_any_branch_value(store: ParamStore, mapping: Mapping[str, Any]) 
     flat_values = store.flatten()
     branch = select_raw_any_branch(any_rules, flat_values=flat_values)
     return True, first_selector_address_value(branch, flat_values=flat_values)
+
+
+def descriptor_active_raw_limits(store: ParamStore, descriptor: Mapping[str, Any]) -> tuple[Any, Any]:
+    """Return ``(raw_min, raw_max)`` for the active value register when available.
+
+    Conditional ``raw.any`` cards refresh limits from the selected family's ``n``/``x``
+    channels. Falls back to the cached descriptor min/max.
+    """
+    from .status_rules import _address_from_spa_selector, select_raw_any_branch
+
+    raw_min = descriptor.get("min")
+    raw_max = descriptor.get("max")
+    mapping = descriptor.get("mapping")
+    if not isinstance(mapping, Mapping):
+        return raw_min, raw_max
+    raw = mapping.get("raw")
+    if not isinstance(raw, Mapping):
+        return raw_min, raw_max
+    any_rules = raw.get("any")
+    if not isinstance(any_rules, list) or not _any_rules_bind_register_values(any_rules):
+        return raw_min, raw_max
+    flat_values = store.flatten()
+    branch = select_raw_any_branch(any_rules, flat_values=flat_values)
+    if not isinstance(branch, Mapping):
+        return raw_min, raw_max
+    value_payload = branch.get("value")
+    if not isinstance(value_payload, list):
+        return raw_min, raw_max
+    for entry in value_payload:
+        if not isinstance(entry, Mapping):
+            continue
+        address = _address_from_spa_selector(entry)
+        if address is None or "." not in address:
+            continue
+        pool, rest = address.split(".", 1)
+        if not pool or len(rest) < 2:
+            continue
+        try:
+            idx = int(rest[1:])
+        except ValueError:
+            continue
+        fam = store.get_family(pool, idx)
+        if fam is None:
+            continue
+        fam_min = fam.get("n")
+        fam_max = fam.get("x")
+        if isinstance(fam_min, int | float) and not isinstance(fam_min, bool):
+            raw_min = fam_min
+        if isinstance(fam_max, int | float) and not isinstance(fam_max, bool):
+            raw_max = fam_max
+        break
+    return raw_min, raw_max
 
 
 def get_runtime_and_descriptors(

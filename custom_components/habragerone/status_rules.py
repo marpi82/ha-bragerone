@@ -2,8 +2,22 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
+
+_JS_BRACKET_MEMBER_RE = re.compile(r"\[\s*['\"]([A-Za-z_$][\w$]*)['\"]\s*\]")
+_COMPARISON_OPS = frozenset(
+    {
+        "equalTo",
+        "notEqualTo",
+        "greaterThan",
+        "greaterThanOrEqualTo",
+        "lessThan",
+        "lessThanOrEqualTo",
+    }
+)
+_BINARY_SYNC_OPS = frozenset({"equalTo", "notEqualTo"})
 
 
 def resolve_rule_display_value(
@@ -297,7 +311,12 @@ def first_selector_address_value(
 
 
 def _address_from_spa_selector(entry: Mapping[str, Any]) -> str | None:
-    """Build ``P<n>.<chan><idx>`` from an SPA ``{group, number, use}`` selector."""
+    """Build ``P<n>.<chan><idx>`` from an SPA selector or ``{"address": "..."}`` form."""
+    address = entry.get("address")
+    if isinstance(address, str) and "." in address:
+        pool, rest = address.split(".", 1)
+        if pool.strip() and rest.strip():
+            return f"{pool.strip()}.{rest.strip()}"
     group = entry.get("group")
     number = entry.get("number")
     use = entry.get("use")
@@ -308,6 +327,41 @@ def _address_from_spa_selector(entry: Mapping[str, Any]) -> str | None:
     if not isinstance(use, str) or not use.strip():
         return None
     return f"{group.strip()}.{use.strip()[0]}{number}"
+
+
+def spa_operation_name(operation: Any) -> str | None:
+    """Normalize SPA / JS operation tokens (``t.equalTo``, ``ClauseOperation['equalTo']``)."""
+    if operation is None:
+        return None
+    text = operation.strip() if isinstance(operation, str) else str(operation).strip()
+    if not text:
+        return None
+    bracket = _JS_BRACKET_MEMBER_RE.search(text)
+    if bracket is not None:
+        return bracket.group(1)
+    if "." in text:
+        text = text.rsplit(".", 1)[-1]
+    return text or None
+
+
+def raw_any_conditions_are_supported(any_rules: Any) -> bool:
+    """Return whether every ``raw.any`` if/elseif predicate is locally evaluable."""
+    if not isinstance(any_rules, list):
+        return True
+    for rule in any_rules:
+        if not isinstance(rule, Mapping):
+            continue
+        for key in ("if", "elseif"):
+            conds = rule.get(key)
+            if not isinstance(conds, list):
+                continue
+            for cond in conds:
+                if not isinstance(cond, Mapping):
+                    return False
+                op = spa_operation_name(cond.get("operation"))
+                if op not in _COMPARISON_OPS:
+                    return False
+    return True
 
 
 def _eval_spa_value_rules(rules: list[Any], *, flat_values: Mapping[str, Any]) -> Any | None:
@@ -361,17 +415,14 @@ def _spa_condition_matches(cond: Mapping[str, Any], *, flat_values: Mapping[str,
         address = f"{group}.{use[0]}{number}"
         # Absent register: only null/undefined equality can match (pump-diode guard).
         if address not in flat_values:
-            op = operation.strip()
-            if "." in op:
-                op = op.rsplit(".", 1)[-1]
-            if op == "equalTo" and expected is None:
+            if spa_operation_name(operation) == "equalTo" and expected is None:
                 return True
             continue
         actual = read_target_actual(
             {"address": address, "bit": sel.get("bit"), "mask": sel.get("mask")},
             flat_values=flat_values,
         )
-        if compare_condition(operation=operation, actual=actual, expected=expected):
+        if compare_condition(operation=str(operation), actual=actual, expected=expected):
             return True
     return False
 
@@ -481,9 +532,10 @@ def evaluate_status_binary_from_rules(
             if match is None:
                 return None
             if match:
-                if "then" in rule and rule.get("then") is None:
+                then_payload = rule.get("then") if "then" in rule else None
+                if "then" in rule and _status_payload_is_null(then_payload):
                     return None
-                resolved = _status_payload_to_bool(rule.get("then"))
+                resolved = _status_payload_to_bool(then_payload)
                 if resolved is not None:
                     return resolved
                 continue
@@ -504,19 +556,23 @@ def _spa_conditions_match_for_binary(
     for cond in conds:
         if not isinstance(cond, Mapping):
             return False
-        operation = cond.get("operation")
-        if not isinstance(operation, str):
-            return False
-        op = operation.strip()
-        if "." in op:
-            op = op.rsplit(".", 1)[-1]
-        # Bracket form ``ClauseOperation['greaterThan']`` — local matcher only
-        # implements equalTo / notEqualTo; defer so the library path can run.
-        if "[" in operation or op not in {"equalTo", "notEqualTo"}:
+        op = spa_operation_name(cond.get("operation"))
+        # Binary diodes only evaluate equalTo / notEqualTo locally; other ops
+        # (and unknown tokens) defer to the async library resolver.
+        if op not in _BINARY_SYNC_OPS:
             return None
         if not _spa_condition_matches(cond, flat_values=flat_values):
             return False
     return True
+
+
+def _status_payload_is_null(payload: Any) -> bool:
+    """Return True for literal null and SPA ``{"value": null}`` wrappers."""
+    if payload is None:
+        return True
+    if isinstance(payload, Mapping) and "value" in payload:
+        return _status_payload_is_null(payload.get("value"))
+    return False
 
 
 def _status_payload_to_bool(payload: Any) -> bool | None:
@@ -749,13 +805,19 @@ def coerce_status_bool(value: Any) -> bool:
 
 def compare_condition(*, operation: str, actual: Any, expected: Any) -> bool:
     """Evaluate one rule operation against actual and expected values."""
-    op = operation.strip()
-    if "." in op:
-        op = op.rsplit(".", 1)[-1]
+    op = spa_operation_name(operation)
     if op == "equalTo":
         return bool(actual == expected)
     if op == "notEqualTo":
         return bool(actual != expected)
+    if op == "greaterThan":
+        return actual is not None and expected is not None and actual > expected
+    if op == "greaterThanOrEqualTo":
+        return actual is not None and expected is not None and actual >= expected
+    if op == "lessThan":
+        return actual is not None and expected is not None and actual < expected
+    if op == "lessThanOrEqualTo":
+        return actual is not None and expected is not None and actual <= expected
     return False
 
 

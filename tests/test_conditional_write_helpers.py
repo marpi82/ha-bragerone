@@ -86,7 +86,7 @@ def test_any_branch_helpers_edge_cases() -> None:
 
 def test_binary_condition_helpers_cover_reject_paths() -> None:
     assert _spa_conditions_match_for_binary(["bad"], flat_values={}) is False
-    assert _spa_conditions_match_for_binary([{"operation": 1}], flat_values={}) is False
+    assert _spa_conditions_match_for_binary([{"operation": 1}], flat_values={}) is None
     assert (
         _spa_conditions_match_for_binary(
             [{"operation": "t.equalTo", "expected": 1, "value": [{"group": "P1", "number": 0, "use": "v"}]}],
@@ -216,3 +216,340 @@ async def test_async_write_uses_rule_command_list_and_address_string() -> None:
     ]
     await runtime.async_write(descriptor=descriptor4, input_display_value=13)
     assert api.calls[-1]["parameter"] == "v56"
+
+
+def test_address_string_selectors_bind_and_refresh() -> None:
+    from custom_components.habragerone.entity_common import descriptor_refresh_keys
+
+    store = FakeStore(flat_values={"P32.v0": 21, "P32.v221": 19, "P31.s13": 4})
+    descriptor = {
+        "pool": "P32",
+        "chan": "v",
+        "idx": 0,
+        "mapping": {
+            "raw": {
+                "any": [
+                    {
+                        "else": {
+                            "command": [{"address": "P32.v221"}],
+                            "value": [{"address": "P32.v221"}],
+                        }
+                    }
+                ]
+            }
+        },
+    }
+    assert descriptor_current_raw_value(store, descriptor) == 19
+    keys = descriptor_refresh_keys(descriptor)
+    assert "P32.v221" in keys
+
+
+def test_clause_operation_equal_to_selects_then_branch() -> None:
+    assert select_raw_any_branch(
+        [
+            {
+                "if": [
+                    {
+                        "expected": 0,
+                        "operation": "ClauseOperation['equalTo']",
+                        "value": [{"bit": 2, "group": "P31", "number": 13, "use": "s"}],
+                    }
+                ],
+                "then": {"command": [{"group": "P32", "number": 0, "use": "v"}]},
+            },
+            {"else": {"command": [{"group": "P32", "number": 221, "use": "v"}]}},
+        ],
+        flat_values={"P31.s13": 0},
+    ) == {"command": [{"group": "P32", "number": 0, "use": "v"}]}
+
+
+def test_status_binary_unwraps_value_null_payload() -> None:
+    assert (
+        evaluate_status_binary_from_rules(
+            mapping={
+                "paths": {
+                    "value": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 1,
+                                    "operation": "equalTo",
+                                    "value": [{"group": "P1", "number": 0, "use": "v"}],
+                                }
+                            ],
+                            "then": {"value": None},
+                        },
+                        {"else": "ON"},
+                    ]
+                }
+            },
+            flat_values={"P1.v0": 1},
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_write_rejects_unsupported_raw_any_predicate() -> None:
+    from homeassistant.exceptions import HomeAssistantError
+
+    from tests.helpers.descriptors import writable_parameter_descriptor
+    from tests.helpers.fakes import make_runtime
+
+    runtime, _api, _gateway, store = make_runtime()
+    store.upsert("P31.s13", 0)
+    descriptor = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=0, raw_max=400)
+    descriptor["mapping"]["command_rules"] = []
+    descriptor["mapping"]["raw"] = {
+        "any": [
+            {
+                "if": [
+                    {
+                        "expected": 1,
+                        "operation": "ClauseOperation['matches']",
+                        "value": [{"group": "P31", "number": 13, "use": "s"}],
+                    }
+                ],
+                "then": {"command": [{"group": "P32", "number": 0, "use": "v"}]},
+            },
+            {"else": {"command": [{"group": "P32", "number": 221, "use": "v"}]}},
+        ]
+    }
+    with pytest.raises(HomeAssistantError, match=r"Unsupported raw\.any"):
+        await runtime.async_write(descriptor=descriptor, input_display_value=19)
+
+
+def test_bootstrap_any_branch_address_and_unit_helpers() -> None:
+    from custom_components.habragerone.bootstrap import (
+        _any_branch_active_value_address,
+        _apply_branch_register_bounds,
+        _has_named_command_rule,
+        _has_runtime_raw_value,
+        _is_command_like_symbol,
+        _is_value_channel_selector,
+        _unit_code_for_address,
+    )
+
+    assert _has_runtime_raw_value(payload={"pool": "P1"}, mapping=None, flat_values={}) is False
+    assert _is_command_like_symbol("") is False
+    assert _has_named_command_rule(None) is False
+    assert _has_named_command_rule({"command_rules": "bad"}) is False
+    assert _has_named_command_rule({"command_rules": ["skip"]}) is False
+
+    assert _any_branch_active_value_address(mapping=None, flat_values={}) is None
+    assert _any_branch_active_value_address(mapping={"raw": "bad"}, flat_values={}) is None
+    assert (
+        _any_branch_active_value_address(
+            mapping={"raw": {"any": [{"else": "ON"}]}},
+            flat_values={},
+        )
+        is None
+    )
+    assert (
+        _any_branch_active_value_address(
+            mapping={"raw": {"any": [{"else": {"value": "nope"}}]}},
+            flat_values={},
+        )
+        is None
+    )
+    assert (
+        _any_branch_active_value_address(
+            mapping={"raw": {"any": [{"else": {"value": ["skip", {"address": "P32.v221"}]}}]}},
+            flat_values={},
+        )
+        == "P32.v221"
+    )
+    assert (
+        _any_branch_active_value_address(
+            mapping={"raw": {"any": [{"else": {"value": ["skip", {"foo": 1}]}}]}},
+            flat_values={},
+        )
+        is None
+    )
+    assert _unit_code_for_address(address="bad", flat_values={}) is None
+    assert _unit_code_for_address(address="P32.", flat_values={}) is None
+    assert _unit_code_for_address(address="P32.vX", flat_values={}) is None
+    assert _unit_code_for_address(address="P32.v221", flat_values={"P32.u221": ""}) is None
+    assert _unit_code_for_address(address="P32.v221", flat_values={"P32.u221": 12}) == 12
+    assert _is_value_channel_selector({"address": "P32.v221"}) is True
+    assert _is_value_channel_selector({"address": "P32.vX"}) is False
+    assert _is_value_channel_selector({"address": "P32.s1"}) is False
+    descriptor: dict[str, object] = {"min": 0, "max": 400}
+    _apply_branch_register_bounds(descriptor, active_addr=None, flat_values={})
+    assert descriptor == {"min": 0, "max": 400}
+    _apply_branch_register_bounds(descriptor, active_addr="P32.vX", flat_values={"P32.n0": 1})
+    assert descriptor == {"min": 0, "max": 400}
+    _apply_branch_register_bounds(descriptor, active_addr="P32.", flat_values={})
+    assert descriptor == {"min": 0, "max": 400}
+    _apply_branch_register_bounds(
+        descriptor,
+        active_addr="P32.v221",
+        flat_values={"P32.n221": 150, "P32.x221": 250},
+    )
+    assert descriptor == {"min": 150, "max": 250}
+
+
+def test_descriptor_active_raw_limits_edge_cases() -> None:
+    from custom_components.habragerone.entity_common import descriptor_active_raw_limits
+
+    store = FakeStore(flat_values={"P32.v221": 19, "P32.n221": 15, "P32.x221": 25})
+    assert descriptor_active_raw_limits(store, {"min": 1, "max": 2}) == (1, 2)
+    assert descriptor_active_raw_limits(store, {"min": 1, "max": 2, "mapping": {"raw": "bad"}}) == (1, 2)
+    assert descriptor_active_raw_limits(
+        store,
+        {"min": 1, "max": 2, "mapping": {"raw": {"any": [{"else": "ON"}]}}},
+    ) == (1, 2)
+    # Matching if with non-Mapping then while else still binds selectors → no branch.
+    assert descriptor_active_raw_limits(
+        FakeStore(flat_values={"P1.v0": 1}),
+        {
+            "min": 1,
+            "max": 2,
+            "mapping": {
+                "raw": {
+                    "any": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 1,
+                                    "operation": "equalTo",
+                                    "value": [{"group": "P1", "number": 0, "use": "v"}],
+                                }
+                            ],
+                            "then": "ON",
+                        },
+                        {"else": {"value": [{"group": "P32", "number": 221, "use": "v"}]}},
+                    ]
+                }
+            },
+        },
+    ) == (1, 2)
+    assert descriptor_active_raw_limits(
+        store,
+        {
+            "min": 1,
+            "max": 2,
+            "mapping": {
+                "raw": {
+                    "any": [
+                        {"else": {"value": ["skip", {"address": "P32.v221"}]}},
+                    ]
+                }
+            },
+        },
+    ) == (15, 25)
+    # Bad address / missing family keep descriptor bounds.
+    assert descriptor_active_raw_limits(
+        FakeStore(flat_values={}),
+        {
+            "min": 1,
+            "max": 2,
+            "mapping": {"raw": {"any": [{"else": {"value": [{"address": "P9.vX"}]}}]}},
+        },
+    ) == (1, 2)
+    # Selected else has non-list value while a sibling branch still binds selectors.
+    assert descriptor_active_raw_limits(
+        FakeStore(flat_values={}),
+        {
+            "min": 1,
+            "max": 2,
+            "mapping": {
+                "raw": {
+                    "any": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 1,
+                                    "operation": "equalTo",
+                                    "value": [{"group": "P1", "number": 0, "use": "v"}],
+                                }
+                            ],
+                            "then": {"value": [{"group": "P32", "number": 0, "use": "v"}]},
+                        },
+                        {"else": {"value": "not-list"}},
+                    ]
+                }
+            },
+        },
+    ) == (1, 2)
+    assert descriptor_active_raw_limits(
+        FakeStore(flat_values={}),
+        {
+            "min": 1,
+            "max": 2,
+            "mapping": {
+                "raw": {
+                    "any": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 1,
+                                    "operation": "equalTo",
+                                    "value": [{"group": "P1", "number": 0, "use": "v"}],
+                                }
+                            ],
+                            "then": {"value": [{"group": "P32", "number": 0, "use": "v"}]},
+                        },
+                        {"else": {"value": [{"foo": 1}]}},
+                    ]
+                }
+            },
+        },
+    ) == (1, 2)
+    assert descriptor_active_raw_limits(
+        FakeStore(flat_values={}),
+        {
+            "min": 1,
+            "max": 2,
+            "mapping": {
+                "raw": {
+                    "any": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 1,
+                                    "operation": "equalTo",
+                                    "value": [{"group": "P1", "number": 0, "use": "v"}],
+                                }
+                            ],
+                            "then": {"value": [{"group": "P32", "number": 0, "use": "v"}]},
+                        },
+                        {"else": {"value": [{"address": "P9.v"}]}},
+                    ]
+                }
+            },
+        },
+    ) == (1, 2)
+    assert descriptor_active_raw_limits(
+        FakeStore(flat_values={}),
+        {
+            "min": 1,
+            "max": 2,
+            "mapping": {"raw": {"any": [{"else": {"value": [{"address": "P9.v9"}]}}]}},
+        },
+    ) == (1, 2)
+
+
+def test_spa_operation_helpers_and_compare_ops() -> None:
+    from custom_components.habragerone.status_rules import (
+        compare_condition,
+        raw_any_conditions_are_supported,
+        spa_operation_name,
+    )
+
+    assert spa_operation_name(None) is None
+    assert spa_operation_name("   ") is None
+    assert spa_operation_name("ClauseOperation['equalTo']") == "equalTo"
+    assert spa_operation_name("t.equalTo") == "equalTo"
+    assert raw_any_conditions_are_supported("nope") is True
+    assert raw_any_conditions_are_supported(["skip", {"if": "bad"}]) is True
+    assert raw_any_conditions_are_supported([{"if": ["bad"]}]) is False
+    assert (
+        raw_any_conditions_are_supported([{"if": [{"operation": "ClauseOperation['matches']", "expected": 1, "value": []}]}])
+        is False
+    )
+    assert compare_condition(operation="greaterThan", actual=3, expected=1) is True
+    assert compare_condition(operation="greaterThanOrEqualTo", actual=1, expected=1) is True
+    assert compare_condition(operation="lessThan", actual=1, expected=3) is True
+    assert compare_condition(operation="lessThanOrEqualTo", actual=1, expected=1) is True
+    assert compare_condition(operation="unknown", actual=1, expected=1) is False

@@ -1450,13 +1450,22 @@ def _parameter_address_from_active_any_branch_command(
     *,
     flat_values: Mapping[str, Any],
 ) -> tuple[str, str, int] | None:
-    """Resolve the active ``raw.any`` branch ``command`` selector address."""
-    from .status_rules import select_raw_any_branch
+    """Resolve the active ``raw.any`` branch ``command`` selector address.
+
+    Raises:
+        HomeAssistantError: When branch predicates cannot be evaluated safely.
+    """
+    from .status_rules import raw_any_conditions_are_supported, select_raw_any_branch
 
     raw = mapping.get("raw")
     if not isinstance(raw, Mapping):
         return None
-    branch = select_raw_any_branch(raw.get("any"), flat_values=flat_values)
+    any_rules = raw.get("any")
+    if not isinstance(any_rules, list) or not any_rules:
+        return None
+    if not raw_any_conditions_are_supported(any_rules):
+        raise HomeAssistantError("Unsupported raw.any predicate; refusing write to avoid the wrong setpoint")
+    branch = select_raw_any_branch(any_rules, flat_values=flat_values)
     if not isinstance(branch, Mapping):
         return None
     return _parameter_address_from_rule_payload(branch.get("command"))
