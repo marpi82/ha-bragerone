@@ -17,6 +17,7 @@ from custom_components.habragerone.runtime import (
 from custom_components.habragerone.status_rules import (
     _addresses_from_rule_payload,
     _spa_conditions_match_for_binary,
+    _status_payload_to_bool,
     evaluate_status_binary_from_rules,
     first_selector_address_value,
     select_raw_any_branch,
@@ -28,6 +29,9 @@ def test_parameter_address_from_rule_payload_variants() -> None:
     assert _parameter_address_from_rule_payload({"group": "P32", "number": 221, "use": "v"}) == ("P32", "v", 221)
     assert _parameter_address_from_rule_payload([{"address": "P32.v7"}]) == ("P32", "v", 7)
     assert _parameter_address_from_rule_payload([{"address": "P32.vX"}, "skip"]) is None
+    assert _parameter_address_from_rule_payload([{"address": ".v7"}]) is None
+    assert _parameter_address_from_rule_payload([{"address": "P32."}]) is None
+    assert _parameter_address_from_rule_payload([{"group": "P32", "number": 1, "use": ""}]) is None
     assert _parameter_address_from_rule_payload("bad") is None
     assert _parameter_address_from_active_any_branch_command({"raw": "nope"}, flat_values={}) is None
     assert _parameter_address_from_active_any_branch_command(
@@ -48,6 +52,7 @@ def test_parameter_address_from_rule_payload_variants() -> None:
 
 def test_any_branch_helpers_edge_cases() -> None:
     assert _any_rules_bind_register_values(["skip", {"then": "ON"}]) is False
+    assert _any_rules_bind_register_values([{"else": {"value": [{"number": 0}]}}]) is False
     assert _any_rules_bind_register_values([{"else": {"value": [{"group": "P1", "number": 0, "use": "v"}]}}]) is True
     store = FakeStore(flat_values={"P1.v0": 3})
     handled, value = _try_active_any_branch_value(store, {"raw": {"any": [{"else": "ON"}]}})
@@ -60,12 +65,22 @@ def test_any_branch_helpers_edge_cases() -> None:
         ["skip", {"else": {"value": [{"group": "P1", "number": 0, "use": "v"}]}}],
         flat_values={"P1.v0": 3},
     ) == {"value": [{"group": "P1", "number": 0, "use": "v"}]}
+    # Second else is ignored once the first else payload was captured.
+    assert select_raw_any_branch(
+        [
+            {"else": {"value": [{"group": "P1", "number": 0, "use": "v"}]}},
+            {"else": {"value": [{"group": "P9", "number": 9, "use": "v"}]}},
+        ],
+        flat_values={},
+    ) == {"value": [{"group": "P1", "number": 0, "use": "v"}]}
     assert first_selector_address_value(None, flat_values={}) is None
     assert first_selector_address_value({"value": "not-a-list"}, flat_values={}) is None
     assert (
         first_selector_address_value({"value": ["skip", {"group": "P1", "number": 0, "use": "v"}]}, flat_values={"P1.v0": 3}) == 3
     )
     assert _addresses_from_rule_payload([{"group": "P1", "number": 0, "use": "v"}]) == {"P1.v0"}
+    assert _addresses_from_rule_payload(["skip", {"group": "P1", "number": 0, "use": "v"}]) == {"P1.v0"}
+    assert _addresses_from_rule_payload({"group": "P1"}) == set()
     assert _addresses_from_rule_payload({"value": [{"group": "P2", "number": 1, "use": "s"}]}) == {"P2.s1"}
 
 
@@ -107,12 +122,27 @@ def test_binary_condition_helpers_cover_reject_paths() -> None:
     assert (
         _mapping_has_parameter_write({"command_rules": ["skip", {"value": [{"group": "P1", "number": 0, "use": "v"}]}]}) is True
     )
+    # command_rules command list (no value) still marks a write target.
+    assert _mapping_has_parameter_write({"command_rules": [{"command": [{"group": "P1", "number": 0, "use": "v"}]}]}) is True
+    # Mapping command_rules without value/command selectors must not short-circuit as writable.
+    assert _mapping_has_parameter_write({"command_rules": [{"kind": "else", "value": "ON"}]}) is False
     assert (
         _mapping_has_parameter_write(
             {"raw": {"any": ["skip", {"else": {"command": [{"group": "P1", "number": 0, "use": "v"}]}}]}}
         )
         is True
     )
+    # raw Mapping with non-list any must fall through as non-writable.
+    assert _mapping_has_parameter_write({"raw": {"any": {"else": {}}}}) is False
+    assert (
+        evaluate_status_binary_from_rules(
+            mapping={"paths": {"value": [{"else": {"value": "ON"}}]}},
+            flat_values={},
+        )
+        is True
+    )
+    assert _status_payload_to_bool({"value": "OFF"}) is False
+    assert _status_payload_to_bool({"group": "P1", "number": 0, "use": "v"}) is None
 
 
 def test_descriptor_current_raw_value_skips_status_string_any_branches() -> None:
@@ -164,3 +194,25 @@ async def test_async_write_uses_rule_command_list_and_address_string() -> None:
     ]
     await runtime.async_write(descriptor=descriptor2, input_display_value=11)
     assert api.calls[-1]["parameter"] == "v42"
+
+    # Active command family with n/x overrides descriptor min/max at write time.
+    store.upsert("P32.v55", 10)
+    store.upsert("P32.n55", 5)
+    store.upsert("P32.x55", 50)
+    descriptor3 = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=0, raw_max=400)
+    descriptor3["mapping"]["command_rules"] = [
+        {"kind": "else", "conditions": [], "command": [{"group": "P32", "number": 55, "use": "v"}]}
+    ]
+    await runtime.async_write(descriptor=descriptor3, input_display_value=12)
+    assert api.calls[-1]["parameter"] == "v55"
+
+    # Family present without numeric n/x keeps descriptor bounds (false branches).
+    store.upsert("P32.v56", 10)
+    store.upsert("P32.n56", "nope")
+    store.upsert("P32.x56", "nope")
+    descriptor4 = writable_parameter_descriptor(pool="P32", chan="v", idx=0, raw_min=0, raw_max=400)
+    descriptor4["mapping"]["command_rules"] = [
+        {"kind": "else", "conditions": [], "command": [{"group": "P32", "number": 56, "use": "v"}]}
+    ]
+    await runtime.async_write(descriptor=descriptor4, input_display_value=13)
+    assert api.calls[-1]["parameter"] == "v56"
