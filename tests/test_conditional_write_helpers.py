@@ -318,6 +318,33 @@ async def test_async_write_rejects_unsupported_raw_any_predicate() -> None:
     with pytest.raises(HomeAssistantError, match=r"Unsupported raw\.any"):
         await runtime.async_write(descriptor=descriptor, input_display_value=19)
 
+    # Supported predicates but non-Mapping then → no command address.
+    from custom_components.habragerone.runtime import _parameter_address_from_active_any_branch_command
+
+    assert (
+        _parameter_address_from_active_any_branch_command(
+            {
+                "raw": {
+                    "any": [
+                        {
+                            "if": [
+                                {
+                                    "expected": 1,
+                                    "operation": "equalTo",
+                                    "value": [{"group": "P1", "number": 0, "use": "v"}],
+                                }
+                            ],
+                            "then": "ON",
+                        },
+                        {"else": {"command": [{"group": "P32", "number": 221, "use": "v"}]}},
+                    ]
+                }
+            },
+            flat_values={"P1.v0": 1},
+        )
+        is None
+    )
+
 
 def test_bootstrap_any_branch_address_and_unit_helpers() -> None:
     from custom_components.habragerone.bootstrap import (
@@ -387,6 +414,13 @@ def test_bootstrap_any_branch_address_and_unit_helpers() -> None:
         flat_values={"P32.n221": 150, "P32.x221": 250},
     )
     assert descriptor == {"min": 150, "max": 250}
+    # Only one bound present / non-numeric companion.
+    only_min: dict[str, object] = {"min": 0, "max": 400}
+    _apply_branch_register_bounds(only_min, active_addr="P32.v7", flat_values={"P32.n7": 11, "P32.x7": "nope"})
+    assert only_min == {"min": 11, "max": 400}
+    only_max: dict[str, object] = {"min": 0, "max": 400}
+    _apply_branch_register_bounds(only_max, active_addr="P32.v8", flat_values={"P32.n8": "nope", "P32.x8": 22})
+    assert only_max == {"min": 0, "max": 22}
 
 
 def test_descriptor_active_raw_limits_edge_cases() -> None:
@@ -438,6 +472,23 @@ def test_descriptor_active_raw_limits_edge_cases() -> None:
             },
         },
     ) == (15, 25)
+    # Active family with only max bound.
+    assert descriptor_active_raw_limits(
+        FakeStore(flat_values={"P32.v10": 1, "P32.x10": 99}),
+        {
+            "min": 1,
+            "max": 2,
+            "mapping": {"raw": {"any": [{"else": {"value": [{"address": "P32.v10"}]}}]}},
+        },
+    ) == (1, 99)
+    assert descriptor_active_raw_limits(
+        FakeStore(flat_values={"P32.v11": 1, "P32.n11": 5}),
+        {
+            "min": 1,
+            "max": 2,
+            "mapping": {"raw": {"any": [{"else": {"value": [{"address": "P32.v11"}]}}]}},
+        },
+    ) == (5, 2)
     # Bad address / missing family keep descriptor bounds.
     assert descriptor_active_raw_limits(
         FakeStore(flat_values={}),
@@ -532,6 +583,7 @@ def test_descriptor_active_raw_limits_edge_cases() -> None:
 
 def test_spa_operation_helpers_and_compare_ops() -> None:
     from custom_components.habragerone.status_rules import (
+        _address_from_spa_selector,
         compare_condition,
         raw_any_conditions_are_supported,
         spa_operation_name,
@@ -541,9 +593,22 @@ def test_spa_operation_helpers_and_compare_ops() -> None:
     assert spa_operation_name("   ") is None
     assert spa_operation_name("ClauseOperation['equalTo']") == "equalTo"
     assert spa_operation_name("t.equalTo") == "equalTo"
+    assert _address_from_spa_selector({"address": ".v7"}) is None
+    assert _address_from_spa_selector({"address": "P32."}) is None
     assert raw_any_conditions_are_supported("nope") is True
     assert raw_any_conditions_are_supported(["skip", {"if": "bad"}]) is True
     assert raw_any_conditions_are_supported([{"if": ["bad"]}]) is False
+    assert (
+        raw_any_conditions_are_supported(
+            [
+                {
+                    "if": [{"operation": "equalTo", "expected": 1, "value": [{"group": "P1", "number": 0, "use": "v"}]}],
+                    "elseif": "bad",
+                }
+            ]
+        )
+        is True
+    )
     assert (
         raw_any_conditions_are_supported([{"if": [{"operation": "ClauseOperation['matches']", "expected": 1, "value": []}]}])
         is False

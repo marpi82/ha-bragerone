@@ -3313,6 +3313,11 @@ def test_async_build_bootstrap_payload_admits_any_branch_register_when_resolve_n
             _ = raw_unit_code
             return {"value": "e => e * 0.1", "text": "°C"}
 
+        @staticmethod
+        def _parse_numeric_transform(raw_expr: object) -> SimpleNamespace | None:
+            _ = raw_expr
+            return SimpleNamespace(shift=0.0, factor=0.1, precision=1)
+
         def parameter_visibility_diagnostics(
             self,
             *,
@@ -3365,3 +3370,132 @@ def test_async_build_bootstrap_payload_admits_any_branch_register_when_resolve_n
     assert descriptor["min"] == 150
     assert descriptor["max"] == 250
     assert descriptor.get("unit_code") == 12
+    assert descriptor.get("transform_scale") == 0.1
+
+
+def test_async_build_bootstrap_skips_any_branch_unit_when_transform_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When describe already resolves a transform, skip active-branch unit recovery."""
+
+    mapping = {
+        "paths": {"command": [], "value": []},
+        "command_rules": [],
+        "raw": {
+            "any": [
+                {
+                    "else": {
+                        "command": [{"group": "P32", "number": 221, "use": "v"}],
+                        "value": [{"group": "P32", "number": 221, "use": "v"}],
+                    }
+                }
+            ]
+        },
+    }
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P32.v221": 190, "P32.u221": 99, "P32.n221": 1, "P32.x221": 2}
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": ["ZADANA_TEMP_CO0_WRITE"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                symbol: {
+                    "label": "Indoor setpoint",
+                    "pool": "P32",
+                    "chan": "v",
+                    "idx": 0,
+                    "mapping": mapping,
+                    "min": 0,
+                    "max": 400,
+                    "unit": None,
+                    "unit_code": 12,
+                }
+                for symbol in symbols
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=19, value_label=None)
+
+        async def _resolve_unit_meta(self, *, raw_unit_code: object) -> dict[str, object] | None:
+            _ = raw_unit_code
+            return {"value": "e => e * 0.1", "text": "°C"}
+
+        @staticmethod
+        def _parse_numeric_transform(raw_expr: object) -> SimpleNamespace | None:
+            _ = raw_expr
+            return SimpleNamespace(shift=0.0, factor=0.1, precision=1)
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=SimpleNamespace(model_dump=lambda mode="json": {}),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+    descriptor = next(item for item in payload["entity_descriptors"] if item["symbol"] == "ZADANA_TEMP_CO0_WRITE")
+    assert descriptor.get("transform_scale") == 0.1
+    # Bounds stay from describe (any-branch recovery skipped).
+    assert descriptor["min"] == 0
+    assert descriptor["max"] == 400
