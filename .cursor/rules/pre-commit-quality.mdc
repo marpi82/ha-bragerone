@@ -1,0 +1,62 @@
+---
+description: Pre-commit quality gate — Copilot-parity review + 100% patch coverage. Use when the user says "pre-commit review", "review przed commitem", asks to review before commit, or when you are about to git commit local changes.
+alwaysApply: false
+---
+
+# Pre-commit quality gate — ha-bragerone
+
+Act as a pre-commit inspector at least as thorough as GitHub Copilot Balanced review.
+Run this protocol on the working-tree diff (staged + unstaged) before committing.
+
+Also follow `.github/skills/code-review/SKILL.md`. Prefer concrete counterexamples over vague style notes.
+
+## Output format
+
+1. Bullet findings first, severity-tagged (`blocker` / `major` / `minor`), each with path and a concrete counterexample when applicable.
+2. Then apply fixes and/or add pytest regressions (do not ask the user to paste logs).
+3. Finish by running `uv run poe patch-cov` until green (or report remaining blockers).
+
+## Pass A — Write / hardware safety (P0)
+
+- Writes must target the active **command** address, never confuse `value` (read) with `command` (write).
+- Read-only mappings must not become writable because a branch has a `value` list.
+- Unresolved conditional bindings → reject the write; never fall through to an inactive cached primary.
+- Enum label→raw, inverse numeric transform, min/max (`n`/`x`), route selection remain mandatory.
+
+## Pass B — Behavioral counterexamples (P0)
+
+For every changed SPA/bootstrap/runtime/status_rules branch, simulate concrete register values:
+
+- Gate true vs false (`P31.s13 = 0` vs `4`, bit/mask, `ClauseOperation`, numeric strings like `"0"`).
+- Missing active register → `None` / unavailable — **not** fallback to another branch's reading.
+- Raw `215` + transform `×0.1` → display `21.5`; writes apply inverse scale.
+- Two modules sharing an address → no cross-module bounds/transform/gate leakage.
+- Every supported selector shape (`{"address":"P…"}`, object, list under `value`/`command`) works for **read, write, refresh deps, and bounds**.
+
+## Pass C — Consistency surfaces (P1)
+
+- Same predicate evaluator on read and write paths (library-backed; do not silently narrow to `equalTo`/`notEqualTo`).
+- Refresh / listener keys include all rule inputs (`if`/`elseif`), object selectors, and bound companions `n`/`x`.
+- Dedupe / identity keys include `devid` when multi-module.
+- Do not re-implement SPA rule engines here — keep protocol logic in `pybragerone`.
+- Companions / composites must not inherit parent write capability or status mapping unless slot-local metadata exists.
+- Secondary command/special passes must not recreate SPA-hidden / filtered symbols.
+
+## Pass D — Bootstrap / lifecycle / perf (P1–P2)
+
+- Failed or partial prime / symbol resolve must not cache a successful incomplete descriptor set; use retryable setup failure.
+- Close authenticated API clients before raising `ConfigEntryNotReady` when runtime was never started.
+- Avoid full-store rebuilds / double evaluation on the HA event loop for every refresh.
+
+## Pass E — Docs (P2)
+
+- README / `docs/` / `AGENTS.md` / translations match actual bootstrap and entity behavior (including upgrade/registry leftovers).
+
+## Pass F — 100% patch coverage (Codecov parity)
+
+1. Ensure `origin/main` exists (`git fetch origin main` if needed).
+2. Run `uv run poe patch-cov` (80% project + 100% patch with `--branch-coverage` and codecov.yml excludes).
+3. On failure: read root `coverage.xml` and the uncovered list; add/adjust tests for those lines/branches only — preferably using Pass B counterexamples.
+4. Re-run until green. Do not weaken `--cov-fail-under` or patch thresholds.
+
+`poe test` stays fast (no coverage). Prefer `poe patch-cov` (or `poe cov` for XML + term-missing) when analyzing coverage — never ask the user to paste coverage output.

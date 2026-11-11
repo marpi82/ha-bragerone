@@ -19,7 +19,20 @@ fi
 
 compare_ref="$(git merge-base HEAD origin/main)"
 echo "patch coverage vs ${compare_ref}"
+# Keep --exclude aligned with codecov.yml ignore (fnmatch; * matches '/').
+# --branch-coverage treats partial branches as uncovered (Codecov patch parity).
 uv run --group test diff-cover coverage.xml \
   --compare-branch="${compare_ref}" \
   --fail-under=100 \
-  --show-uncovered
+  --branch-coverage \
+  --show-uncovered \
+  --exclude \
+    'tests/*' \
+    'scripts/*' \
+    'docs/*' \
+    '.github/*' \
+    'codecov.yml' \
+    'pyproject.toml' \
+    'uv.lock' \
+    'hacs.json' \
+    'custom_components/habragerone/manifest.json'

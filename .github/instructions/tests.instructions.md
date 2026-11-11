@@ -13,4 +13,5 @@ applyTo: "tests/**/*.py"
    - command route selection (`parameter_write` vs `raw_command`).
 4. **Bootstrap**: classification/filtering changes need descriptor fixtures covering each platform type.
 5. **Naming tests**: entity naming/unique_id patterns are contractual — keep regression tests for them.
-6. **Style**: same ruff/mypy rules as the integration; **pre-push** enforces 80% project coverage and 100% patch vs `merge-base origin/main` via `scripts/check_patch_coverage.sh` (`uv run poe patch-cov`). CI uploads to Codecov (patch target 100%, project informational).
+6. **Style**: same ruff/mypy rules as the integration; **pre-push** enforces 80% project coverage and 100% patch vs `merge-base origin/main` via `scripts/check_patch_coverage.sh` (`uv run poe patch-cov`, including `--branch-coverage` and `codecov.yml` excludes). CI uploads to Codecov (patch target 100%, project informational). `poe cov` emits `coverage.xml` + term-missing; default `poe test` stays coverage-free.
+7. **Counterexample regressions**: SPA / write-path / status-rule changes need fixtures with concrete register values (gate true/false, numeric strings, transforms, missing active register) — not only happy-path coverage.

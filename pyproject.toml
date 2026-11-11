@@ -160,7 +160,7 @@ security = ["bandit", "pip-audit"]
 validate = ["fmt", "lint", "typecheck", "security", "test"]
 # Tests
 test = { cmd = "pytest -q" }
-cov = { cmd = "pytest -q --cov=custom_components.habragerone --cov-report=term-missing" }
+cov = { cmd = "pytest -q --cov=custom_components.habragerone --cov-report=term-missing --cov-report=xml" }
 patch-cov = { shell = "scripts/check_patch_coverage.sh" }
 # Build: sync locked backend first (`uv sync --locked --group dev --no-install-project`),
 # then run this. Do not use plain `uv run poe build` on a cold env — that isolates
