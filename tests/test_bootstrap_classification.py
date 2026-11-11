@@ -129,6 +129,54 @@ def test_normalize_cached_descriptors_classifies_binary_status_unit_as_binary_se
     assert normalized[0]["platform"] == "binary_sensor"
 
 
+def test_normalize_cached_descriptors_classifies_date_time_writable_as_datetime() -> None:
+    """SPA DATE_TIME units become HA datetime entities, not numbers."""
+    descriptors = [
+        {
+            "symbol": "CZAS_ZAKONCZENIA_TRYBU_URLOP_WRITE",
+            "devid": "MOD1",
+            "pool": "P9",
+            "chan": "v",
+            "idx": 1,
+            "mapping": {
+                "units_source": "DATE_TIME",
+                "paths": {
+                    "value": [{"group": "P9", "number": 1, "use": "v"}],
+                    "command": [{"group": "P9", "number": 1, "use": "v", "raw": "!![]"}],
+                },
+                "command_rules": [],
+            },
+            "unit": "DATE_TIME",
+            "unit_code": "DATE_TIME",
+            "writable": True,
+            "min": None,
+            "max": None,
+            "menu_kinds": ["write"],
+        }
+    ]
+
+    normalized = normalize_cached_descriptors(descriptors)
+
+    assert len(normalized) == 1
+    assert normalized[0]["platform"] == "datetime"
+
+
+def test_is_date_time_unit_accepts_numeric_and_mapping_variants() -> None:
+    """Cover CustomUnit 0x270f / 9999 forms and mapping-sourced unit metadata."""
+    from custom_components.habragerone.bootstrap import _is_date_time_unit
+
+    assert _is_date_time_unit(unit=0x270F, mapping=None) is True
+    assert _is_date_time_unit(unit=9999.0, mapping=None) is True
+    assert _is_date_time_unit(unit="9999", mapping=None) is True
+    assert _is_date_time_unit(unit="0x270f", mapping=None) is True
+    assert _is_date_time_unit(unit=True, mapping=None) is False
+    assert _is_date_time_unit(unit=52, mapping=None) is False
+    assert _is_date_time_unit(unit=None, mapping={"units_source": "DATE_TIME"}) is True
+    assert _is_date_time_unit(unit=None, mapping={"raw": {"unit": 0x270F}}) is True
+    assert _is_date_time_unit(unit=None, mapping={"raw": "not-a-mapping"}) is False
+    assert _is_date_time_unit(unit="celsius", mapping={"units_source": "TEMP"}) is False
+
+
 def test_normalize_cached_descriptors_classifies_named_device_state_as_binary_sensor() -> None:
     descriptors = [
         {

@@ -259,4 +259,40 @@ def install_pybragerone_stubs() -> None:
     pybragerone_models_token_stub.Token = _TokenStub
     sys.modules["pybragerone.models.token"] = pybragerone_models_token_stub
 
+    from datetime import datetime as _datetime
+
+    def _stub_is_date_time_unit(*, unit_code: object = None, unit_meta: object = None) -> bool:
+        if isinstance(unit_code, str) and unit_code.strip().upper() in {"DATE_TIME", "9999"}:
+            return True
+        return bool(isinstance(unit_code, int) and unit_code in {9999})
+
+    def _stub_parse_server_date_time(raw: object) -> _datetime | None:
+        if raw is None:
+            return None
+        text = str(raw).strip()
+        if not text or text == "0001011200" or len(text) != 10 or not text.isdigit():
+            return None
+        try:
+            return _datetime.strptime(text, "%y%m%d%H%M")
+        except ValueError:
+            return None
+
+    def _stub_format_server_date_time(value: object) -> str | None:
+        if isinstance(value, _datetime):
+            return value.strftime("%y%m%d%H%M")
+        if not isinstance(value, str):
+            return None
+        parsed = _stub_parse_server_date_time(value)
+        if parsed is not None:
+            return parsed.strftime("%y%m%d%H%M")
+        if value.isdigit() and len(value) == 10:
+            return value
+        return None
+
+    pybragerone_models_date_time_stub = types.ModuleType("pybragerone.models.date_time")
+    pybragerone_models_date_time_stub.is_date_time_unit = _stub_is_date_time_unit
+    pybragerone_models_date_time_stub.parse_server_date_time = _stub_parse_server_date_time
+    pybragerone_models_date_time_stub.format_server_date_time = _stub_format_server_date_time
+    sys.modules["pybragerone.models.date_time"] = pybragerone_models_date_time_stub
+
     install_pybragerone_stubs._installed = True  # type: ignore[attr-defined]

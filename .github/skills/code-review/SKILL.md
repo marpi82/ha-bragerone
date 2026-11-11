@@ -28,7 +28,7 @@ Review procedure for pull requests to this Home Assistant integration. Work thro
 - [ ] New user-facing strings added to `strings.json` + `translations/en.json`.
 - [ ] `_attr_has_entity_name = True`, DeviceInfo identifiers `(domain, devid)`, manufacturer `"BragerOne"`.
 - [ ] Diagnostics redact credentials and tokens.
-- [ ] No new platforms beyond sensor/binary_sensor/switch/number/select/button without discussion.
+- [ ] No new platforms beyond sensor/binary_sensor/switch/number/select/button/datetime without an issue; `datetime` is for SPA `DATE_TIME` only.
 
 ## 4. Typing & style gates (CI runs these — flag what it can't catch)
 

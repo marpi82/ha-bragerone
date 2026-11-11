@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 DOMAIN: Final = "habragerone"
-PLATFORMS: Final[list[str]] = ["sensor", "binary_sensor", "switch", "number", "select", "button"]
+PLATFORMS: Final[list[str]] = ["sensor", "binary_sensor", "switch", "number", "select", "button", "datetime"]
 
 CONF_OBJECT_ID: Final = "object_id"
 CONF_MODULES: Final = "modules"
@@ -40,7 +40,7 @@ CONF_RAW_TO_LABEL: Final = "raw_to_label"
 CONF_BOOTSTRAP_DEBUG: Final = "bootstrap_debug"
 CONF_BOOTSTRAP_VERSION: Final = "bootstrap_version"
 CONF_UPSTREAM_ASSETS_FINGERPRINT: Final = "upstream_assets_fingerprint"
-BOOTSTRAP_VERSION: Final = 23
+BOOTSTRAP_VERSION: Final = 24
 
 # Stable non-menu source key for module connectivity (SPA ``module.connection.*`` i18n).
 # Kept separate from menu-router paths so HA #165 can place these on a child device.

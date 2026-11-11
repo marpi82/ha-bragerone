@@ -17,12 +17,14 @@ from custom_components.habragerone.const import (  # noqa: E402
     CONF_ROUTE_VISIBILITY_PATH,
     CONF_UI_ROUTE_SYMBOL,
 )
+from custom_components.habragerone.datetime import BragerSymbolDateTime  # noqa: E402
 from custom_components.habragerone.number import BragerSymbolNumber  # noqa: E402
 from custom_components.habragerone.select import BragerSymbolSelect  # noqa: E402
 from custom_components.habragerone.sensor import BragerSymbolSensor  # noqa: E402
 from custom_components.habragerone.switch import BragerSymbolSwitch  # noqa: E402
 from tests.helpers.descriptors import (  # noqa: E402
     binary_sensor_descriptor,
+    datetime_descriptor,
     select_descriptor,
     sensor_descriptor,
     switch_descriptor,
@@ -48,6 +50,7 @@ def _ui_route_descriptor(descriptor_factory: Any) -> dict[str, Any]:
     ("entity_cls", "descriptor_factory", "entity_id"),
     [
         (BragerStatusBinarySensor, binary_sensor_descriptor, "binary_sensor.test"),
+        (BragerSymbolDateTime, datetime_descriptor, "datetime.test"),
         (BragerSymbolNumber, writable_parameter_descriptor, "number.test"),
         (BragerSymbolSelect, select_descriptor, "select.test"),
         (BragerSymbolSensor, sensor_descriptor, "sensor.test"),
