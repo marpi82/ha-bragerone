@@ -1874,12 +1874,12 @@ async def async_build_bootstrap_payload(
                 # STATUS_BAR register-presence gate (#360). Applying this rejection to
                 # them drops boiler start/restart despite ``ON``/``ONLINE``, then the
                 # secondary extras pass resurrects them as disabled zombies.
-                switch_or_command_card = (
-                    "write" in symbol_kinds
-                    or "special" in symbol_kinds
-                    or _is_command_like_symbol(symbol)
-                    or _is_switch_like_command(mapping_dict)
-                )
+                #
+                # Gate only on write/special menu kinds or command-like symbol names —
+                # not ``_is_switch_like_command(mapping)`` alone. STATUS_BAR_* diodes
+                # often carry ON/OFF ``command_rules`` for SPA styling; mapping shape
+                # must not exempt them from the absent-register rejection.
+                switch_or_command_card = "write" in symbol_kinds or "special" in symbol_kinds or _is_command_like_symbol(symbol)
                 if mapping_dict is not None and mapping_has_status_label_rules(mapping_dict) and not switch_or_command_card:
                     display = evaluate_status_value_rules(mapping=mapping_dict, flat_values=flat_values)
                     if display is None or not has_runtime_raw:
