@@ -1781,8 +1781,10 @@ async def async_build_bootstrap_payload(
             kinds_map = per_module_symbol_kinds.setdefault(module.devid, {})
             for token in tile_tokens:
                 kinds = kinds_map.setdefault(token, set())
-                # Section label only — do not invent write from symbol names; writability
-                # stays on mapping / command-like accept (#360). Keep existing menu kinds.
+                # Section label only — do not invent write from symbol names. Keep
+                # existing menu kinds. Writability still comes from
+                # ``_is_menu_command_action`` → ``_mapping_has_parameter_write``
+                # (command-like names alone do not flip writable without write/special).
                 if not kinds:
                     kinds.add("read")
                 if token.upper().startswith("STATUS_"):
