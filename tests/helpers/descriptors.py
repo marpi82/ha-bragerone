@@ -173,6 +173,42 @@ def button_descriptor(
     }
 
 
+def datetime_descriptor(
+    *,
+    symbol: str = "CZAS_ZAKONCZENIA_TRYBU_URLOP_WRITE",
+    devid: str = "DEV1",
+    pool: str = "P9",
+    chan: str = "v",
+    idx: int = 1,
+    parameter_name: str | None = "parameters.CZAS_ZAKONCZENIA_TRYBU_URLOP_WRITE",
+) -> dict[str, Any]:
+    """Build a datetime-platform descriptor for SPA DATE_TIME symbols."""
+    mapping: dict[str, Any] = {
+        "command_rules": [],
+        "units_source": "DATE_TIME",
+        "paths": {
+            "value": [{"group": pool, "number": idx, "use": chan}],
+            "command": [{"group": pool, "number": idx, "use": chan, "raw": "!![]"}],
+        },
+    }
+    if parameter_name is not None:
+        mapping["raw"] = {"name": parameter_name, "unit": "DATE_TIME"}
+    return {
+        "symbol": symbol,
+        "devid": devid,
+        "pool": pool,
+        "chan": chan,
+        "idx": idx,
+        "platform": "datetime",
+        "label": "Vacation end",
+        "module_name": "module_a",
+        "unit": "DATE_TIME",
+        "unit_code": "DATE_TIME",
+        "writable": True,
+        "mapping": mapping,
+    }
+
+
 def sensor_descriptor(
     *,
     symbol: str = "TEMP_1",

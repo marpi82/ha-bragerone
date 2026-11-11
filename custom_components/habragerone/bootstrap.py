@@ -544,6 +544,9 @@ def _infer_platform(
     if not has_direct_address:
         return "button"
 
+    if _is_date_time_unit(unit=unit, mapping=mapping):
+        return "datetime"
+
     if isinstance(minimum, int | float) and isinstance(maximum, int | float):
         return "number"
 
@@ -554,6 +557,28 @@ def _infer_platform(
         return "number"
 
     return "switch"
+
+
+def _is_date_time_unit(*, unit: Any, mapping: dict[str, Any] | None) -> bool:
+    """Return True when descriptor unit metadata is SPA ``DATE_TIME``."""
+    candidates: list[Any] = [unit]
+    if isinstance(mapping, dict):
+        candidates.append(mapping.get("units_source"))
+        raw = mapping.get("raw")
+        if isinstance(raw, Mapping):
+            candidates.append(raw.get("unit"))
+    for candidate in candidates:
+        if isinstance(candidate, bool):
+            continue
+        if isinstance(candidate, int) and candidate == 0x270F:
+            return True
+        if isinstance(candidate, float) and candidate.is_integer() and int(candidate) == 0x270F:
+            return True
+        if isinstance(candidate, str):
+            text = candidate.strip().upper()
+            if text in {"DATE_TIME", "9999", "0X270F"}:
+                return True
+    return False
 
 
 def _enum_maps(
