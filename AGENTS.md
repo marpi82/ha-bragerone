@@ -24,7 +24,7 @@ uv run poe validate              # fmt + lint + typecheck + security + test
 uv sync --locked --group dev --no-install-project && uv build --no-build-isolation  # wheel + sdist (locked backend)
 ```
 
-CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2026.3.0` (declared minimum — bump together with `hacs.json`/`pyproject.toml`) / `latest` / `dev`. Each workflow ends in an aggregate **gate job** (`CI`, `HA Integration Tests`, `HACS Validation`) that fails if any required job fails; the `protect-main` ruleset requires only these gates, so renaming jobs or matrix legs never requires ruleset changes — keep the gate job names stable. CI uploads `coverage.xml` to Codecov (`codecov-commenter` on PRs; skip Dependabot/Renovate and forks). Patch coverage target is 100% on pull requests only (`only_pulls` in `codecov.yml` — avoids false failures on main merge commits with a bad compare base); project coverage is informational — the 80% floor stays on pre-push via `scripts/check_patch_coverage.sh` (`diff-cover` vs `merge-base origin/main`, same diff basis as Codecov PR patch). `manifest.json` is ignored so release version bumps do not affect patch.
+CI additionally runs hassfest, HACS action, manifest/strings JSON validation, wheel-compat checks, and a Docker matrix against HA `2026.3.0` (declared minimum — bump together with `hacs.json`/`pyproject.toml`) / `latest` / `dev`. Each workflow ends in an aggregate **gate job** (`CI`, `HA Integration Tests`, `HACS Validation`) that fails if any required job fails; the `protect-main` ruleset requires only these gates, so renaming jobs or matrix legs never requires ruleset changes — keep the gate job names stable. CI uploads `coverage.xml` to Codecov (`codecov-commenter` on PRs; skip Dependabot/Renovate and forks). Patch coverage target is 100% on pull requests only (`only_pulls` in `codecov.yml` — avoids false failures on main merge commits with a bad compare base); project coverage is informational — the 80% floor stays on pre-push via `scripts/check_patch_coverage.sh` (`diff-cover --branch-coverage` vs `merge-base origin/main`, excludes aligned with `codecov.yml`). `manifest.json` is ignored so release version bumps do not affect patch.
 
 ## Architecture in one paragraph
 
@@ -48,6 +48,17 @@ All protocol work happens in `pybragerone` (REST prime + Socket.IO deltas). The 
 - pytest + pytest-asyncio + `pytest-homeassistant-custom-component`; most tests are pure unit tests using `install_pybragerone_stubs()`.
 - Cover at minimum: enum conversions (both directions + invalid input), inverse numeric transform, min/max rejection, route selection, bootstrap classification/filtering, entity naming.
 - Tests must pass offline.
+
+## Pre-commit quality gate
+
+Before committing (or when asked for a **pre-commit review** / **review przed commitem**), run the Copilot-parity inspection in [`.cursor/rules/pre-commit-quality.mdc`](.cursor/rules/pre-commit-quality.mdc) and the checklist in [`.github/skills/code-review/SKILL.md`](.github/skills/code-review/SKILL.md), then enforce Codecov-parity patch coverage:
+
+```bash
+git fetch origin main   # if origin/main may be stale/missing
+uv run poe patch-cov    # 80% project + 100% patch (--branch-coverage, codecov.yml excludes)
+```
+
+`poe cov` also writes root `coverage.xml` (gitignored) for targeted gap-filling; keep `poe test` / `addopts` coverage-free for speed. Prefer concrete register counterexamples in findings and regressions (write≠read, predicate parity, transforms, refresh deps, module scope).
 
 ## Translations & UI strings
 

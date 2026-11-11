@@ -41,21 +41,37 @@ Review procedure for pull requests to this Home Assistant integration. Work thro
 - [ ] `hacs.json` HA minimum ↔ `pyproject.toml` `homeassistant` dependency stay in sync (`manifest.json` has no HA version field).
 - [ ] `manifest.json` `py-bragerone==X` pin ↔ `pyproject.toml` `py-bragerone>=X` bound in sync; wheel compat (musl/manylinux) considered for pin bumps.
 
-## 6. Tests
+## 6. SPA / conditional parity (empirical Copilot P0–P1)
+
+Simulate concrete register values; do not stop at "looks plausible".
+
+- [ ] **Write ≠ read**: active **command** address is used for writes; `value` selectors are not treated as write targets; read-only mappings stay non-writable.
+- [ ] **Predicate parity**: read and write paths share library-compatible evaluation (`greaterThan`, `ClauseOperation['equalTo']`, bit/mask, `storeGetter`) — no silently narrowed local matcher.
+- [ ] **Type coercion**: numeric strings (`"0"`), bools, and non-finite values do not flip the wrong branch.
+- [ ] **Unit transforms**: active-family scale/offset/precision applied on display and inverse on write; missing active register → unavailable/`None`, not an inactive primary fallback.
+- [ ] **Refresh deps**: listener keys cover all rule inputs (`if`/`elseif`), object/address-string selectors, and bound companions `n`/`x`.
+- [ ] **Module scope**: bounds/transforms/gates/dedupe keys stay per-`devid` (no cross-module leakage).
+- [ ] **Selector shapes**: address-string, object, and list forms work consistently across read, write, refresh, and bounds.
+- [ ] **Companions / filters**: companions do not inherit parent write/status mapping; secondary command/special passes do not recreate SPA-hidden symbols; list-valued schedules are not treated as scalar display values.
+- [ ] **Bootstrap integrity**: partial prime/resolve failures are retryable and do not cache incomplete success; API clients are closed before `ConfigEntryNotReady` when runtime never started.
+
+## 7. Tests
 
 - [ ] Write-path changes include the mandatory conversion/bounds/route tests (see `.github/instructions/tests.instructions.md`).
 - [ ] Bootstrap classification changes have per-platform descriptor fixtures.
-- [ ] Suite passes offline; coverage gate (80%) not weakened.
+- [ ] New SPA/conditional behavior has **regression fixtures with concrete register values** (counterexamples), not only happy-path coverage.
+- [ ] Suite passes offline; project coverage floor (80%) and **100% patch** (`uv run poe patch-cov`, branch coverage + codecov excludes) are not weakened.
 
-## 7. Security
+## 8. Security
 
 - [ ] No credentials/tokens in code, fixtures, logs, or diagnostics output.
 - [ ] User input reaching `async_write` validated before hitting the library.
 
-## 8. Docs & metadata
+## 9. Docs & metadata
 
 - [ ] **Code↔docs drift (both directions)**: changes to config flow options, entity naming/unique_id patterns, supported platforms, or setup steps must be reflected in `README.md`, `docs/`, and `strings.json`/`translations/`; docs-only changes must match the actual code — flag drift.
 - [ ] Version references in docs/examples match `manifest.json`, `hacs.json`, and `pyproject.toml`.
+- [ ] Upgrade notes mention entity-registry leftovers when bootstrap starts omitting previously created symbols.
 
 ## Stack awareness
 
@@ -65,4 +81,5 @@ Review procedure for pull requests to this Home Assistant integration. Work thro
 
 - One comment per issue. Use severity to triage what you report — blocker (wrong value could be written to the heater, breaking change without migration, leaked secret), major (CI gate, architecture invariant, missing tests), minor (style, naming, translations) — and report blockers/majors first. Treat this as prioritization guidance, not a required comment format.
 - Prefer the smallest change consistent with existing patterns.
+- Include a concrete counterexample (register values → expected vs actual) and ask for a regression test when behavior is wrong.
 - If the PR references an issue, use the GitHub MCP server to read it and confirm the change resolves it; check linked py-bragerone PRs when the library pin changes.

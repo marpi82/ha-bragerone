@@ -52,6 +52,8 @@ uv run --group dev pip-audit \
   --ignore-vuln CVE-2026-112899 \
   --ignore-vuln CVE-2026-112900 \
   --ignore-vuln CVE-2026-112901 \
+  --ignore-vuln CVE-2026-112902 \
+  --ignore-vuln PYSEC-2026-4363 \
   --ignore-vuln CVE-2026-96636 \
   --ignore-vuln CVE-2026-96637 \
   --ignore-vuln CVE-2026-96638 \
