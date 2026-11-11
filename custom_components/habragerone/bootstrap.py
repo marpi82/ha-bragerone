@@ -1742,6 +1742,57 @@ async def async_build_bootstrap_payload(
                 per_module_symbol_kinds.setdefault(module.devid, {}).setdefault(token, set()).add("status")
         all_candidate_symbols.update(status_bar_tokens)
 
+    # SPA home tiles bind parameters without permissionModule (LEVEL_MAX menu symbols
+    # can still appear on the dashboard for LEVEL_1 accounts — py#478 / HA#361).
+    discover_device_tiles = getattr(resolver, "discover_device_tile_parameter_tokens", None)
+    tile_tokens_by_module: dict[str, list[str]] = {}
+    if callable(discover_device_tiles):
+        for module in effective_modules:
+            menu_devices = _device_menu_refs_from_module(module)
+            tile_tokens: set[str] = set()
+            try:
+                try:
+                    tile_signature = inspect.signature(discover_device_tiles)
+                except TypeError, ValueError:
+                    tile_signature = None
+                if tile_signature is not None:
+                    discover_kwargs = _call_kwargs_with_optional_devices(
+                        tile_signature,
+                        {},
+                        menu_devices,
+                    )
+                    discovered_tiles = await discover_device_tiles(**discover_kwargs)
+                else:
+                    discovered_tiles = await discover_device_tiles()
+                if isinstance(discovered_tiles, set):
+                    tile_tokens = {str(token) for token in discovered_tiles if isinstance(token, str) and token}
+            except Exception:
+                LOGGER.debug(
+                    "deviceTile parameter discovery failed for %s",
+                    module.devid,
+                    exc_info=True,
+                )
+                tile_tokens = set()
+            if not tile_tokens:
+                continue
+            tile_tokens_by_module[str(module.devid)] = sorted(tile_tokens)
+            per_module_candidate_symbols.setdefault(module.devid, set()).update(tile_tokens)
+            per_module_ui_route_symbols.setdefault(module.devid, set()).update(tile_tokens)
+            kinds_map = per_module_symbol_kinds.setdefault(module.devid, {})
+            for token in tile_tokens:
+                kinds = kinds_map.setdefault(token, set())
+                # Section label only — do not invent write from symbol names. Keep
+                # existing menu kinds. Writability still comes from
+                # ``_is_menu_command_action`` → ``_mapping_has_parameter_write``
+                # (command-like names alone do not flip writable without write/special).
+                if not kinds:
+                    kinds.add("read")
+                if token.upper().startswith("STATUS_"):
+                    kinds.add("status")
+            all_candidate_symbols.update(tile_tokens)
+    if tile_tokens_by_module:
+        bootstrap_debug["device_tile_tokens"] = tile_tokens_by_module
+
     details = await resolver.describe_symbols(sorted(all_candidate_symbols))
     per_module_symbols: dict[str, set[str]] = {}
 
