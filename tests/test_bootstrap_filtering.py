@@ -2471,6 +2471,341 @@ def test_async_build_bootstrap_payload_does_not_recreate_spa_hidden_ui_write_as_
     assert any(row.get("reason") == "hidden:spa_visibility" for row in rejections)
 
 
+def test_async_build_bootstrap_payload_accepts_switch_with_status_rules_without_register(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SWITCH/COMMAND cards with a display value are not diode-gated (#360).
+
+    Counterexample (boiler FTTCTBSLCE): ``URUCHOMIENIE_KOTLA`` resolves to ``ON`` and
+    ``COMMAND_MODULE_RESTART`` to ``ONLINE`` while the STATUS_BAR-style register for the
+    shared rule list is absent. Pre-#360 those were rejected as ``undefined_status_rules``
+    then resurrected disabled by the secondary extras pass.
+    """
+
+    status_like_mapping = {
+        "command_rules": [
+            {"command": "BOILER_START", "logic": "on", "value": True},
+            {"command": "BOILER_STOP", "logic": "off", "value": False},
+        ],
+        "paths": {
+            "value": [
+                {
+                    "if": [{"expected": 1, "operation": "equalTo", "value": [{"group": "P5", "number": 0, "use": "s"}]}],
+                    "then": "ON",
+                },
+                {"else": "OFF"},
+            ]
+        },
+    }
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            # No P5.s0 — STATUS_BAR diode gate would fail has_runtime_raw.
+            return {}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
+    class _FakeAssets:
+        async def get_module_menu(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+        ) -> dict[str, object]:
+            _ = device_menu, permissions
+            return {
+                "routes": [
+                    {
+                        "name": "Boiler",
+                        "parameters": {
+                            "read": [],
+                            "write": [
+                                {"parameter": {"token": "URUCHOMIENIE_KOTLA"}},
+                                {"parameter": {"token": "COMMAND_MODULE_RESTART"}},
+                            ],
+                            "status": [],
+                            "special": [],
+                        },
+                        "children": [],
+                    }
+                ]
+            }
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        def __init__(self) -> None:
+            self._assets = _FakeAssets()
+
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, flat_values
+            symbols = ["URUCHOMIENIE_KOTLA", "COMMAND_MODULE_RESTART"]
+            return {"Boiler": symbols}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                "URUCHOMIENIE_KOTLA": {
+                    "label": "Boiler start",
+                    "pool": "P5",
+                    "chan": "s",
+                    "idx": 0,
+                    "mapping": status_like_mapping,
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+                "COMMAND_MODULE_RESTART": {
+                    "label": "Module restart",
+                    "pool": "P5",
+                    "chan": "s",
+                    "idx": 1,
+                    "mapping": {
+                        "command_rules": [{"command": "COMMAND_MODULE_RESTART", "value": True}],
+                        "paths": {
+                            "value": [
+                                {
+                                    "if": [
+                                        {
+                                            "expected": 1,
+                                            "operation": "equalTo",
+                                            "value": [{"group": "P5", "number": 1, "use": "s"}],
+                                        }
+                                    ],
+                                    "then": "ONLINE",
+                                },
+                                {"else": "OFFLINE"},
+                            ]
+                        },
+                    },
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            if symbol == "URUCHOMIENIE_KOTLA":
+                return SimpleNamespace(value="ON", value_label="ON")
+            if symbol == "COMMAND_MODULE_RESTART":
+                return SimpleNamespace(value="ONLINE", value_label="ONLINE")
+            return SimpleNamespace(value=None, value_label=None)
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+
+    descriptors = {item["symbol"]: item for item in payload["entity_descriptors"]}
+    assert set(descriptors) == {"URUCHOMIENIE_KOTLA", "COMMAND_MODULE_RESTART"}
+    assert descriptors["URUCHOMIENIE_KOTLA"]["enabled_by_default"] is True
+    assert descriptors["COMMAND_MODULE_RESTART"]["enabled_by_default"] is True
+    rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
+    assert not any(row.get("reason") == "undefined_status_rules" for row in rejections)
+
+
+def test_async_build_bootstrap_payload_null_switch_not_resurrected_as_extra(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Null-valued SWITCH candidates stay absent — secondary must not zombie them (#360)."""
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
+    class _FakeAssets:
+        async def get_module_menu(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+        ) -> dict[str, object]:
+            _ = device_menu, permissions
+            return {
+                "routes": [
+                    {
+                        "name": "Boiler",
+                        "parameters": {
+                            "read": [],
+                            "write": [{"parameter": {"token": "URUCHOMIENIE_KOTLA"}}],
+                            "status": [],
+                            "special": [],
+                        },
+                        "children": [],
+                    }
+                ]
+            }
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        def __init__(self) -> None:
+            self._assets = _FakeAssets()
+
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"Boiler": ["URUCHOMIENIE_KOTLA"]}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            return {
+                symbol: {
+                    "label": symbol,
+                    "pool": "P5",
+                    "chan": "s",
+                    "idx": 0,
+                    "mapping": {"command_rules": [{"command": "BOILER_START", "value": True}]},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                }
+                for symbol in symbols
+            }
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            _ = symbol
+            return SimpleNamespace(value=None, value_label=None)
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, dict[str, object]]:
+            _ = desc, resolved, flat_values
+            return True, {}
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=[],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+
+    assert payload["entity_descriptors"] == []
+    rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
+    assert any(row.get("symbol") == "URUCHOMIENIE_KOTLA" and row.get("reason") == "no_display_value" for row in rejections)
+
+
 def test_async_build_bootstrap_payload_includes_non_panel_actions_disabled_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

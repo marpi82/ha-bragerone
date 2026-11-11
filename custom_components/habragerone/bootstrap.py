@@ -1868,7 +1868,19 @@ async def async_build_bootstrap_payload(
                 # Always evaluate null guards and require the descriptor's own register —
                 # even when resolve already returned a scalar/label via ``else: OFF``,
                 # because runtime marks the entity unavailable without raw.
-                if mapping_dict is not None and mapping_has_status_label_rules(mapping_dict):
+                #
+                # SWITCH/COMMAND write cards are different: SPA shows them from the
+                # resolved display value + ENABLED / isParameterVisible, not from the
+                # STATUS_BAR register-presence gate (#360). Applying this rejection to
+                # them drops boiler start/restart despite ``ON``/``ONLINE``, then the
+                # secondary extras pass resurrects them as disabled zombies.
+                switch_or_command_card = (
+                    "write" in symbol_kinds
+                    or "special" in symbol_kinds
+                    or _is_command_like_symbol(symbol)
+                    or _is_switch_like_command(mapping_dict)
+                )
+                if mapping_dict is not None and mapping_has_status_label_rules(mapping_dict) and not switch_or_command_card:
                     display = evaluate_status_value_rules(mapping=mapping_dict, flat_values=flat_values)
                     if display is None or not has_runtime_raw:
                         if len(module_rejections) < 500:
@@ -1972,8 +1984,9 @@ async def async_build_bootstrap_payload(
 
         # Secondary pass: include command-like/special actions that are outside panel groups
         # (permissions-only extras, e.g. module restart commands). These are always disabled
-        # by default — they are never part of the everyday web UI. Symbols rejected by SPA
-        # visibility in the primary loop must not reappear here (#341).
+        # by default — they are never part of the everyday web UI. Symbols already considered
+        # in the primary candidate set (accepted or rejected) must not reappear here (#341 /
+        # #360) — otherwise SWITCH/COMMAND cards rejected by a diode gate return as zombies.
         extra_candidates = per_module_symbol_kinds.get(module.devid, {})
         symbols_to_resolve: list[str] = [
             symbol
@@ -1981,6 +1994,7 @@ async def async_build_bootstrap_payload(
             if (
                 symbol not in module_symbols
                 and symbol not in spa_visibility_rejected
+                and symbol not in module_candidates
                 and ("write" in kinds or "special" in kinds)
                 and symbol not in details
             )
@@ -1997,7 +2011,7 @@ async def async_build_bootstrap_payload(
                     exc_info=True,
                 )
         for symbol, kinds in extra_candidates.items():
-            if symbol in module_symbols or symbol in spa_visibility_rejected:
+            if symbol in module_symbols or symbol in spa_visibility_rejected or symbol in module_candidates:
                 continue
             if "write" not in kinds and "special" not in kinds:
                 continue
