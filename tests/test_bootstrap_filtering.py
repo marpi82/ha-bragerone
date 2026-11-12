@@ -144,9 +144,12 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
             desc: dict[str, object],
             resolved: object,
             flat_values: dict[str, object],
-        ) -> tuple[bool, dict[str, object]]:
+        ) -> tuple[bool, str]:
             _ = desc, resolved, flat_values
-            return self._current_devid != "M1", {}
+            # M1 simulates SPA INVISIBLE (create disabled); M2 is visible/enabled (#369).
+            if self._current_devid == "M1":
+                return False, "hidden:invisible"
+            return True, "visible:default"
 
     class _FakeGateway:
         def model_dump(self, mode: str = "json") -> dict[str, object]:
@@ -202,12 +205,12 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
     )
 
     descriptors = {(item["devid"], item["symbol"]): item for item in payload["entity_descriptors"]}
-    # Everyday-UI symbols that fail SPA visibility are not materialised (#341).
-    # M1's fake resolver returns not-visible; M2's passes and is created enabled.
-    assert set(descriptors) == {("M2", "SYM_M2")}
+    # INVISIBLE everyday-UI symbols are materialised disabled; visible stay enabled (#369).
+    assert set(descriptors) == {("M1", "SYM_M1"), ("M2", "SYM_M2")}
+    assert descriptors[("M1", "SYM_M1")]["enabled_by_default"] is False
     assert descriptors[("M2", "SYM_M2")]["enabled_by_default"] is True
     m1_rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
-    assert any(row.get("reason") == "hidden:spa_visibility" for row in m1_rejections)
+    assert not any(row.get("reason") == "hidden:spa_visibility" for row in m1_rejections)
 
 
 def test_async_build_bootstrap_payload_keeps_only_primary_composite_slot(
@@ -2713,7 +2716,7 @@ def test_async_build_bootstrap_payload_device_tile_keeps_existing_kinds_and_no_s
 def test_async_build_bootstrap_payload_hides_unavailable_device_tile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tile tokens on everyday UI still drop when SPA visibility is false (#341)."""
+    """Tile tokens with ``hidden:device-unavailable`` stay omitted (#367 / #369)."""
 
     class _FakeParamStore:
         def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
@@ -2936,12 +2939,12 @@ def test_async_build_bootstrap_payload_skips_duplicate_sample_when_rejections_fu
             desc: dict[str, object],
             resolved: object,
             flat_values: dict[str, object],
-        ) -> tuple[bool, dict[str, object]]:
+        ) -> tuple[bool, str]:
             _ = resolved, flat_values
             symbol = str(desc.get("symbol") or desc.get("label") or "")
             if symbol.startswith("SYM_HIDDEN_"):
-                return False, {"reason": "hidden:test"}
-            return True, {}
+                return False, "hidden:enabled"
+            return True, "visible:default"
 
     class _FakeGateway:
         def model_dump(self, mode: str = "json") -> dict[str, object]:
@@ -2992,7 +2995,7 @@ def test_async_build_bootstrap_payload_skips_duplicate_sample_when_rejections_fu
 def test_async_build_bootstrap_payload_caps_spa_visibility_rejection_samples(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """SPA-hidden rejects keep excluding symbols after the 500-row diagnostic sample fills (#341)."""
+    """``hidden:enabled`` omits keep excluding after the 500-row diagnostic sample fills (#369)."""
 
     hidden_symbols = [f"SYM_HIDDEN_{idx}" for idx in range(501)]
 
@@ -3059,9 +3062,9 @@ def test_async_build_bootstrap_payload_caps_spa_visibility_rejection_samples(
             desc: dict[str, object],
             resolved: object,
             flat_values: dict[str, object],
-        ) -> tuple[bool, dict[str, object]]:
+        ) -> tuple[bool, str]:
             _ = desc, resolved, flat_values
-            return False, {"reason": "spa_hidden"}
+            return False, "hidden:enabled"
 
     class _FakeGateway:
         def model_dump(self, mode: str = "json") -> dict[str, object]:
@@ -3108,12 +3111,13 @@ def test_async_build_bootstrap_payload_caps_spa_visibility_rejection_samples(
     rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
     assert len(rejections) == 500
     assert all(row.get("reason") == "hidden:spa_visibility" for row in rejections)
+    assert all(row.get("visibility") == "hidden:enabled" for row in rejections)
 
 
 def test_async_build_bootstrap_payload_does_not_recreate_spa_hidden_ui_write_as_extra(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """SPA-hidden everyday-UI write symbols must not reappear via the secondary extras pass (#341)."""
+    """``hidden:enabled`` everyday-UI write symbols must not reappear via the extras pass (#369)."""
 
     class _FakeParamStore:
         def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
@@ -3201,9 +3205,9 @@ def test_async_build_bootstrap_payload_does_not_recreate_spa_hidden_ui_write_as_
             desc: dict[str, object],
             resolved: object,
             flat_values: dict[str, object],
-        ) -> tuple[bool, dict[str, object]]:
+        ) -> tuple[bool, str]:
             _ = desc, resolved, flat_values
-            return False, {"reason": "spa_hidden"}
+            return False, "hidden:enabled"
 
     class _FakeGateway:
         def model_dump(self, mode: str = "json") -> dict[str, object]:
@@ -3249,7 +3253,7 @@ def test_async_build_bootstrap_payload_does_not_recreate_spa_hidden_ui_write_as_
     symbols = {item["symbol"] for item in payload["entity_descriptors"]}
     assert "URUCHOMIENIE_KOTLA" not in symbols
     rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
-    assert any(row.get("reason") == "hidden:spa_visibility" for row in rejections)
+    assert any(row.get("reason") == "hidden:spa_visibility" and row.get("visibility") == "hidden:enabled" for row in rejections)
 
 
 def test_async_build_bootstrap_payload_accepts_switch_with_status_rules_without_register(

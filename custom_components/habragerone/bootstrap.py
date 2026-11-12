@@ -1612,9 +1612,11 @@ async def async_build_bootstrap_payload(
 ) -> BootstrapPayload:
     """Build one-time cached descriptors from menu/assets + prime snapshot.
 
-    Permission-gated symbols with a display value become entities (#212), except
-    everyday-UI route symbols that fail SPA ``isParameterVisible`` at bootstrap —
-    those are omitted entirely (#341). Installer-only symbols stay created but
+    Permission-gated symbols with a display value become entities (#212). Everyday-UI
+    route symbols that SPA marks ``hidden:invisible`` are still created but start
+    disabled (#369). Feature gates ``hidden:enabled`` / ``hidden:device-unavailable``
+    (e.g. heat-pump start tile on a pellet module) stay omitted (#367 / #341).
+    Installer-only symbols (outside the everyday route set) stay created but
     disabled by default. ``entity_filter_mode``/``module_filter_modes`` are accepted
     only for call-site compatibility and are otherwise ignored.
 
@@ -1999,10 +2001,11 @@ async def async_build_bootstrap_payload(
                             )
                         continue
 
-                # Everyday-UI route symbols: SPA ``isParameterVisible`` gates both
-                # ``enabled_by_default`` and entity creation (#341 / py#468). Installer-
-                # only symbols (outside the everyday route set) still become entities
-                # disabled by default (#212) without a device-type denylist.
+                # Everyday-UI route symbols: SPA visibility decides enable vs omit.
+                # ``hidden:enabled`` / ``hidden:device-unavailable`` omit the entity
+                # (feature absent — #367). ``hidden:invisible`` still materialises
+                # disabled (#369 / #212). Other soft hides follow the same create-
+                # disabled path. Installer-only symbols stay disabled by default.
                 if is_ui_route_symbol:
                     try:
                         visible, visible_diag = resolver.parameter_visibility_diagnostics(
@@ -2011,19 +2014,23 @@ async def async_build_bootstrap_payload(
                             flat_values=flat_values,
                         )
                         if not visible:
-                            spa_visibility_rejected.add(symbol)
-                            if len(module_rejections) < 500:
-                                module_rejections.append(
-                                    {
-                                        "symbol": symbol,
-                                        "reason": "hidden:spa_visibility",
-                                        "visibility": visible_diag,
-                                        "menu_kinds": sorted(symbol_kinds),
-                                        "panel_path": panel_path,
-                                    }
-                                )
-                            continue
-                        enabled_by_default = True
+                            diag_text = str(visible_diag or "")
+                            if diag_text in {"hidden:enabled", "hidden:device-unavailable"}:
+                                spa_visibility_rejected.add(symbol)
+                                if len(module_rejections) < 500:
+                                    module_rejections.append(
+                                        {
+                                            "symbol": symbol,
+                                            "reason": "hidden:spa_visibility",
+                                            "visibility": visible_diag,
+                                            "menu_kinds": sorted(symbol_kinds),
+                                            "panel_path": panel_path,
+                                        }
+                                    )
+                                continue
+                            enabled_by_default = False
+                        else:
+                            enabled_by_default = True
                     except Exception:
                         LOGGER.debug("Visibility diagnostics failed for %s/%s", module.devid, symbol, exc_info=True)
                         enabled_by_default = True
