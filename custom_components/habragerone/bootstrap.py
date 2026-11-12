@@ -1311,7 +1311,19 @@ def _is_menu_command_action(*, symbol: str, symbol_kinds: set[str], mapping: dic
     # STATUS_* computed rules must stay read-only even when they expose command_rules.
     if symbol.upper().startswith("STATUS_"):
         return False
-    return _mapping_has_parameter_write(mapping)
+    if _mapping_has_parameter_write(mapping):
+        return True
+    # Home deviceTile / panel SWITCH cards often bind named raw commands
+    # (``START_PUMP`` / ``STOP_PUMP``) with empty ``paths.command`` and a status
+    # channel address — still writable switches in SPA (#367).
+    if not isinstance(mapping, dict) or not _has_named_command_rule(mapping):
+        return False
+    component_type = str(mapping.get("component_type") or "").casefold()
+    if "switch" in component_type or "toggle" in component_type:
+        return True
+    return _is_switch_like_command(mapping) and (
+        _is_command_like_symbol(symbol) or any(_is_action_command_name(cmd) for cmd in _command_rule_names(mapping))
+    )
 
 
 def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescriptor]:
@@ -1781,10 +1793,10 @@ async def async_build_bootstrap_payload(
             kinds_map = per_module_symbol_kinds.setdefault(module.devid, {})
             for token in tile_tokens:
                 kinds = kinds_map.setdefault(token, set())
-                # Section label only — do not invent write from symbol names. Keep
-                # existing menu kinds. Writability still comes from
-                # ``_is_menu_command_action`` → ``_mapping_has_parameter_write``
-                # (command-like names alone do not flip writable without write/special).
+                # Candidate seed only — do not invent write from symbol names.
+                # Keep existing menu kinds. Full tile ParamMap capabilities
+                # (SWITCH + named commands, ENABLED visibility) are applied later
+                # via ``_is_menu_command_action`` / ``parameter_visibility_diagnostics``.
                 if not kinds:
                     kinds.add("read")
                 if token.upper().startswith("STATUS_"):

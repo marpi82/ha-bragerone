@@ -646,6 +646,27 @@ def test_is_menu_command_action_uses_parameter_write_unless_status_symbol() -> N
     assert _mapping_has_parameter_write({"paths": {"command": [{"group": "P6", "number": 1, "chan": "v"}]}}) is True
 
 
+def test_is_menu_command_action_accepts_tile_switch_named_commands() -> None:
+    """deviceTile SWITCH cards with START/STOP commands are writable without menu write (#367)."""
+    mapping = {
+        "component_type": "SWITCH",
+        "paths": {"command": []},
+        "command_rules": [
+            {"logic": "any", "kind": "if", "command": "STOP_PUMP", "value": "ON"},
+            {"logic": "any", "kind": "elseif", "command": "START_PUMP", "value": "OFF"},
+        ],
+    }
+    assert _is_menu_command_action(symbol="URUCHOMIENIE_POMPY_CIEPLA", symbol_kinds={"read"}, mapping=mapping) is True
+    assert (
+        _is_menu_command_action(
+            symbol="STATUS_POMPY_CIEPLA_STATUS",
+            symbol_kinds={"status"},
+            mapping=mapping,
+        )
+        is False
+    )
+
+
 def test_mapping_has_parameter_write_accepts_conditional_any_branch_targets() -> None:
     """Indoor-temp write cards keep paths.command empty and bind via command_rules/raw.any."""
     mapping = {

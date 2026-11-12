@@ -2071,7 +2071,8 @@ def test_async_build_bootstrap_payload_discovers_device_tile_tokens(
             return None
 
         def flatten(self) -> dict[str, object]:
-            return {"P30.v5": 21.5, "P32.v1": 1}
+            # P31.s0 present with bit3 clear → SPA ENABLED true for heat-pump start tile.
+            return {"P30.v5": 21.5, "P32.v1": 1, "P31.s0": 0}
 
         def flatten_for_devid(self, devid: str) -> dict[str, object]:
             _ = devid
@@ -2133,12 +2134,32 @@ def test_async_build_bootstrap_payload_discovers_device_tile_tokens(
                 },
                 "URUCHOMIENIE_POMPY_CIEPLA": {
                     "label": "Pompa ciepła",
-                    "pool": "P32",
-                    "chan": "v",
-                    "idx": 1,
+                    "pool": "P31",
+                    "chan": "s",
+                    "idx": 0,
                     "mapping": {
-                        "paths": {"command": [{"group": "P32", "number": 1, "use": "v"}]},
                         "component_type": "SWITCH",
+                        "paths": {
+                            "command": [],
+                            "status": [
+                                {
+                                    "condition": "ENABLED",
+                                    "if": [
+                                        {
+                                            "expected": 0,
+                                            "operation": "equalTo",
+                                            "value": [{"group": "P31", "number": 0, "use": "s", "bit": 3}],
+                                        }
+                                    ],
+                                    "then": "!![]",
+                                },
+                                {"condition": "ENABLED", "else": "![]"},
+                            ],
+                        },
+                        "command_rules": [
+                            {"logic": "any", "kind": "if", "command": "STOP_PUMP", "value": "ON"},
+                            {"logic": "any", "kind": "elseif", "command": "START_PUMP", "value": "OFF"},
+                        ],
                     },
                     "min": None,
                     "max": None,
@@ -2166,7 +2187,11 @@ def test_async_build_bootstrap_payload_discovers_device_tile_tokens(
             resolved: object,
             flat_values: dict[str, object],
         ) -> tuple[bool, str]:
-            _ = desc, resolved, flat_values
+            _ = resolved, flat_values
+            symbol = str(desc.get("symbol") or "")
+            if symbol == "URUCHOMIENIE_POMPY_CIEPLA":
+                # Heat-pump feature present (ENABLED true) — sibling py#482 reason path.
+                return True, "visible:default"
             return True, "visible:default"
 
     class _FakeGateway:
@@ -2226,6 +2251,198 @@ def test_async_build_bootstrap_payload_discovers_device_tile_tokens(
     assert "status" in by_symbol["STATUS_POMPY_CIEPLA_STATUS"]["menu_kinds"]
     assert "URUCHOMIENIE_POMPY_CIEPLA" in by_symbol
     assert by_symbol["URUCHOMIENIE_POMPY_CIEPLA"].get("writable") is True
+    assert by_symbol["URUCHOMIENIE_POMPY_CIEPLA"]["platform"] == "switch"
+    assert "read" in by_symbol["URUCHOMIENIE_POMPY_CIEPLA"]["menu_kinds"]
+
+
+def test_async_build_bootstrap_payload_hides_disabled_device_tile_switch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tile SWITCH with SPA ENABLED=false is omitted (#367 / py#482), not a zombie binary."""
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P4.v1": 1}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": ["PARAM_1"]}
+
+        async def discover_device_tile_parameter_tokens(self, *, devices: object | None = None) -> set[str]:
+            _ = devices
+            return {"URUCHOMIENIE_POMPY_CIEPLA"}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            payloads: dict[str, dict[str, object]] = {
+                "PARAM_1": {
+                    "label": "Menu",
+                    "pool": "P4",
+                    "chan": "v",
+                    "idx": 1,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+                "URUCHOMIENIE_POMPY_CIEPLA": {
+                    "label": "Uruchomienie pompy ciepła",
+                    "pool": "P31",
+                    "chan": "s",
+                    "idx": 0,
+                    "mapping": {
+                        "component_type": "SWITCH",
+                        "paths": {
+                            "command": [],
+                            "value": [],
+                            "status": [
+                                {
+                                    "condition": "ENABLED",
+                                    "if": [
+                                        {
+                                            "expected": 0,
+                                            "operation": "equalTo",
+                                            "value": [{"group": "P31", "number": 0, "use": "s", "bit": 3}],
+                                        }
+                                    ],
+                                    "then": "!![]",
+                                },
+                                {"condition": "ENABLED", "else": "![]"},
+                            ],
+                        },
+                        "command_rules": [
+                            {"command": "STOP_PUMP", "value": "ON"},
+                            {"command": "START_PUMP", "value": "OFF"},
+                        ],
+                        # raw.any command branches count as display-value rules so the
+                        # card reaches the SPA visibility gate (same shape as live assets).
+                        "raw": {
+                            "any": [
+                                {
+                                    "if": [{"expected": 1, "operation": "equalTo", "value": []}],
+                                    "then": {"command": "STOP_PUMP", "value": "ON"},
+                                },
+                                {
+                                    "elseif": [{"expected": 0, "operation": "equalTo", "value": []}],
+                                    "then": {"command": "START_PUMP", "value": "OFF"},
+                                },
+                            ],
+                            "status": {
+                                "ENABLED": [
+                                    {
+                                        "if": [
+                                            {
+                                                "expected": 0,
+                                                "operation": "equalTo",
+                                                "value": [{"group": "P31", "number": 0, "use": "s", "bit": 3}],
+                                            }
+                                        ],
+                                        "then": "!![]",
+                                    },
+                                    {"else": "![]"},
+                                ]
+                            },
+                        },
+                    },
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+            }
+            return {symbol: payloads[symbol] for symbol in symbols if symbol in payloads}
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            values: dict[str, object] = {"PARAM_1": 1, "URUCHOMIENIE_POMPY_CIEPLA": "ON"}
+            return SimpleNamespace(value=values.get(symbol), value_label=None)
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, str]:
+            _ = resolved, flat_values
+            # describe_symbols payloads may omit ``symbol``; match the heat-pump tile by pool.
+            if desc.get("pool") == "P31" or str(desc.get("symbol") or "") == "URUCHOMIENIE_POMPY_CIEPLA":
+                return False, "hidden:enabled"
+            return True, "visible:default"
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=["DISPLAY_PARAMETER_LEVEL_1"],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                    devices=[],
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+
+    by_symbol = {item["symbol"] for item in payload["entity_descriptors"]}
+    assert "PARAM_1" in by_symbol
+    assert "URUCHOMIENIE_POMPY_CIEPLA" not in by_symbol
+    rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
+    assert any(
+        row.get("symbol") == "URUCHOMIENIE_POMPY_CIEPLA"
+        and row.get("reason") == "hidden:spa_visibility"
+        and row.get("visibility") == "hidden:enabled"
+        for row in rejections
+    )
 
 
 def test_async_build_bootstrap_payload_ignores_bad_device_tile_discovery(
