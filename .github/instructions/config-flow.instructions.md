@@ -8,6 +8,6 @@ applyTo: "custom_components/habragerone/config_flow.py, custom_components/habrag
 2. **Abort reasons & errors**: use typed abort reasons and per-field errors; never raw exceptions to the UI. Reauth flow must keep working when login handling changes.
 3. **Options flow**: changing object/modules/filter mode triggers reload — keep that contract.
 4. **Strings**: every new config/options step, error, or abort reason needs `strings.json` + `translations/en.json` entries in the same PR; other locales may follow separately.
-5. **manifest.json**: `py-bragerone==X` and `tree-sitter==Y` pins are deliberate (CI checks wheel compatibility for musl/manylinux, x86_64 + aarch64). Bumping pins → check wheel availability. Keep the `py-bragerone` bound in `pyproject.toml` in sync (`tree-sitter` is manifest-only, no `pyproject.toml` bound exists).
+5. **manifest.json**: `py-bragerone==X` pin is deliberate (CI checks wheel compatibility for musllinux only, x86_64 + aarch64 — matches HAOS/Alpine; no manylinux fallback). Bumping the pin → check musllinux wheel availability. Keep the `py-bragerone` bound in `pyproject.toml` in sync. Do **not** add `tree-sitter` to the manifest: catalog parsing is pure-Python in `py-bragerone` (optional `[parsers]` oracle only).
 6. **Diagnostics**: `async_get_config_entry_diagnostics` must redact credentials; new sensitive fields must be added to the redaction list.
 7. **hacs.json**: HA minimum version here and the `homeassistant` dependency in `pyproject.toml` must not drift (`manifest.json` has no HA version field).
