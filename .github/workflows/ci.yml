@@ -196,7 +196,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           # musllinux only — matches HAOS/Alpine. Do not fall back to manylinux
-          # (that previously masked missing tree-sitter musl aarch64 wheels; #355).
+          # (historically masked missing native musl aarch64 wheels; #355).
           # --pre: allow exact pins like py-bragerone==YYYY.M.NrcN (and tolerate brief
           # PyPI index lag after a fresh pre-release publish).
           for attempt in 1 2 3 4 5; do
