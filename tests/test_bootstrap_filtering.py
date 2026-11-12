@@ -144,9 +144,12 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
             desc: dict[str, object],
             resolved: object,
             flat_values: dict[str, object],
-        ) -> tuple[bool, dict[str, object]]:
+        ) -> tuple[bool, str]:
             _ = desc, resolved, flat_values
-            return self._current_devid != "M1", {}
+            # M1 simulates SPA INVISIBLE (create disabled); M2 is visible/enabled (#369).
+            if self._current_devid == "M1":
+                return False, "hidden:invisible"
+            return True, "visible:default"
 
     class _FakeGateway:
         def model_dump(self, mode: str = "json") -> dict[str, object]:
@@ -202,12 +205,12 @@ def test_async_build_bootstrap_payload_creates_every_permitted_entity_and_gates_
     )
 
     descriptors = {(item["devid"], item["symbol"]): item for item in payload["entity_descriptors"]}
-    # Everyday-UI symbols that fail SPA visibility are not materialised (#341).
-    # M1's fake resolver returns not-visible; M2's passes and is created enabled.
-    assert set(descriptors) == {("M2", "SYM_M2")}
+    # INVISIBLE everyday-UI symbols are materialised disabled; visible stay enabled (#369).
+    assert set(descriptors) == {("M1", "SYM_M1"), ("M2", "SYM_M2")}
+    assert descriptors[("M1", "SYM_M1")]["enabled_by_default"] is False
     assert descriptors[("M2", "SYM_M2")]["enabled_by_default"] is True
     m1_rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
-    assert any(row.get("reason") == "hidden:spa_visibility" for row in m1_rejections)
+    assert not any(row.get("reason") == "hidden:spa_visibility" for row in m1_rejections)
 
 
 def test_async_build_bootstrap_payload_keeps_only_primary_composite_slot(
@@ -2255,6 +2258,135 @@ def test_async_build_bootstrap_payload_discovers_device_tile_tokens(
     assert "read" in by_symbol["URUCHOMIENIE_POMPY_CIEPLA"]["menu_kinds"]
 
 
+def test_async_build_bootstrap_payload_disables_invisible_device_tile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """deviceTile tokens with ``hidden:invisible`` are created disabled (#369)."""
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P30.v5": 21.5, "P4.v1": 1}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": ["PARAM_1"]}
+
+        async def discover_device_tile_parameter_tokens(self, *, devices: object | None = None) -> set[str]:
+            _ = devices
+            return {"PARAM_P30_5"}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            payloads: dict[str, dict[str, object]] = {
+                "PARAM_1": {
+                    "label": "Menu",
+                    "pool": "P4",
+                    "chan": "v",
+                    "idx": 1,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+                "PARAM_P30_5": {
+                    "label": "Indoor",
+                    "pool": "P30",
+                    "chan": "v",
+                    "idx": 5,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+            }
+            return {symbol: payloads[symbol] for symbol in symbols if symbol in payloads}
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            values = {"PARAM_1": 1, "PARAM_P30_5": 21.5}
+            return SimpleNamespace(value=values.get(symbol), value_label=None)
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, str]:
+            _ = resolved, flat_values
+            if desc.get("pool") == "P30":
+                return False, "hidden:invisible"
+            return True, "visible:default"
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=["DISPLAY_PARAMETER_LEVEL_1"],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                    devices=[],
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+    by_symbol = {item["symbol"]: item for item in payload["entity_descriptors"]}
+    assert by_symbol["PARAM_1"]["enabled_by_default"] is True
+    assert by_symbol["PARAM_P30_5"]["enabled_by_default"] is False
+    assert by_symbol["PARAM_P30_5"]["ui_route_symbol"] is True
+
+
 def test_async_build_bootstrap_payload_hides_disabled_device_tile_switch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2713,7 +2845,7 @@ def test_async_build_bootstrap_payload_device_tile_keeps_existing_kinds_and_no_s
 def test_async_build_bootstrap_payload_hides_unavailable_device_tile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tile tokens on everyday UI still drop when SPA visibility is false (#341)."""
+    """Tile tokens with ``hidden:device-unavailable`` stay omitted (#367 / #369)."""
 
     class _FakeParamStore:
         def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
@@ -2936,12 +3068,12 @@ def test_async_build_bootstrap_payload_skips_duplicate_sample_when_rejections_fu
             desc: dict[str, object],
             resolved: object,
             flat_values: dict[str, object],
-        ) -> tuple[bool, dict[str, object]]:
+        ) -> tuple[bool, str]:
             _ = resolved, flat_values
             symbol = str(desc.get("symbol") or desc.get("label") or "")
             if symbol.startswith("SYM_HIDDEN_"):
-                return False, {"reason": "hidden:test"}
-            return True, {}
+                return False, "hidden:enabled"
+            return True, "visible:default"
 
     class _FakeGateway:
         def model_dump(self, mode: str = "json") -> dict[str, object]:
@@ -2992,7 +3124,7 @@ def test_async_build_bootstrap_payload_skips_duplicate_sample_when_rejections_fu
 def test_async_build_bootstrap_payload_caps_spa_visibility_rejection_samples(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """SPA-hidden rejects keep excluding symbols after the 500-row diagnostic sample fills (#341)."""
+    """``hidden:enabled`` omits keep excluding after the 500-row diagnostic sample fills (#369)."""
 
     hidden_symbols = [f"SYM_HIDDEN_{idx}" for idx in range(501)]
 
@@ -3059,9 +3191,9 @@ def test_async_build_bootstrap_payload_caps_spa_visibility_rejection_samples(
             desc: dict[str, object],
             resolved: object,
             flat_values: dict[str, object],
-        ) -> tuple[bool, dict[str, object]]:
+        ) -> tuple[bool, str]:
             _ = desc, resolved, flat_values
-            return False, {"reason": "spa_hidden"}
+            return False, "hidden:enabled"
 
     class _FakeGateway:
         def model_dump(self, mode: str = "json") -> dict[str, object]:
@@ -3108,12 +3240,13 @@ def test_async_build_bootstrap_payload_caps_spa_visibility_rejection_samples(
     rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
     assert len(rejections) == 500
     assert all(row.get("reason") == "hidden:spa_visibility" for row in rejections)
+    assert all(row.get("visibility") == "hidden:enabled" for row in rejections)
 
 
 def test_async_build_bootstrap_payload_does_not_recreate_spa_hidden_ui_write_as_extra(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """SPA-hidden everyday-UI write symbols must not reappear via the secondary extras pass (#341)."""
+    """``hidden:enabled`` everyday-UI write symbols must not reappear via the extras pass (#369)."""
 
     class _FakeParamStore:
         def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
@@ -3201,9 +3334,9 @@ def test_async_build_bootstrap_payload_does_not_recreate_spa_hidden_ui_write_as_
             desc: dict[str, object],
             resolved: object,
             flat_values: dict[str, object],
-        ) -> tuple[bool, dict[str, object]]:
+        ) -> tuple[bool, str]:
             _ = desc, resolved, flat_values
-            return False, {"reason": "spa_hidden"}
+            return False, "hidden:enabled"
 
     class _FakeGateway:
         def model_dump(self, mode: str = "json") -> dict[str, object]:
@@ -3249,7 +3382,7 @@ def test_async_build_bootstrap_payload_does_not_recreate_spa_hidden_ui_write_as_
     symbols = {item["symbol"] for item in payload["entity_descriptors"]}
     assert "URUCHOMIENIE_KOTLA" not in symbols
     rejections = payload["bootstrap_debug"]["modules"]["M1"]["rejections"]
-    assert any(row.get("reason") == "hidden:spa_visibility" for row in rejections)
+    assert any(row.get("reason") == "hidden:spa_visibility" and row.get("visibility") == "hidden:enabled" for row in rejections)
 
 
 def test_async_build_bootstrap_payload_accepts_switch_with_status_rules_without_register(
@@ -4054,8 +4187,8 @@ def test_async_build_bootstrap_payload_enabled_default_edge_cases(
 
     descriptors = {item["symbol"]: item for item in payload["entity_descriptors"]}
     assert descriptors["SYM_UI"]["enabled_by_default"] is True
-    # Visibility diagnostics blew up → fail-open to enabled for UI-route symbols.
-    assert descriptors["SYM_VIS_FAIL"]["enabled_by_default"] is True
+    # Visibility diagnostics blew up → fail closed (create disabled) for UI-route symbols.
+    assert descriptors["SYM_VIS_FAIL"]["enabled_by_default"] is False
     # Present in permission panels but not everyday UI routes → disabled by default.
     assert descriptors["SYM_NON_UI"]["enabled_by_default"] is False
     # Unresolved command-like extra becomes a synthetic disabled button.
