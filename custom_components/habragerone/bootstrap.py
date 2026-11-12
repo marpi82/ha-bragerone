@@ -1901,12 +1901,15 @@ async def async_build_bootstrap_payload(
             },
             "route_diagnostics_sample": per_module_route_diagnostics.get(module.devid, [])[:300],
         }
+        # SPA modulesMap uses null for offline; Module DTO coerces null→0.
+        # Prefer None here; py-bragerone storeGetter also maps 0→None (#484).
+        connected_at = module.connectedAt or None
         resolver.set_runtime_context(
             {
                 "devid": devid_text,
                 "modulesMap": {
                     devid_text: {
-                        "connectedAt": module.connectedAt,
+                        "connectedAt": connected_at,
                     }
                 },
             }
@@ -2004,8 +2007,11 @@ async def async_build_bootstrap_payload(
                 # Everyday-UI route symbols: SPA visibility decides enable vs omit.
                 # ``hidden:enabled`` / ``hidden:device-unavailable`` omit the entity
                 # (feature absent — #367). ``hidden:invisible`` still materialises
-                # disabled (#369 / #212). Other soft hides follow the same create-
-                # disabled path. Installer-only symbols stay disabled by default.
+                # disabled (#369 / #212). Library precedence matches SPA (INVISIBLE
+                # first, then DEVICE_AVAILABLE, then ENABLED) — a combined
+                # invisible+feature-gate tile therefore creates disabled, not omit.
+                # Other soft hides follow the same create-disabled path.
+                # Installer-only symbols stay disabled by default.
                 if is_ui_route_symbol:
                     try:
                         visible, visible_diag = resolver.parameter_visibility_diagnostics(
@@ -2033,7 +2039,8 @@ async def async_build_bootstrap_payload(
                             enabled_by_default = True
                     except Exception:
                         LOGGER.debug("Visibility diagnostics failed for %s/%s", module.devid, symbol, exc_info=True)
-                        enabled_by_default = True
+                        # Fail closed: unknown SPA visibility must not enable by default.
+                        enabled_by_default = False
                 else:
                     enabled_by_default = False
             except Exception:

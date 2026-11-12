@@ -40,6 +40,9 @@ CONF_RAW_TO_LABEL: Final = "raw_to_label"
 CONF_BOOTSTRAP_DEBUG: Final = "bootstrap_debug"
 CONF_BOOTSTRAP_VERSION: Final = "bootstrap_version"
 CONF_UPSTREAM_ASSETS_FINGERPRINT: Final = "upstream_assets_fingerprint"
+# 27: INVISIBLE→disabled / ENABLED omit (#369). Ship only with py-bragerone that
+# includes storeGetter ENABLED + connectedAt SPA null parity (#484); bump again
+# after that pin if a BV27 cache was already written under an older library.
 BOOTSTRAP_VERSION: Final = 27
 
 # Stable non-menu source key for module connectivity (SPA ``module.connection.*`` i18n).

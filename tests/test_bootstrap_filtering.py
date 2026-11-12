@@ -4187,8 +4187,8 @@ def test_async_build_bootstrap_payload_enabled_default_edge_cases(
 
     descriptors = {item["symbol"]: item for item in payload["entity_descriptors"]}
     assert descriptors["SYM_UI"]["enabled_by_default"] is True
-    # Visibility diagnostics blew up → fail-open to enabled for UI-route symbols.
-    assert descriptors["SYM_VIS_FAIL"]["enabled_by_default"] is True
+    # Visibility diagnostics blew up → fail closed (create disabled) for UI-route symbols.
+    assert descriptors["SYM_VIS_FAIL"]["enabled_by_default"] is False
     # Present in permission panels but not everyday UI routes → disabled by default.
     assert descriptors["SYM_NON_UI"]["enabled_by_default"] is False
     # Unresolved command-like extra becomes a synthetic disabled button.
