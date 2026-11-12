@@ -16,7 +16,7 @@
     "custom_components.habragerone"
   ],
   "requirements": [
-    "py-bragerone==2026.11.2a1"
+    "py-bragerone==2026.11.2rc1"
   ],
-  "version": "2026.11.2a1"
+  "version": "2026.11.2rc1"
 }

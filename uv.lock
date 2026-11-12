@@ -1228,7 +1228,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "homeassistant", specifier = ">=2026.3.0" },
-    { name = "py-bragerone", specifier = "==2026.11.2a1" },
+    { name = "py-bragerone", specifier = "==2026.11.2rc1" },
 ]
 
 [package.metadata.requires-dev]
@@ -2429,7 +2429,7 @@ wheels = [
 
 [[package]]
 name = "py-bragerone"
-version = "2026.11.2a1"
+version = "2026.11.2rc1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -2437,9 +2437,9 @@ dependencies = [
     { name = "python-socketio", extra = ["asyncio-client"] },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8d/46/b0084ac704bab03957e6da7ed1b72cf8be682b0a9c1ed48b3b58a7f70c39/py_bragerone-2026.11.2a1.tar.gz", hash = "sha256:3f0390ccb6560f194eb7bad2c3a283dd5fb0272d3cc3b862cb94d2bce20db2c7", size = 178573, upload-time = "2026-11-12T16:43:06.449Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/45/2e/628f856997681379c0e58c13f3d6665a9233d362141797411174970f4a33/py_bragerone-2026.11.2rc1.tar.gz", hash = "sha256:942c58d71ef904870bf3197b1cb458276d7265e336232ae390744f11a497095f", size = 169632, upload-time = "2026-11-12T20:49:17.215Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/50/79/22ccb4a0208c282a6d1bbc4f5d9a743b6a397679c6038920b0de4e0350dc/py_bragerone-2026.11.2a1-py3-none-any.whl", hash = "sha256:edf8da96e9694f69950c5f06f3a1cd68e031eefe0556135911403e56640490d5", size = 192006, upload-time = "2026-11-12T16:43:04.941Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/d2/d25e14679ce594f6a6a236217abaf48f34b7676f16ba8e3bffb429f8c9f3/py_bragerone-2026.11.2rc1-py3-none-any.whl", hash = "sha256:906db4989b99640bf08ccab0e8be16329bf8841dc14e8a6133b5be921126cb1a", size = 182566, upload-time = "2026-11-12T20:49:15.266Z" },
 ]
 
 [[package]]
