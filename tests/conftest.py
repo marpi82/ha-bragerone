@@ -58,17 +58,30 @@ def install_pybragerone_stubs() -> None:
     real_param_resolver_cls: type[Any] | None = None
     real_param_store_cls: type[Any] | None = None
     real_computed_value_evaluator_cls: type[Any] | None = None
+    real_date_time_is_unit: Any | None = None
+    real_date_time_parse: Any | None = None
+    real_date_time_format_server: Any | None = None
+    real_date_time_format_display: Any | None = None
     try:
+        import pybragerone.models.date_time as _real_date_time_mod
         import pybragerone.models.param as _real_param_mod
         import pybragerone.models.param_resolver as _real_param_resolver_mod
 
         real_param_resolver_cls = _real_param_resolver_mod.ParamResolver
         real_param_store_cls = _real_param_mod.ParamStore
         real_computed_value_evaluator_cls = _real_param_resolver_mod.ComputedValueEvaluator
+        real_date_time_is_unit = _real_date_time_mod.is_date_time_unit
+        real_date_time_parse = _real_date_time_mod.parse_server_date_time
+        real_date_time_format_server = _real_date_time_mod.format_server_date_time
+        real_date_time_format_display = _real_date_time_mod.format_display_date_time
     except ImportError:
         real_param_resolver_cls = None
         real_param_store_cls = None
         real_computed_value_evaluator_cls = None
+        real_date_time_is_unit = None
+        real_date_time_parse = None
+        real_date_time_format_server = None
+        real_date_time_format_display = None
 
     for module_name in list(sys.modules):
         if module_name == "pybragerone" or module_name.startswith("pybragerone."):
@@ -259,16 +272,14 @@ def install_pybragerone_stubs() -> None:
     pybragerone_models_token_stub.Token = _TokenStub
     sys.modules["pybragerone.models.token"] = pybragerone_models_token_stub
 
-    # Prefer the real library DATE_TIME codec (Luxon yy + factory-default wall-clock).
-    # Fall back only when the pin is absent from the test environment.
-    try:
-        import pybragerone.models.date_time as _real_date_time
-
-        _stub_is_date_time_unit = _real_date_time.is_date_time_unit
-        _stub_parse_server_date_time = _real_date_time.parse_server_date_time
-        _stub_format_server_date_time = _real_date_time.format_server_date_time
-        _stub_format_display_date_time = _real_date_time.format_display_date_time
-    except ImportError:
+    # Capture real DATE_TIME codec *before* wiping sys.modules (same pattern as ParamStore).
+    # After the empty ``pybragerone.models`` stub, a late import would always fail.
+    if real_date_time_parse is not None:
+        _stub_is_date_time_unit = real_date_time_is_unit
+        _stub_parse_server_date_time = real_date_time_parse
+        _stub_format_server_date_time = real_date_time_format_server
+        _stub_format_display_date_time = real_date_time_format_display
+    else:
         from datetime import datetime as _datetime
 
         def _stub_is_date_time_unit(*, unit_code: object = None, unit_meta: object = None) -> bool:

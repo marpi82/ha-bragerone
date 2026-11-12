@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import importlib
 from datetime import UTC, datetime
 
-from custom_components.habragerone.date_time_codec import (
-    format_server_date_time,
-    parse_server_date_time,
-)
+from tests.conftest import install_pybragerone_stubs
+
+install_pybragerone_stubs()
+
+import custom_components.habragerone.date_time_codec as date_time_codec  # noqa: E402
+
+importlib.reload(date_time_codec)
+parse_server_date_time = date_time_codec.parse_server_date_time
+format_server_date_time = date_time_codec.format_server_date_time
+
+
+def test_codec_reexports_pinned_library_functions() -> None:
+    """After stubs, re-export must still bind the real library callables."""
+    assert parse_server_date_time.__module__ == "pybragerone.models.date_time"
+    assert format_server_date_time.__module__ == "pybragerone.models.date_time"
 
 
 def test_parse_and_format_round_trip_wire_string() -> None:
