@@ -1303,6 +1303,46 @@ def _is_action_command_name(command: str) -> bool:
     return any(marker in cmd for marker in ("RESTART", "START", "STOP", "MODULE", "RESET", "REBOOT"))
 
 
+def _mapping_has_bidirectional_switch_intents(mapping: dict[str, Any] | None) -> bool:
+    """Return True when command_rules expose both ON and OFF intents (#367).
+
+    Rejects one-sided SWITCH cards (e.g. a lone ``RESET_ALARM``) that would make
+    ``turn_off`` fall back to the only named rule and send the wrong command.
+    """
+    if not isinstance(mapping, dict):
+        return False
+    command_rules = mapping.get("command_rules")
+    if not isinstance(command_rules, list) or not command_rules:
+        return False
+
+    logic_tags: set[str] = set()
+    raw_values: set[str] = set()
+    for candidate in command_rules:
+        if not isinstance(candidate, dict):
+            continue
+        logic = candidate.get("logic")
+        if isinstance(logic, str) and logic.strip():
+            logic_tags.add(logic.strip().casefold())
+        value = candidate.get("value")
+        if isinstance(value, bool):
+            raw_values.add("true" if value else "false")
+        elif isinstance(value, int | float):
+            raw_values.add(str(int(value)) if float(value).is_integer() else str(value).casefold())
+        elif isinstance(value, str):
+            token = value.strip().casefold()
+            if "." in token:
+                token = token.rsplit(".", 1)[-1]
+            raw_values.add(token)
+
+    if {"on", "off"}.issubset(logic_tags) or {"on", "off"}.issubset(raw_values):
+        return True
+
+    names = _command_rule_names(mapping)
+    has_start = any(any(marker in name for marker in ("START", "ENABLE")) for name in names)
+    has_stop = any(any(marker in name for marker in ("STOP", "DISABLE")) for name in names)
+    return has_start and has_stop
+
+
 def _is_menu_command_action(*, symbol: str, symbol_kinds: set[str], mapping: dict[str, Any] | None = None) -> bool:
     if "write" in symbol_kinds:
         return True
@@ -1311,7 +1351,20 @@ def _is_menu_command_action(*, symbol: str, symbol_kinds: set[str], mapping: dic
     # STATUS_* computed rules must stay read-only even when they expose command_rules.
     if symbol.upper().startswith("STATUS_"):
         return False
-    return _mapping_has_parameter_write(mapping)
+    if _mapping_has_parameter_write(mapping):
+        return True
+    # Home deviceTile / panel SWITCH cards often bind named raw commands
+    # (``START_PUMP`` / ``STOP_PUMP``) with empty ``paths.command`` and a status
+    # channel address — still writable switches in SPA (#367). Require both ON
+    # and OFF intents so one-sided named commands do not become bogus switches.
+    if not isinstance(mapping, dict) or not _has_named_command_rule(mapping):
+        return False
+    if not _mapping_has_bidirectional_switch_intents(mapping):
+        return False
+    component_type = str(mapping.get("component_type") or "").casefold()
+    if "switch" in component_type or "toggle" in component_type:
+        return True
+    return _is_command_like_symbol(symbol) or any(_is_action_command_name(cmd) for cmd in _command_rule_names(mapping))
 
 
 def normalize_cached_descriptors(descriptors_raw: list[Any]) -> list[EntityDescriptor]:
@@ -1781,10 +1834,10 @@ async def async_build_bootstrap_payload(
             kinds_map = per_module_symbol_kinds.setdefault(module.devid, {})
             for token in tile_tokens:
                 kinds = kinds_map.setdefault(token, set())
-                # Section label only — do not invent write from symbol names. Keep
-                # existing menu kinds. Writability still comes from
-                # ``_is_menu_command_action`` → ``_mapping_has_parameter_write``
-                # (command-like names alone do not flip writable without write/special).
+                # Candidate seed only — do not invent write from symbol names.
+                # Keep existing menu kinds. Full tile ParamMap capabilities
+                # (SWITCH + named commands, ENABLED visibility) are applied later
+                # via ``_is_menu_command_action`` / ``parameter_visibility_diagnostics``.
                 if not kinds:
                     kinds.add("read")
                 if token.upper().startswith("STATUS_"):

@@ -646,6 +646,87 @@ def test_is_menu_command_action_uses_parameter_write_unless_status_symbol() -> N
     assert _mapping_has_parameter_write({"paths": {"command": [{"group": "P6", "number": 1, "chan": "v"}]}}) is True
 
 
+def test_is_menu_command_action_accepts_tile_switch_named_commands() -> None:
+    """deviceTile SWITCH cards with START/STOP commands are writable without menu write (#367)."""
+    from custom_components.habragerone.bootstrap import _mapping_has_bidirectional_switch_intents
+
+    mapping = {
+        "component_type": "SWITCH",
+        "paths": {"command": []},
+        "command_rules": [
+            {"logic": "any", "kind": "if", "command": "STOP_PUMP", "value": "ON"},
+            {"logic": "any", "kind": "elseif", "command": "START_PUMP", "value": "OFF"},
+        ],
+    }
+    assert _is_menu_command_action(symbol="URUCHOMIENIE_POMPY_CIEPLA", symbol_kinds={"read"}, mapping=mapping) is True
+    assert (
+        _is_menu_command_action(
+            symbol="STATUS_POMPY_CIEPLA_STATUS",
+            symbol_kinds={"status"},
+            mapping=mapping,
+        )
+        is False
+    )
+    # ``toggle`` component alias (line branch parity with ``switch``).
+    toggle_mapping = {
+        "component_type": "TOGGLE",
+        "paths": {"command": []},
+        "command_rules": [
+            {"command": "STOP_PUMP", "value": "ON"},
+            {"command": "START_PUMP", "value": "OFF"},
+        ],
+    }
+    assert _is_menu_command_action(symbol="PARAM_TILE_TOGGLE", symbol_kinds={"read"}, mapping=toggle_mapping) is True
+    # No component_type — still writable when ON/OFF rules + START/STOP command names.
+    switch_like = {
+        "paths": {"command": []},
+        "command_rules": [
+            {"logic": "any", "command": "STOP_PUMP", "value": "ON"},
+            {"logic": "any", "command": "START_PUMP", "value": "OFF"},
+        ],
+    }
+    assert _is_menu_command_action(symbol="PARAM_HP_START", symbol_kinds={"read"}, mapping=switch_like) is True
+    # START/STOP command names without ON/OFF values still count as a bidirectional pair.
+    start_stop_only = {
+        "component_type": "SWITCH",
+        "paths": {"command": []},
+        "command_rules": [
+            {"command": "STOP_PUMP"},
+            {"command": "START_PUMP"},
+            "skip-me",
+            {"command": "VOID", "value": True},
+            {"command": "VOID2", "value": 0},
+            {"command": "VOID3", "value": "units.ON"},
+        ],
+    }
+    assert _mapping_has_bidirectional_switch_intents(start_stop_only) is True
+    assert _is_menu_command_action(symbol="PARAM_PAIR", symbol_kinds={"read"}, mapping=start_stop_only) is True
+    assert _mapping_has_bidirectional_switch_intents(None) is False
+    assert _mapping_has_bidirectional_switch_intents({"command_rules": []}) is False
+    # One-sided SWITCH (lone RESET) must stay read-only — turn_off would resend RESET.
+    assert (
+        _is_menu_command_action(
+            symbol="PARAM_ALARM",
+            symbol_kinds={"read"},
+            mapping={
+                "component_type": "SWITCH",
+                "paths": {"command": []},
+                "command_rules": [{"command": "RESET_ALARM"}],
+            },
+        )
+        is False
+    )
+    # Named commands alone without ON/OFF intents stay read-only.
+    assert (
+        _is_menu_command_action(
+            symbol="PARAM_OTHER",
+            symbol_kinds={"read"},
+            mapping={"paths": {"command": []}, "command_rules": [{"command": "START_PUMP", "value": "maybe"}]},
+        )
+        is False
+    )
+
+
 def test_mapping_has_parameter_write_accepts_conditional_any_branch_targets() -> None:
     """Indoor-temp write cards keep paths.command empty and bind via command_rules/raw.any."""
     mapping = {
