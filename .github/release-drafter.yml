@@ -1,29 +1,68 @@
+# Release notes for GitHub Releases / HACS.
+# Use Unicode emoji in titles (🚀), not :shortcodes: — shortcodes often render
+# as literal text in GitHub Releases. Categories are exclusive (first match
+# wins) so a PR with bug+testing+docs does not appear three times. See #374.
+exclude-labels:
+  - "skip-changelog"
+  - "duplicate"
+  - "invalid"
+  - "wontfix"
+
 categories:
-  - title: ":boom: Breaking Changes"
+  - type: "pre-exclude"
+    when:
+      label: "skip-changelog"
+  - title: "💥 Breaking Changes"
     label: "breaking"
-  - title: ":rocket: Features"
+    exclusive: true
+  - title: "🚀 Features"
     label: "enhancement"
-  - title: ":fire: Removals and Deprecations"
+    exclusive: true
+  - title: "🔥 Removals and Deprecations"
     label: "removal"
-  - title: ":beetle: Fixes"
+    exclusive: true
+  - title: "🐛 Fixes"
     label: "bug"
-  - title: ":racehorse: Performance"
+    exclusive: true
+  - title: "⚡ Performance"
     label: "performance"
-  - title: ":rotating_light: Testing"
-    label: "testing"
-  - title: ":construction_worker: Continuous Integration"
-    label: "ci"
-  - title: ":books: Documentation"
+    exclusive: true
+  - title: "📚 Documentation"
     label: "documentation"
-  - title: ":hammer: Refactoring"
-    label: "refactoring"
-  - title: ":lipstick: Style"
-    label: "style"
-  - title: ":package: Dependencies"
+    exclusive: true
+  - title: "👷 Continuous Integration"
+    label: "ci"
+    exclusive: true
+    collapse-after: 5
+  - title: "📦 Dependencies"
     labels:
       - "dependencies"
       - "build"
-template: |
-  ## Changes
+    exclusive: true
+    # Lock-file churn is excluded via skip-changelog on Renovate.
+    collapse-after: 5
+  - title: "🔨 Refactoring"
+    label: "refactoring"
+    exclusive: true
+  - title: "🚨 Testing"
+    label: "testing"
+    exclusive: true
+    collapse-after: 5
+  - title: "💄 Style"
+    label: "style"
+    exclusive: true
 
+change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
+category-template: "### $TITLE"
+
+# Strip recurring non-user-facing chore lines that still slip into the draft.
+replacers:
+  - search: '/^- chore: bump integration(?: version)? to .*\n/gm'
+    replace: ""
+  - search: '/^- chore\(release\): bump manifest to .*\n/gm'
+    replace: ""
+  - search: '/^- chore\(deps\): lock file maintenance.*\n/gm'
+    replace: ""
+
+template: |
   $CHANGES

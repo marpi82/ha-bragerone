@@ -67,6 +67,9 @@
 - name: renovate
   description: Renovate dependency updates
   color: 1d76db
+- name: skip-changelog
+  description: Omit from release-drafter notes (lock-file / noise PRs)
+  color: edeeded
 - name: style
   description: Style
   color: c120e5
