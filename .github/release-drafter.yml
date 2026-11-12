@@ -1,56 +1,64 @@
 # Release notes for GitHub Releases / HACS.
 # Use Unicode emoji in titles (🚀), not :shortcodes: — shortcodes often render
 # as literal text in GitHub Releases. Categories are exclusive (first match
-# wins) so a PR with bug+testing+docs does not appear three times. See #374.
-exclude-labels:
-  - "skip-changelog"
-  - "duplicate"
-  - "invalid"
-  - "wontfix"
-
+# wins) so a PR with bug+testing+docs does not appear three times. See #374 / #376.
 categories:
   - type: "pre-exclude"
     when:
-      label: "skip-changelog"
+      - label: "skip-changelog"
+      - label: "duplicate"
+      - label: "invalid"
+      - label: "wontfix"
   - title: "💥 Breaking Changes"
-    label: "breaking"
     exclusive: true
+    when:
+      label: "breaking"
   - title: "🚀 Features"
-    label: "enhancement"
     exclusive: true
+    when:
+      label: "enhancement"
   - title: "🔥 Removals and Deprecations"
-    label: "removal"
     exclusive: true
+    when:
+      label: "removal"
   - title: "🐛 Fixes"
-    label: "bug"
     exclusive: true
+    when:
+      label: "bug"
   - title: "⚡ Performance"
-    label: "performance"
     exclusive: true
+    when:
+      label: "performance"
   - title: "📚 Documentation"
-    label: "documentation"
     exclusive: true
+    when:
+      label: "documentation"
   - title: "👷 Continuous Integration"
-    label: "ci"
     exclusive: true
     collapse-after: 5
+    when:
+      label: "ci"
   - title: "📦 Dependencies"
-    labels:
-      - "dependencies"
-      - "build"
     exclusive: true
     # Lock-file churn is excluded via skip-changelog on Renovate.
     collapse-after: 5
+    when:
+      labels:
+        - "dependencies"
+        - "build"
   - title: "🔨 Refactoring"
-    label: "refactoring"
     exclusive: true
+    when:
+      label: "refactoring"
   - title: "🚨 Testing"
-    label: "testing"
     exclusive: true
     collapse-after: 5
+    when:
+      label: "testing"
   - title: "💄 Style"
-    label: "style"
     exclusive: true
+    when:
+      label: "style"
 
 change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
 category-template: "### $TITLE"
