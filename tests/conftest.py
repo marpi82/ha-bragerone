@@ -58,17 +58,30 @@ def install_pybragerone_stubs() -> None:
     real_param_resolver_cls: type[Any] | None = None
     real_param_store_cls: type[Any] | None = None
     real_computed_value_evaluator_cls: type[Any] | None = None
+    real_date_time_is_unit: Any | None = None
+    real_date_time_parse: Any | None = None
+    real_date_time_format_server: Any | None = None
+    real_date_time_format_display: Any | None = None
     try:
+        import pybragerone.models.date_time as _real_date_time_mod
         import pybragerone.models.param as _real_param_mod
         import pybragerone.models.param_resolver as _real_param_resolver_mod
 
         real_param_resolver_cls = _real_param_resolver_mod.ParamResolver
         real_param_store_cls = _real_param_mod.ParamStore
         real_computed_value_evaluator_cls = _real_param_resolver_mod.ComputedValueEvaluator
+        real_date_time_is_unit = _real_date_time_mod.is_date_time_unit
+        real_date_time_parse = _real_date_time_mod.parse_server_date_time
+        real_date_time_format_server = _real_date_time_mod.format_server_date_time
+        real_date_time_format_display = _real_date_time_mod.format_display_date_time
     except ImportError:
         real_param_resolver_cls = None
         real_param_store_cls = None
         real_computed_value_evaluator_cls = None
+        real_date_time_is_unit = None
+        real_date_time_parse = None
+        real_date_time_format_server = None
+        real_date_time_format_display = None
 
     for module_name in list(sys.modules):
         if module_name == "pybragerone" or module_name.startswith("pybragerone."):
@@ -259,39 +272,102 @@ def install_pybragerone_stubs() -> None:
     pybragerone_models_token_stub.Token = _TokenStub
     sys.modules["pybragerone.models.token"] = pybragerone_models_token_stub
 
-    from datetime import datetime as _datetime
+    # Capture real DATE_TIME codec *before* wiping sys.modules (same pattern as ParamStore).
+    # After the empty ``pybragerone.models`` stub, a late import would always fail.
+    if real_date_time_parse is not None:
+        _stub_is_date_time_unit = real_date_time_is_unit
+        _stub_parse_server_date_time = real_date_time_parse
+        _stub_format_server_date_time = real_date_time_format_server
+        _stub_format_display_date_time = real_date_time_format_display
+    else:
+        from datetime import datetime as _datetime
 
-    def _stub_is_date_time_unit(*, unit_code: object = None, unit_meta: object = None) -> bool:
-        if isinstance(unit_code, str) and unit_code.strip().upper() in {"DATE_TIME", "9999"}:
-            return True
-        return bool(isinstance(unit_code, int) and unit_code in {9999})
+        def _stub_is_date_time_unit(*, unit_code: object = None, unit_meta: object = None) -> bool:
+            if isinstance(unit_code, str) and unit_code.strip().upper() in {"DATE_TIME", "9999"}:
+                return True
+            return bool(isinstance(unit_code, int) and unit_code in {9999})
 
-    def _stub_parse_server_date_time(raw: object) -> _datetime | None:
-        if raw is None:
-            return None
-        text = str(raw).strip()
-        if not text or text == "0001011200" or len(text) != 10 or not text.isdigit():
-            return None
-        try:
-            return _datetime.strptime(text, "%y%m%d%H%M")
-        except ValueError:
+        def _year_from_yy(yy: int) -> int:
+            return 2000 + yy if yy <= 60 else 1900 + yy
+
+        def _yy_from_year(year: int) -> int | None:
+            if 2000 <= year <= 2060:
+                return year - 2000
+            if 1961 <= year <= 1999:
+                return year - 1900
             return None
 
-    def _stub_format_server_date_time(value: object) -> str | None:
-        if isinstance(value, _datetime):
-            return value.strftime("%y%m%d%H%M")
-        if not isinstance(value, str):
-            return None
-        parsed = _stub_parse_server_date_time(value)
-        if parsed is not None:
-            return parsed.strftime("%y%m%d%H%M")
-        if value.isdigit() and len(value) == 10:
-            return value
-        return None
+        def _stub_parse_server_date_time(raw: object) -> _datetime | None:
+            if raw is None or isinstance(raw, bool):
+                return None
+            if isinstance(raw, _datetime):
+                if raw.tzinfo is not None:
+                    return None
+                return raw.replace(second=0, microsecond=0)
+            text = str(raw).strip()
+            if not text:
+                return None
+            if isinstance(raw, float) and raw.is_integer():
+                text = str(int(raw))
+            elif isinstance(raw, int):
+                text = str(raw)
+            if text.isdigit():
+                text = text.zfill(10)
+                if len(text) != 10:
+                    return None
+                try:
+                    yy = int(text[0:2])
+                    return _datetime(
+                        _year_from_yy(yy),
+                        int(text[2:4]),
+                        int(text[4:6]),
+                        int(text[6:8]),
+                        int(text[8:10]),
+                    )
+                except ValueError:
+                    return None
+            try:
+                return _datetime.strptime(text, "%Y/%m/%d %H:%M")
+            except ValueError:
+                return None
+
+        def _stub_format_server_date_time(value: object) -> str | None:
+            if isinstance(value, _datetime):
+                if value.tzinfo is not None:
+                    return None
+                truncated = value.replace(second=0, microsecond=0)
+                yy = _yy_from_year(truncated.year)
+                if yy is None:
+                    return None
+                return f"{yy:02d}{truncated.month:02d}{truncated.day:02d}{truncated.hour:02d}{truncated.minute:02d}"
+            if isinstance(value, int | float) and not isinstance(value, bool):
+                if isinstance(value, float) and not value.is_integer():
+                    return None
+                if int(value) < 0:
+                    return None
+                digits = str(int(value)).zfill(10)
+                return digits if _stub_parse_server_date_time(digits) is not None else None
+            if not isinstance(value, str):
+                return None
+            text = value.strip()
+            if not text:
+                return None
+            if text.isdigit():
+                digits = text.zfill(10) if 1 <= len(text) <= 10 else text
+                return digits if _stub_parse_server_date_time(digits) is not None else None
+            parsed = _stub_parse_server_date_time(text)
+            if parsed is None:
+                return None
+            return _stub_format_server_date_time(parsed)
+
+        def _stub_format_display_date_time(value: object) -> str | None:
+            parsed = _stub_parse_server_date_time(value)
+            return parsed.strftime("%Y/%m/%d %H:%M") if parsed is not None else None
 
     pybragerone_models_date_time_stub = types.ModuleType("pybragerone.models.date_time")
     pybragerone_models_date_time_stub.is_date_time_unit = _stub_is_date_time_unit
     pybragerone_models_date_time_stub.parse_server_date_time = _stub_parse_server_date_time
+    pybragerone_models_date_time_stub.format_display_date_time = _stub_format_display_date_time
     pybragerone_models_date_time_stub.format_server_date_time = _stub_format_server_date_time
     sys.modules["pybragerone.models.date_time"] = pybragerone_models_date_time_stub
 
