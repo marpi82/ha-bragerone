@@ -800,10 +800,12 @@ def descriptor_raw_to_label(descriptor: dict[str, Any]) -> dict[str, str]:
 
 
 def descriptor_enabled_by_default(descriptor: Mapping[str, Any]) -> bool:
-    """Return whether an entity should be enabled by default (#212).
+    """Return whether an entity should be enabled by default (#212 / #369).
 
-    Every permission-gated symbol still becomes an entity; only entities outside
-    the everyday web UI (or not SPA-visible) start disabled in the entity registry.
+    Every permission-gated symbol that bootstrap materialises still becomes an
+    entity. ``enabled_by_default`` is false for installer-only symbols and for
+    everyday-UI symbols SPA marks ``hidden:invisible`` (BV27). Feature gates
+    ``hidden:enabled`` / ``hidden:device-unavailable`` never reach a descriptor.
     """
     raw = descriptor.get(CONF_ENABLED_BY_DEFAULT, True)
     return bool(raw)

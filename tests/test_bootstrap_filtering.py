@@ -2258,6 +2258,135 @@ def test_async_build_bootstrap_payload_discovers_device_tile_tokens(
     assert "read" in by_symbol["URUCHOMIENIE_POMPY_CIEPLA"]["menu_kinds"]
 
 
+def test_async_build_bootstrap_payload_disables_invisible_device_tile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """deviceTile tokens with ``hidden:invisible`` are created disabled (#369)."""
+
+    class _FakeParamStore:
+        def ingest_prime_payload(self, _payload: dict[str, object]) -> None:
+            return None
+
+        def flatten(self) -> dict[str, object]:
+            return {"P30.v5": 21.5, "P4.v1": 1}
+
+        def flatten_for_devid(self, devid: str) -> dict[str, object]:
+            _ = devid
+            return self.flatten()
+
+    class _FakeResolver(_BootstrapResolverRouteStubMixin):
+        @classmethod
+        def from_api(cls, api: object, store: object, lang: object) -> _FakeResolver:
+            _ = api, store, lang
+            return cls()
+
+        async def build_panel_groups(
+            self,
+            *,
+            device_menu: str,
+            permissions: list[str] | None,
+            all_panels: bool,
+            web_ui_only: bool = False,
+            flat_values: object | None = None,
+        ) -> dict[str, list[str]]:
+            _ = device_menu, permissions, all_panels, web_ui_only, flat_values
+            return {"panel": ["PARAM_1"]}
+
+        async def discover_device_tile_parameter_tokens(self, *, devices: object | None = None) -> set[str]:
+            _ = devices
+            return {"PARAM_P30_5"}
+
+        async def describe_symbols(self, symbols: list[str]) -> dict[str, dict[str, object]]:
+            payloads: dict[str, dict[str, object]] = {
+                "PARAM_1": {
+                    "label": "Menu",
+                    "pool": "P4",
+                    "chan": "v",
+                    "idx": 1,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+                "PARAM_P30_5": {
+                    "label": "Indoor",
+                    "pool": "P30",
+                    "chan": "v",
+                    "idx": 5,
+                    "mapping": {},
+                    "min": None,
+                    "max": None,
+                    "unit": None,
+                },
+            }
+            return {symbol: payloads[symbol] for symbol in symbols if symbol in payloads}
+
+        def set_runtime_context(self, context: dict[str, object] | None) -> None:
+            _ = context
+
+        async def resolve_value(self, symbol: str) -> SimpleNamespace:
+            values = {"PARAM_1": 1, "PARAM_P30_5": 21.5}
+            return SimpleNamespace(value=values.get(symbol), value_label=None)
+
+        def parameter_visibility_diagnostics(
+            self,
+            *,
+            desc: dict[str, object],
+            resolved: object,
+            flat_values: dict[str, object],
+        ) -> tuple[bool, str]:
+            _ = resolved, flat_values
+            if desc.get("pool") == "P30":
+                return False, "hidden:invisible"
+            return True, "visible:default"
+
+    class _FakeGateway:
+        def model_dump(self, mode: str = "json") -> dict[str, object]:
+            _ = mode
+            return {}
+
+    class _FakeApi:
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            _ = object_id
+            return [
+                SimpleNamespace(
+                    devid="M1",
+                    name="Module 1",
+                    moduleTitle="Module 1",
+                    moduleVersion="1.0",
+                    gateway=_FakeGateway(),
+                    moduleInterface="if1",
+                    moduleAddress="addr1",
+                    permissions=["DISPLAY_PARAMETER_LEVEL_1"],
+                    deviceMenu="M1",
+                    connectedAt="now",
+                    devices=[],
+                )
+            ]
+
+        async def modules_parameters_prime(
+            self, module_ids: list[str], return_data: bool = False
+        ) -> tuple[int, dict[str, object]]:
+            _ = module_ids, return_data
+            return 200, {}
+
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _FakeResolver)
+
+    payload = asyncio.run(
+        async_build_bootstrap_payload(
+            api=cast(Any, _FakeApi()),  # type: ignore[arg-type]
+            object_id=1,
+            modules=["M1"],
+            language="en",
+        )
+    )
+    by_symbol = {item["symbol"]: item for item in payload["entity_descriptors"]}
+    assert by_symbol["PARAM_1"]["enabled_by_default"] is True
+    assert by_symbol["PARAM_P30_5"]["enabled_by_default"] is False
+    assert by_symbol["PARAM_P30_5"]["ui_route_symbol"] is True
+
+
 def test_async_build_bootstrap_payload_hides_disabled_device_tile_switch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
