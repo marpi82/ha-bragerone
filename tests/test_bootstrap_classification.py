@@ -665,6 +665,31 @@ def test_is_menu_command_action_accepts_tile_switch_named_commands() -> None:
         )
         is False
     )
+    # ``toggle`` component alias (line branch parity with ``switch``).
+    toggle_mapping = {
+        "component_type": "TOGGLE",
+        "paths": {"command": []},
+        "command_rules": [{"command": "START_PUMP", "value": "OFF"}],
+    }
+    assert _is_menu_command_action(symbol="PARAM_TILE_TOGGLE", symbol_kinds={"read"}, mapping=toggle_mapping) is True
+    # No component_type — still writable when ON/OFF rules + START/STOP command names.
+    switch_like = {
+        "paths": {"command": []},
+        "command_rules": [
+            {"logic": "any", "command": "STOP_PUMP", "value": "ON"},
+            {"logic": "any", "command": "START_PUMP", "value": "OFF"},
+        ],
+    }
+    assert _is_menu_command_action(symbol="PARAM_HP_START", symbol_kinds={"read"}, mapping=switch_like) is True
+    # Named commands alone without switch-like ON/OFF values stay read-only.
+    assert (
+        _is_menu_command_action(
+            symbol="PARAM_OTHER",
+            symbol_kinds={"read"},
+            mapping={"paths": {"command": []}, "command_rules": [{"command": "START_PUMP", "value": "maybe"}]},
+        )
+        is False
+    )
 
 
 def test_mapping_has_parameter_write_accepts_conditional_any_branch_targets() -> None:
