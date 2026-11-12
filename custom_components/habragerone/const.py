@@ -43,7 +43,7 @@ CONF_UPSTREAM_ASSETS_FINGERPRINT: Final = "upstream_assets_fingerprint"
 # 27: INVISIBLE→disabled / ENABLED omit (#369). Ship only with py-bragerone that
 # includes storeGetter ENABLED + connectedAt SPA null parity (#484); bump again
 # after that pin if a BV27 cache was already written under an older library.
-BOOTSTRAP_VERSION: Final = 27
+BOOTSTRAP_VERSION: Final = 28
 
 # Stable non-menu source key for module connectivity (SPA ``module.connection.*`` i18n).
 # Kept separate from menu-router paths so HA #165 can place these on a child device.

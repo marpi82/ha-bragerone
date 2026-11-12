@@ -267,31 +267,64 @@ def install_pybragerone_stubs() -> None:
         return bool(isinstance(unit_code, int) and unit_code in {9999})
 
     def _stub_parse_server_date_time(raw: object) -> _datetime | None:
-        if raw is None:
+        """Mirror library date-as-date factory default (#372 / py#487)."""
+        if raw is None or isinstance(raw, bool):
             return None
+        if isinstance(raw, _datetime):
+            if raw.tzinfo is not None:
+                return None
+            return raw.replace(second=0, microsecond=0)
         text = str(raw).strip()
-        if not text or text == "0001011200" or len(text) != 10 or not text.isdigit():
+        if not text:
             return None
+        if isinstance(raw, float) and raw.is_integer():
+            text = str(int(raw))
+        elif isinstance(raw, int):
+            text = str(raw)
+        if text.isdigit():
+            text = text.zfill(10)
+            if len(text) != 10:
+                return None
+            try:
+                return _datetime.strptime(text, "%y%m%d%H%M")
+            except ValueError:
+                return None
         try:
-            return _datetime.strptime(text, "%y%m%d%H%M")
+            return _datetime.strptime(text, "%Y/%m/%d %H:%M")
         except ValueError:
             return None
 
     def _stub_format_server_date_time(value: object) -> str | None:
         if isinstance(value, _datetime):
-            return value.strftime("%y%m%d%H%M")
+            if value.tzinfo is not None:
+                return None
+            return value.replace(second=0, microsecond=0).strftime("%y%m%d%H%M")
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            if isinstance(value, float) and not value.is_integer():
+                return None
+            if int(value) < 0:
+                return None
+            digits = str(int(value)).zfill(10)
+            return digits if _stub_parse_server_date_time(digits) is not None else None
         if not isinstance(value, str):
             return None
+        text = value.strip()
+        if not text:
+            return None
+        if text.isdigit():
+            digits = text.zfill(10) if 1 <= len(text) <= 10 else text
+            return digits if _stub_parse_server_date_time(digits) is not None else None
+        parsed = _stub_parse_server_date_time(text)
+        return parsed.strftime("%y%m%d%H%M") if parsed is not None else None
+
+    def _stub_format_display_date_time(value: object) -> str | None:
         parsed = _stub_parse_server_date_time(value)
-        if parsed is not None:
-            return parsed.strftime("%y%m%d%H%M")
-        if value.isdigit() and len(value) == 10:
-            return value
-        return None
+        return parsed.strftime("%Y/%m/%d %H:%M") if parsed is not None else None
 
     pybragerone_models_date_time_stub = types.ModuleType("pybragerone.models.date_time")
     pybragerone_models_date_time_stub.is_date_time_unit = _stub_is_date_time_unit
     pybragerone_models_date_time_stub.parse_server_date_time = _stub_parse_server_date_time
+    pybragerone_models_date_time_stub.format_display_date_time = _stub_format_display_date_time
     pybragerone_models_date_time_stub.format_server_date_time = _stub_format_server_date_time
     sys.modules["pybragerone.models.date_time"] = pybragerone_models_date_time_stub
 

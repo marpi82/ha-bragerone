@@ -119,7 +119,8 @@ async def test_datetime_will_remove_is_noop_without_listeners(hass: HomeAssistan
 
 
 @pytest.mark.asyncio
-async def test_datetime_unset_sentinel_yields_none(hass: HomeAssistant) -> None:
+async def test_datetime_factory_default_is_wall_clock(hass: HomeAssistant) -> None:
+    """Wire ``0001011200`` surfaces as ``2000-01-01 12:00`` local (date-as-date)."""
     runtime, *_rest = make_runtime(flat_values={"P9.v1": "0001011200"})
     descriptor = datetime_descriptor()
     entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
@@ -128,7 +129,7 @@ async def test_datetime_unset_sentinel_yields_none(hass: HomeAssistant) -> None:
     entity.entity_id = "datetime.test_vacation"
 
     await entity.async_update()
-    assert entity.native_value is None
+    assert entity.native_value == datetime(2000, 1, 1, 12, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)
     assert entity.available is True
 
 
