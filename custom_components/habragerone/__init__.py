@@ -33,7 +33,7 @@ from .const import (
 from .entity_common import (
     async_register_module_parent_devices,
     async_remove_legacy_connection_devices,
-    collect_resolver_warm_symbols,
+    collect_resolver_warm_targets,
 )
 from .runtime import BragerRuntime
 from .ssl_util import async_ssl_verify_context
@@ -180,9 +180,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         modules_meta=modules_meta if isinstance(modules_meta, dict) else {},
     )
 
-    warm_symbols = collect_resolver_warm_symbols(descriptor_sources)
-    if warm_symbols:
-        await runtime.async_warm_status_resolver(warm_symbols)
+    warm_targets = collect_resolver_warm_targets(descriptor_sources)
+    if warm_targets:
+        await runtime.async_warm_status_resolver(warm_targets)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

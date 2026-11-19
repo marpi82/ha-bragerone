@@ -32,32 +32,46 @@ from .const import (
     DEVICE_GROUPING_MODES,
     DOMAIN,
 )
+from .resolver_compat import devid_kwargs
 from .runtime import BragerRuntime
 from .status_rules import first_selector_address_value, select_raw_any_branch, status_rule_selector_addresses
 
 
-def collect_resolver_warm_symbols(items: Iterable[Any]) -> list[str]:
-    """Return symbol names that benefit from bulk ParamResolver prefetch at startup."""
-    symbols: list[str] = []
-    seen: set[str] = set()
+def collect_resolver_warm_targets(items: Iterable[Any]) -> list[tuple[str | None, str]]:
+    """Return unique ``(devid|None, symbol)`` pairs that benefit from ParamResolver warm-up at startup.
+
+    STATUS symbols and enum-unit symbols are included; the same symbol on two
+    modules yields two targets so labels never share a module-agnostic cache slot.
+    """
+    targets: list[tuple[str | None, str]] = []
+    seen: set[tuple[str | None, str]] = set()
     for item in items:
         if not isinstance(item, dict):
             continue
         symbol = str(item.get("symbol") or "").strip()
-        if not symbol or symbol in seen:
+        if not symbol:
+            continue
+        devid = str(item.get("devid") or "").strip() or None
+        key = (devid, symbol)
+        if key in seen:
             continue
         if symbol.startswith("STATUS_"):
-            seen.add(symbol)
-            symbols.append(symbol)
+            seen.add(key)
+            targets.append(key)
             continue
         mapping = item.get("mapping")
         if not isinstance(mapping, dict):
             continue
         channels = mapping.get("channels")
         if isinstance(channels, dict) and isinstance(channels.get("unit"), list) and channels.get("unit"):
-            seen.add(symbol)
-            symbols.append(symbol)
-    return symbols
+            seen.add(key)
+            targets.append(key)
+    return targets
+
+
+def collect_resolver_warm_symbols(items: Iterable[Any]) -> list[str]:
+    """Return unique symbol names that benefit from bulk ParamResolver prefetch at startup."""
+    return list(dict.fromkeys(symbol for _devid, symbol in collect_resolver_warm_targets(items)))
 
 
 def device_grouping_mode(entry: ConfigEntry) -> str:
@@ -343,15 +357,15 @@ def descriptor_current_raw_value(store: ParamStore, descriptor: dict[str, Any]) 
     from pybragerone.models.param_resolver import ParamResolver
 
     mapping = descriptor.get("mapping")
+    devid = str(descriptor.get("devid") or "").strip() or None
     compose = getattr(ParamResolver, "compose_mapping_register_value", None)
     if callable(compose) and isinstance(mapping, dict):
         entries = _mapping_value_selector_entries(mapping)
         if entries is not None and _address_selectors_need_compose(entries):
-            composed = compose(store, mapping)
+            composed = compose(store, mapping, **devid_kwargs(compose, devid))
             if composed is not None:
                 return composed
 
-    devid = str(descriptor.get("devid") or "").strip() or None
     if isinstance(mapping, dict):
         handled, active = _try_active_any_branch_value(store, mapping, devid=devid)
         if handled:

@@ -66,7 +66,7 @@ async def test_async_warm_status_resolver_noop_without_symbols(monkeypatch: pyte
 async def test_async_resolve_status_label_uses_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime, _api, _gateway, _store = make_runtime()
     monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
-    runtime._status_label_cache["STATUS_P5_0"] = "Cached"
+    runtime._status_label_cache[("", "STATUS_P5_0")] = "Cached"
 
     assert await runtime.async_resolve_status_label("STATUS_P5_0") == "Cached"
 
@@ -83,7 +83,7 @@ async def test_async_resolve_status_label_uses_value_label(monkeypatch: pytest.M
 @pytest.mark.asyncio
 async def test_peek_status_label_rejects_non_status_symbols() -> None:
     runtime, _api, _gateway, _store = make_runtime()
-    runtime._status_label_cache["STATUS_P5_0"] = "On"
+    runtime._status_label_cache[("", "STATUS_P5_0")] = "On"
 
     assert runtime.peek_status_label("PARAM_1") is None
     assert runtime.peek_status_label("STATUS_P5_0") == "On"
@@ -141,7 +141,7 @@ async def test_async_resolve_status_label_populates_cache_on_miss(monkeypatch: p
     monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
 
     assert await runtime.async_resolve_status_label("STATUS_P5_0") == "Ten"
-    assert runtime._status_label_cache["STATUS_P5_0"] == "Ten"
+    assert runtime._status_label_cache[("", "STATUS_P5_0")] == "Ten"
 
 
 @pytest.mark.asyncio
@@ -161,7 +161,7 @@ async def test_resolve_status_label_uncached_returns_raw_value(monkeypatch: pyte
 @pytest.mark.asyncio
 async def test_dispatch_updates_clears_status_label_cache() -> None:
     runtime, _api, gateway, _store = make_runtime()
-    runtime._status_label_cache["STATUS_P5_0"] = "On"
+    runtime._status_label_cache[("", "STATUS_P5_0")] = "On"
     cleared = asyncio.Event()
 
     def _listener(_update: FakeParamUpdate) -> None:
@@ -210,7 +210,7 @@ async def test_async_resolve_status_label_returns_none_for_unresolved(monkeypatc
     monkeypatch.setattr(runtime_module, "ParamResolver", _MissingStatusResolver)
 
     assert await runtime.async_resolve_status_label("STATUS_MISSING") is None
-    assert "STATUS_MISSING" not in runtime._status_label_cache
+    assert ("", "STATUS_MISSING") not in runtime._status_label_cache
 
 
 @pytest.mark.asyncio
@@ -401,3 +401,83 @@ async def test_dispatch_skips_store_upsert_when_value_is_none() -> None:
         assert store.flatten()["P6.v219"] == 1
     finally:
         await runtime.stop()
+
+
+class _DevidAwareResolver(_FakeResolver):
+    """Resolver whose label depends on the module (``devid``) it is asked about."""
+
+    def __init__(self) -> None:
+        super().__init__(None)
+        self.calls: list[tuple[str, str | None]] = []
+
+    @classmethod
+    def from_api(cls, api: object, store: object, lang: object) -> _DevidAwareResolver:
+        _ = api, store, lang
+        return cls()
+
+    async def resolve_value(self, symbol: str, *, devid: str | None = None) -> object | None:
+        self.calls.append((symbol, devid))
+        return SimpleNamespace(value=1, value_label=f"label-{devid}", unit="°C")
+
+
+def test_status_cache_key_normalizes_devid() -> None:
+    assert BragerRuntime._status_cache_key(None, "STATUS_P5_0") == ("", "STATUS_P5_0")
+    assert BragerRuntime._status_cache_key(" DEV1 ", "STATUS_P5_0") == ("DEV1", "STATUS_P5_0")
+
+
+@pytest.mark.asyncio
+async def test_status_labels_are_not_shared_between_devids(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same STATUS symbol on two modules must resolve and cache independently (#386 / py #502)."""
+    runtime, _api, _gateway, _store = make_runtime()
+    monkeypatch.setattr(runtime_module, "ParamResolver", _DevidAwareResolver)
+
+    assert await runtime.async_resolve_status_label("STATUS_P5_0", devid="DEV1") == "label-DEV1"
+    assert await runtime.async_resolve_status_label("STATUS_P5_0", devid="DEV2") == "label-DEV2"
+    # Second round is served from cache per devid.
+    assert await runtime.async_resolve_status_label("STATUS_P5_0", devid="DEV1") == "label-DEV1"
+
+    assert runtime.peek_status_label("STATUS_P5_0", devid="DEV1") == "label-DEV1"
+    assert runtime.peek_status_label("STATUS_P5_0", devid="DEV2") == "label-DEV2"
+    assert runtime.peek_status_label("STATUS_P5_0") is None
+    assert runtime._status_label_cache == {
+        ("DEV1", "STATUS_P5_0"): "label-DEV1",
+        ("DEV2", "STATUS_P5_0"): "label-DEV2",
+    }
+    assert isinstance(runtime._status_resolver, _DevidAwareResolver)
+    assert runtime._status_resolver.calls == [("STATUS_P5_0", "DEV1"), ("STATUS_P5_0", "DEV2")]
+
+
+@pytest.mark.asyncio
+async def test_warm_status_resolver_warms_per_devid_targets(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    monkeypatch.setattr(runtime_module, "ParamResolver", _DevidAwareResolver)
+
+    await runtime.async_warm_status_resolver(
+        [("DEV1", "STATUS_P5_0"), ("DEV2", "STATUS_P5_0"), ("DEV1", "STATUS_P5_0"), (None, " "), ("DEV2", "PARAM_14")]
+    )
+
+    assert runtime._status_resolver is not None
+    assert runtime._status_resolver.prefetched == ["STATUS_P5_0", "PARAM_14"]
+    assert runtime.peek_status_label("STATUS_P5_0", devid="DEV1") == "label-DEV1"
+    assert runtime.peek_status_label("STATUS_P5_0", devid="DEV2") == "label-DEV2"
+
+
+@pytest.mark.asyncio
+async def test_resolve_symbol_forwards_devid_to_resolver(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime, _api, _gateway, _store = make_runtime()
+    monkeypatch.setattr(runtime_module, "ParamResolver", _DevidAwareResolver)
+
+    assert await runtime.async_resolve_symbol_value("PARAM_1", devid="DEV2") == "label-DEV2"
+    value, unit = await runtime.async_resolve_symbol_with_unit("PARAM_1", devid="DEV1")
+    assert (value, unit) == ("label-DEV1", "°C")
+    assert isinstance(runtime._status_resolver, _DevidAwareResolver)
+    assert runtime._status_resolver.calls == [("PARAM_1", "DEV2"), ("PARAM_1", "DEV1")]
+
+
+@pytest.mark.asyncio
+async def test_resolve_symbol_skips_devid_for_legacy_resolver_signature(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Installed py-bragerone without ``devid`` support must keep working until the pin bump."""
+    runtime, _api, _gateway, _store = make_runtime()
+    monkeypatch.setattr(runtime_module, "ParamResolver", _FakeResolver)
+
+    assert await runtime.async_resolve_symbol_value("PARAM_1", devid="DEV1") == "Ten"

@@ -24,6 +24,7 @@ from .const import (
     DOMAIN,
 )
 from .entity_common import (
+    _scoped_flat_values,
     attach_route_visibility_listener,
     attach_transport_availability_listener,
     descriptor_current_raw_value,
@@ -175,7 +176,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
             self._attr_available = entity_is_available(
                 self._runtime,
                 devid=self._devid,
-                has_value=raw_value is not None or self._runtime.peek_status_label(self._symbol) is not None,
+                has_value=raw_value is not None or self._runtime.peek_status_label(self._symbol, devid=self._devid) is not None,
                 descriptor=self._descriptor,
             )
             self.async_write_ha_state()
@@ -186,14 +187,14 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         """Apply on/off from pre-warmed STATUS labels without scheduling ``async_update``."""
         if not self._symbol.startswith("STATUS_"):
             return False
-        cached = self._runtime.peek_status_label(self._symbol)
+        cached = self._runtime.peek_status_label(self._symbol, devid=self._devid)
         if cached is None:
             return False
         resolved_bool = status_label_to_bool(cached)
         if resolved_bool is None:
             resolved_bool = resolve_entity_bool(
                 descriptor=self._descriptor,
-                flat_values=self._runtime.store.flatten(),
+                flat_values=_scoped_flat_values(self._runtime.store, self._devid),
                 default_actual=raw_value if raw_value is not None else cached,
             )
         self._attr_is_on = resolved_bool
@@ -201,7 +202,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
 
     def _try_apply_binary_state_sync(self, raw_value: Any) -> bool:
         """Apply on/off from ParamStore without ``ParamResolver`` when possible."""
-        flat_values = self._runtime.store.flatten()
+        flat_values = _scoped_flat_values(self._runtime.store, self._devid)
         if self._symbol.startswith("STATUS_"):
             resolved = try_resolve_status_binary_sync(
                 descriptor=self._descriptor,
@@ -252,7 +253,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
         # STATUS_* diodes (e.g. PumpState) with value maps / dual-bit inputs need the SPA
         # ComputedValueEvaluator — cached command_rules alone are not always enough.
         if self._symbol.startswith("STATUS_"):
-            resolved = await self._runtime.async_resolve_status_label(self._symbol)
+            resolved = await self._runtime.async_resolve_status_label(self._symbol, devid=self._devid)
             resolved_bool = status_label_to_bool(resolved)
             if resolved_bool is not None:
                 self._attr_is_on = resolved_bool
@@ -260,7 +261,7 @@ class BragerStatusBinarySensor(BinarySensorEntity):
 
         self._attr_is_on = resolve_entity_bool(
             descriptor=self._descriptor,
-            flat_values=self._runtime.store.flatten(),
+            flat_values=_scoped_flat_values(self._runtime.store, self._devid),
             default_actual=raw_value,
         )
 

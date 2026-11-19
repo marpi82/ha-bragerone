@@ -152,7 +152,7 @@ async def test_binary_sensor_try_apply_sync_returns_false_without_sync_path(hass
 @pytest.mark.asyncio
 async def test_binary_sensor_added_to_hass_uses_prewarmed_status_label(hass: HomeAssistant) -> None:
     runtime, *_rest = make_runtime(flat_values={"P5.s11": 64.0})
-    runtime._status_label_cache["STATUS_P5_11"] = "On"
+    runtime._status_label_cache[("DEV1", "STATUS_P5_11")] = "On"
     descriptor = binary_sensor_descriptor(
         symbol="STATUS_P5_11",
         pool="P5",
@@ -177,7 +177,7 @@ async def test_binary_sensor_added_to_hass_uses_prewarmed_status_label(hass: Hom
 @pytest.mark.asyncio
 async def test_binary_sensor_status_label_cache_falls_back_to_entity_bool(hass: HomeAssistant) -> None:
     runtime, *_rest = make_runtime(flat_values={"P5.s11": 66.0})
-    runtime._status_label_cache["STATUS_P5_11"] = "unknown-state"
+    runtime._status_label_cache[("DEV1", "STATUS_P5_11")] = "unknown-state"
     descriptor = binary_sensor_descriptor(
         symbol="STATUS_P5_11",
         pool="P5",
@@ -206,7 +206,7 @@ async def test_binary_sensor_status_label_cache_returns_false_without_entry(hass
 @pytest.mark.asyncio
 async def test_binary_sensor_added_to_hass_uses_cache_without_raw_value(hass: HomeAssistant) -> None:
     runtime, *_rest = make_runtime(flat_values={})
-    runtime._status_label_cache["STATUS_P5_11"] = "On"
+    runtime._status_label_cache[("DEV1", "STATUS_P5_11")] = "On"
     descriptor = binary_sensor_descriptor(symbol="STATUS_P5_11", pool="P5", chan="s", idx=11)
     entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
     entity = BragerStatusBinarySensor(entry=entry, runtime=runtime, descriptor=descriptor)

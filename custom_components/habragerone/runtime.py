@@ -27,6 +27,7 @@ from .outage_attrs import (
     outage_snapshot_has_values,
     sanitize_connectivity_episodes,
 )
+from .resolver_compat import resolve_value_for_devid
 
 
 def _import_alarm_name_helpers() -> tuple[Any, Any]:
@@ -89,7 +90,7 @@ class BragerRuntime:
     _first_update_logged: bool = False
     _status_resolver: ParamResolver | None = None
     _resolver_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    _status_label_cache: dict[str, Any] = field(default_factory=dict)
+    _status_label_cache: dict[tuple[str, str], Any] = field(default_factory=dict)
     _alarms_current: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _alarms_history: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _alarm_chrome_labels: dict[str, str] | None = None
@@ -1321,63 +1322,82 @@ class BragerRuntime:
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
-    async def async_warm_status_resolver(self, symbols: Iterable[str] | None = None) -> None:
-        """Build ``ParamResolver``, prefetch mappings, and pre-resolve STATUS labels (#204)."""
-        symbol_list = list(dict.fromkeys(str(symbol).strip() for symbol in (symbols or []) if str(symbol).strip()))
-        if not symbol_list:
+    @staticmethod
+    def _status_cache_key(devid: str | None, symbol: str) -> tuple[str, str]:
+        """Return the STATUS label cache key ``(devid_or_empty, symbol)``."""
+        return (str(devid or "").strip(), symbol)
+
+    async def async_warm_status_resolver(self, targets: Iterable[tuple[str | None, str] | str] | None = None) -> None:
+        """Build ``ParamResolver``, prefetch mappings, and pre-resolve STATUS labels per module (#204, #386).
+
+        Args:
+            targets: ``(devid|None, symbol)`` pairs (see ``collect_resolver_warm_targets``).
+                Bare symbol strings are accepted and treated as module-agnostic (``devid=None``).
+        """
+        target_list: list[tuple[str | None, str]] = []
+        for target in targets or []:
+            devid, symbol = (None, target) if isinstance(target, str) else target
+            symbol_text = str(symbol).strip()
+            if not symbol_text:
+                continue
+            pair = (str(devid).strip() or None if devid is not None else None, symbol_text)
+            if pair not in target_list:
+                target_list.append(pair)
+        if not target_list:
             return
         resolver = await self._async_get_resolver()
         if resolver is None:
             return
         try:
-            await resolver.prefetch_param_mappings(symbol_list)
-            status_symbols = [symbol for symbol in symbol_list if symbol.startswith("STATUS_")]
-            if not status_symbols:
+            await resolver.prefetch_param_mappings(list(dict.fromkeys(symbol for _devid, symbol in target_list)))
+            status_targets = [pair for pair in target_list if pair[1].startswith("STATUS_")]
+            if not status_targets:
                 return
             semaphore = asyncio.Semaphore(16)
 
-            async def _resolve_one(symbol: str) -> None:
+            async def _resolve_one(devid: str | None, symbol: str) -> None:
                 async with semaphore:
-                    label = await self._resolve_status_label_uncached(symbol, resolver=resolver)
+                    label = await self._resolve_status_label_uncached(symbol, devid=devid, resolver=resolver)
                 if label is not None:
-                    self._status_label_cache[symbol] = label
+                    self._status_label_cache[self._status_cache_key(devid, symbol)] = label
 
             async with asyncio.TaskGroup() as group:
-                for symbol in status_symbols:
-                    group.create_task(_resolve_one(symbol))
+                for devid, symbol in status_targets:
+                    group.create_task(_resolve_one(devid, symbol))
         except Exception:
             LOGGER.debug("STATUS resolver warm-up failed; continuing without prefetch", exc_info=True)
 
-    def peek_status_label(self, symbol: str) -> Any | None:
+    def peek_status_label(self, symbol: str, *, devid: str | None = None) -> Any | None:
         """Return a pre-warmed STATUS label without triggering resolver I/O."""
         if not symbol.startswith("STATUS_"):
             return None
-        return self._status_label_cache.get(symbol)
+        return self._status_label_cache.get(self._status_cache_key(devid, symbol))
 
-    async def async_resolve_status_label(self, symbol: str) -> Any | None:
+    async def async_resolve_status_label(self, symbol: str, *, devid: str | None = None) -> Any | None:
         """Resolve STATUS_* value exactly as parser/UI logic does."""
         if not symbol.startswith("STATUS_"):
             return None
-        cached = self._status_label_cache.get(symbol)
+        key = self._status_cache_key(devid, symbol)
+        cached = self._status_label_cache.get(key)
         if cached is not None:
             return cached
-        label = await self._resolve_status_label_uncached(symbol)
+        label = await self._resolve_status_label_uncached(symbol, devid=devid)
         if label is not None:
-            self._status_label_cache[symbol] = label
+            self._status_label_cache[key] = label
         return label
 
-    async def async_resolve_symbol_value(self, symbol: str) -> Any | None:
+    async def async_resolve_symbol_value(self, symbol: str, *, devid: str | None = None) -> Any | None:
         """Resolve symbol value using parser rules and dynamic unit transforms."""
-        resolved = await self._async_resolve_symbol(symbol)
+        resolved = await self._async_resolve_symbol(symbol, devid=devid)
         if resolved is None:
             return None
         if isinstance(resolved.value_label, str) and resolved.value_label.strip():
             return resolved.value_label.strip()
         return resolved.value
 
-    async def async_resolve_symbol_with_unit(self, symbol: str) -> tuple[Any | None, Any | None]:
+    async def async_resolve_symbol_with_unit(self, symbol: str, *, devid: str | None = None) -> tuple[Any | None, Any | None]:
         """Resolve symbol value and unit using parser rules."""
-        resolved = await self._async_resolve_symbol(symbol)
+        resolved = await self._async_resolve_symbol(symbol, devid=devid)
         if resolved is None:
             return None, None
         value: Any = (
@@ -1405,9 +1425,10 @@ class BragerRuntime:
         self,
         symbol: str,
         *,
+        devid: str | None = None,
         resolver: ParamResolver | None = None,
     ) -> Any | None:
-        resolved = await self._async_resolve_symbol(symbol, resolver=resolver)
+        resolved = await self._async_resolve_symbol(symbol, devid=devid, resolver=resolver)
         if resolved is None:
             return None
         if isinstance(resolved.value_label, str) and resolved.value_label.strip():
@@ -1418,13 +1439,14 @@ class BragerRuntime:
         self,
         symbol: str,
         *,
+        devid: str | None = None,
         resolver: ParamResolver | None = None,
     ) -> Any | None:
         active_resolver = resolver or await self._async_get_resolver()
         if active_resolver is None:
             return None
         try:
-            return await active_resolver.resolve_value(symbol)
+            return await resolve_value_for_devid(active_resolver, symbol, devid=devid)
         except Exception:
             return None
 

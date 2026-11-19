@@ -13,6 +13,7 @@ from pybragerone.models.events import ParamUpdate
 
 from .const import DOMAIN
 from .entity_common import (
+    _scoped_flat_values,
     attach_route_visibility_listener,
     attach_transport_availability_listener,
     descriptor_current_raw_value,
@@ -130,7 +131,7 @@ class BragerSymbolSwitch(SwitchEntity):
             return
         self._attr_is_on = resolve_entity_bool(
             descriptor=self._descriptor,
-            flat_values=self._runtime.store.flatten(),
+            flat_values=_scoped_flat_values(self._runtime.store, self._devid),
             default_actual=raw_value,
         )
 
