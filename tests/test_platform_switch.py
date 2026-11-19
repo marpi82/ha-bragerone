@@ -204,3 +204,36 @@ async def test_switch_runtime_update_schedules_refresh_for_matching_key(hass: Ho
     bare = BragerSymbolSwitch(entry=entry, runtime=runtime, descriptor=descriptor)
     await bare.async_will_remove_from_hass()
     assert bare._unsubscribe_connectivity is None
+
+
+@pytest.mark.asyncio
+async def test_switch_gate_uses_own_module_registers_when_addresses_overlap(hass: HomeAssistant) -> None:
+    """Two modules share ``P5.s0``: DEV1 bit0=0 (off) must not read DEV2's bit0=1 (#386)."""
+    runtime, *_rest = make_runtime()
+    store = runtime.store
+    store.upsert("P5.s0", 64, devid="DEV1")
+    store.upsert("P5.s0", 65, devid="DEV2")  # last write wins in merged flatten()
+    assert store.flatten()["P5.s0"] == 65
+    rules = [
+        {
+            "conditions": [{"operation": "equalTo", "expected": 0, "targets": [{"address": "P5.s0", "bit": 0}]}],
+            "command": "BOILER_START",
+            "value": "OFF",
+        },
+        {
+            "conditions": [{"operation": "equalTo", "expected": 1, "targets": [{"address": "P5.s0", "bit": 0}]}],
+            "command": "BOILER_STOP",
+            "value": "ON",
+        },
+    ]
+    descriptors = [command_rule_descriptor(platform="switch", devid=devid, command_rules=rules) for devid in ("DEV1", "DEV2")]
+    entry = register_config_entry(hass, runtime=runtime, descriptors=descriptors)
+    entities = []
+    for descriptor in descriptors:
+        entity = BragerSymbolSwitch(entry=entry, runtime=runtime, descriptor=descriptor)
+        entity.hass = hass
+        entity.entity_id = f"switch.test_{descriptor['devid'].lower()}"
+        await entity.async_update()
+        entities.append(entity)
+
+    assert [entity.is_on for entity in entities] == [False, True]

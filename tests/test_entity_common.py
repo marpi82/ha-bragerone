@@ -1149,3 +1149,36 @@ async def test_async_remove_legacy_connection_devices_keeps_populated_legacy_dev
     await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
 
     assert device_registry.async_get_device_by_identifier((DOMAIN, "DEV1:module.connection"), entry.entry_id) is not None
+
+
+def test_descriptor_current_raw_value_skips_devid_for_legacy_compose_signature() -> None:
+    """Installed py-bragerone without ``devid`` on compose keeps the two-argument call until the pin bump."""
+    from pybragerone.models import param_resolver as resolver_mod
+
+    original = resolver_mod.ParamResolver.compose_mapping_register_value
+    seen: list[tuple[object, ...]] = []
+
+    def _compose(store: object, mapping: object) -> int | float | None:
+        seen.append((store, mapping))
+        return 55
+
+    resolver_mod.ParamResolver.compose_mapping_register_value = staticmethod(_compose)
+    try:
+        descriptor = {
+            "devid": "DEV2",
+            "pool": "P4",
+            "chan": "v",
+            "idx": 59,
+            "mapping": {
+                "paths": {
+                    "value": [
+                        {"group": "P4", "number": 59, "use": "v", "convert": "_x"},
+                        {"group": "P4", "number": 60, "use": "v", "convert": "_x", "times": 65536},
+                    ],
+                },
+            },
+        }
+        assert descriptor_current_raw_value(FakeStore(flat_values={}), descriptor) == 55
+        assert len(seen) == 1
+    finally:
+        resolver_mod.ParamResolver.compose_mapping_register_value = original
