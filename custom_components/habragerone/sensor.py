@@ -25,6 +25,7 @@ from pybragerone.models.events import ParamUpdate
 
 from .const import DOMAIN
 from .entity_common import (
+    _scoped_flat_values,
     attach_route_visibility_listener,
     attach_transport_availability_listener,
     descriptor_current_raw_value,
@@ -151,7 +152,7 @@ class BragerSymbolSensor(SensorEntity):
         """Set first state synchronously when rules or pre-warmed labels allow it."""
         raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
         has_value = raw_value is not None
-        if self._is_status_symbol and self._runtime.peek_status_label(self._symbol) is not None:
+        if self._is_status_symbol and self._runtime.peek_status_label(self._symbol, devid=self._devid) is not None:
             has_value = True
         self._attr_available = entity_is_available(
             self._runtime,
@@ -166,7 +167,7 @@ class BragerSymbolSensor(SensorEntity):
         # Also never commit local rule evaluation here: incomplete flat_values after
         # restart can match CLEANING until ParamResolver runs in async_update.
         if self._is_status_symbol:
-            cached = self._runtime.peek_status_label(self._symbol)
+            cached = self._runtime.peek_status_label(self._symbol, devid=self._devid)
             if cached is not None:
                 self._attr_native_value = self._display_from_resolved(cached)
                 return True
@@ -178,7 +179,7 @@ class BragerSymbolSensor(SensorEntity):
                 return True
             mapped_rule = resolve_rule_display_value(
                 descriptor=self._descriptor,
-                flat_values=self._runtime.store.flatten(),
+                flat_values=_scoped_flat_values(self._runtime.store, self._devid),
                 default_actual=raw_value,
             )
             if mapped_rule is not None:
@@ -216,7 +217,7 @@ class BragerSymbolSensor(SensorEntity):
         """Fetch latest value from ParamStore (no heavy resolver call)."""
         raw_value = descriptor_current_raw_value(self._runtime.store, self._descriptor)
         has_value = raw_value is not None
-        if self._is_status_symbol and self._runtime.peek_status_label(self._symbol) is not None:
+        if self._is_status_symbol and self._runtime.peek_status_label(self._symbol, devid=self._devid) is not None:
             has_value = True
         self._attr_available = entity_is_available(
             self._runtime,
@@ -227,7 +228,7 @@ class BragerSymbolSensor(SensorEntity):
         if self._requires_resolver_value:
             if raw_value is None:
                 return
-            resolved_value, resolved_unit = await self._runtime.async_resolve_symbol_with_unit(self._symbol)
+            resolved_value, resolved_unit = await self._runtime.async_resolve_symbol_with_unit(self._symbol, devid=self._devid)
             normalized_dynamic_unit = self._normalize_unit(resolved_unit)
             if normalized_dynamic_unit:
                 self._attr_native_unit_of_measurement = normalized_dynamic_unit
@@ -236,7 +237,7 @@ class BragerSymbolSensor(SensorEntity):
                 self._attr_native_value = _normalize_text_state(resolved_value)
                 return
         if self._is_status_symbol:
-            resolved_status = await self._runtime.async_resolve_status_label(self._symbol)
+            resolved_status = await self._runtime.async_resolve_status_label(self._symbol, devid=self._devid)
             if resolved_status is not None:
                 self._attr_native_value = self._display_from_resolved(resolved_status)
                 self._attr_available = entity_is_available(
@@ -250,7 +251,7 @@ class BragerSymbolSensor(SensorEntity):
                 return
             mapped_value = resolve_rule_display_value(
                 descriptor=self._descriptor,
-                flat_values=self._runtime.store.flatten(),
+                flat_values=_scoped_flat_values(self._runtime.store, self._devid),
                 default_actual=raw_value,
             )
             if mapped_value is not None:
@@ -268,7 +269,7 @@ class BragerSymbolSensor(SensorEntity):
             return
         mapped_value = resolve_rule_display_value(
             descriptor=self._descriptor,
-            flat_values=self._runtime.store.flatten(),
+            flat_values=_scoped_flat_values(self._runtime.store, self._devid),
             default_actual=raw_value,
         )
         if mapped_value is not None:

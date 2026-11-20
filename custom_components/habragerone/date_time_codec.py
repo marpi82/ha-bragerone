@@ -2,7 +2,7 @@
 
 Keep this module as the integration import path so platform code stays stable;
 Luxon ``yy`` cutoff and factory-default wall-clock semantics live in the library
-pin (``py-bragerone==2026.11.1``, #372 / #487).
+pin (``py-bragerone>=2026.11.1``, #372 / #487; see ``manifest.json``).
 """
 
 from __future__ import annotations

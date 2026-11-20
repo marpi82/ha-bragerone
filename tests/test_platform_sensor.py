@@ -171,7 +171,7 @@ async def test_sensor_update_maps_status_companion_via_slot_raw_to_label(hass: H
         add_listener=lambda _cb: lambda: None,
         module_online=lambda _devid: None,
         async_resolve_status_label=resolve_status,
-        peek_status_label=lambda _symbol: None,
+        peek_status_label=lambda _symbol, **_kw: None,
         cloud_session_connected=True,
         live_push_healthy=True,
     )
@@ -203,7 +203,7 @@ async def test_sensor_update_uses_status_resolver_for_status_symbols(hass: HomeA
         add_listener=lambda _cb: lambda: None,
         module_online=lambda _devid: None,
         async_resolve_status_label=resolve_status,
-        peek_status_label=lambda _symbol: None,
+        peek_status_label=lambda _symbol, **_kw: None,
     )
     descriptor = sensor_descriptor(symbol="STATUS_BOILER", pool="P5", chan="s", idx=5, unit=None)
     entry = register_config_entry(hass, runtime=make_runtime()[0], descriptors=[descriptor])
@@ -214,7 +214,7 @@ async def test_sensor_update_uses_status_resolver_for_status_symbols(hass: HomeA
     await entity.async_update()
 
     assert entity.native_value == "work"
-    resolve_status.assert_awaited_once_with("STATUS_BOILER")
+    resolve_status.assert_awaited_once_with("STATUS_BOILER", devid="DEV1")
 
 
 @pytest.mark.asyncio
@@ -229,7 +229,7 @@ async def test_status_sensor_ignores_boiler_state_map_on_pool_register(hass: Hom
         cloud_session_up=True,
         live_push_healthy=True,
         async_resolve_status_label=resolve_status,
-        peek_status_label=lambda _symbol: None,
+        peek_status_label=lambda _symbol, **_kw: None,
         route_visible_for_symbol=lambda *_a, **_k: True,
     )
     descriptor = sensor_descriptor(
@@ -262,7 +262,7 @@ async def test_status_sensor_ignores_boiler_state_map_on_pool_register(hass: Hom
     await entity.async_update()
 
     assert entity.native_value == "praca"
-    resolve_status.assert_awaited_once_with("STATUS_P5_0")
+    resolve_status.assert_awaited_once_with("STATUS_P5_0", devid="DEV1")
 
 
 @pytest.mark.asyncio
@@ -277,7 +277,7 @@ async def test_status_sensor_maps_resolved_raw_code_via_unit_table(hass: HomeAss
         cloud_session_up=True,
         live_push_healthy=True,
         async_resolve_status_label=resolve_status,
-        peek_status_label=lambda _symbol: None,
+        peek_status_label=lambda _symbol, **_kw: None,
         route_visible_for_symbol=lambda *_a, **_k: True,
     )
     descriptor = sensor_descriptor(
@@ -296,7 +296,7 @@ async def test_status_sensor_maps_resolved_raw_code_via_unit_table(hass: HomeAss
     await entity.async_update()
 
     assert entity.native_value == "praca"
-    resolve_status.assert_awaited_once_with("STATUS_P5_0")
+    resolve_status.assert_awaited_once_with("STATUS_P5_0", devid="DEV1")
 
 
 @pytest.mark.asyncio
@@ -310,7 +310,7 @@ async def test_status_sensor_falls_back_to_rules_when_resolver_misses(hass: Home
         cloud_session_up=True,
         live_push_healthy=True,
         async_resolve_status_label=resolve_status,
-        peek_status_label=lambda _symbol: None,
+        peek_status_label=lambda _symbol, **_kw: None,
         route_visible_for_symbol=lambda *_a, **_k: True,
     )
     descriptor = sensor_descriptor(
@@ -330,7 +330,7 @@ async def test_status_sensor_falls_back_to_rules_when_resolver_misses(hass: Home
     await entity.async_update()
 
     assert entity.native_value == "podtrzymanie"
-    resolve_status.assert_awaited_once_with("STATUS_P5_0")
+    resolve_status.assert_awaited_once_with("STATUS_P5_0", devid="DEV1")
 
 
 @pytest.mark.asyncio
@@ -344,7 +344,7 @@ async def test_status_sensor_keeps_raw_pool_when_resolver_and_rules_miss(hass: H
         cloud_session_up=True,
         live_push_healthy=True,
         async_resolve_status_label=resolve_status,
-        peek_status_label=lambda _symbol: None,
+        peek_status_label=lambda _symbol, **_kw: None,
         route_visible_for_symbol=lambda *_a, **_k: True,
     )
     descriptor = sensor_descriptor(
@@ -365,7 +365,7 @@ async def test_status_sensor_keeps_raw_pool_when_resolver_and_rules_miss(hass: H
 
     # Must not become "czyszczenie" via BOILER_STATE map of the pool register.
     assert entity.native_value == 1
-    resolve_status.assert_awaited_once_with("STATUS_P5_0")
+    resolve_status.assert_awaited_once_with("STATUS_P5_0", devid="DEV1")
 
 
 @pytest.mark.asyncio
@@ -379,7 +379,7 @@ async def test_status_sensor_update_returns_when_resolver_misses_without_raw(has
         cloud_session_up=True,
         live_push_healthy=True,
         async_resolve_status_label=resolve_status,
-        peek_status_label=lambda _symbol: None,
+        peek_status_label=lambda _symbol, **_kw: None,
         route_visible_for_symbol=lambda *_a, **_k: True,
     )
     descriptor = sensor_descriptor(symbol="STATUS_P5_0", pool="P5", chan="s", idx=0, unit=None)
@@ -392,7 +392,7 @@ async def test_status_sensor_update_returns_when_resolver_misses_without_raw(has
     await entity.async_update()
 
     assert entity.native_value == "stale"
-    resolve_status.assert_awaited_once_with("STATUS_P5_0")
+    resolve_status.assert_awaited_once_with("STATUS_P5_0", devid="DEV1")
 
 
 @pytest.mark.asyncio
@@ -406,7 +406,7 @@ async def test_status_sensor_update_uses_peek_for_availability_without_raw(hass:
         cloud_session_up=True,
         live_push_healthy=True,
         async_resolve_status_label=resolve_status,
-        peek_status_label=lambda _symbol: "Praca",
+        peek_status_label=lambda _symbol, **_kw: "Praca",
         route_visible_for_symbol=lambda *_a, **_k: True,
     )
     descriptor = sensor_descriptor(symbol="STATUS_P5_0", pool="P5", chan="s", idx=0, unit=None)
@@ -451,7 +451,7 @@ async def test_status_sensor_initial_sync_defers_rules_without_cache(hass: HomeA
 @pytest.mark.asyncio
 async def test_status_sensor_initial_sync_skips_misleading_unit_map(hass: HomeAssistant) -> None:
     runtime, *_rest = make_runtime(flat_values={"P5.s0": 2})
-    runtime._status_label_cache["STATUS_P5_0"] = "Podtrzymanie"
+    runtime._status_label_cache[("DEV1", "STATUS_P5_0")] = "Podtrzymanie"
     descriptor = sensor_descriptor(
         symbol="STATUS_P5_0",
         pool="P5",
@@ -478,7 +478,7 @@ async def test_status_sensor_initial_sync_skips_misleading_unit_map(hass: HomeAs
 @pytest.mark.asyncio
 async def test_sensor_added_to_hass_uses_prewarmed_status_label(hass: HomeAssistant) -> None:
     runtime, *_rest = make_runtime(flat_values={"P5.s5": 768})
-    runtime._status_label_cache["STATUS_BOILER"] = "Work"
+    runtime._status_label_cache[("DEV1", "STATUS_BOILER")] = "Work"
     descriptor = sensor_descriptor(symbol="STATUS_BOILER", pool="P5", chan="s", idx=5, unit=None)
     entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
     entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)
@@ -540,7 +540,7 @@ async def test_sensor_initial_sync_defers_status_rule_display_value(hass: HomeAs
 @pytest.mark.asyncio
 async def test_sensor_initial_sync_uses_cache_without_raw_value(hass: HomeAssistant) -> None:
     runtime, *_rest = make_runtime(flat_values={})
-    runtime._status_label_cache["STATUS_BOILER"] = "Work"
+    runtime._status_label_cache[("DEV1", "STATUS_BOILER")] = "Work"
     descriptor = sensor_descriptor(symbol="STATUS_BOILER", pool="P5", chan="s", idx=5, unit=None)
     entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
     entity = BragerSymbolSensor(entry=entry, runtime=runtime, descriptor=descriptor)
@@ -605,7 +605,7 @@ async def test_sensor_update_uses_dynamic_unit_resolver(hass: HomeAssistant) -> 
     assert entity.native_unit_of_measurement == "%"
     assert entity._attr_device_class is None
     assert entity._attr_state_class == SensorStateClass.MEASUREMENT
-    resolve_with_unit.assert_awaited_once_with("PARAM16_2")
+    resolve_with_unit.assert_awaited_once_with("PARAM16_2", devid="DEV1")
 
 
 @pytest.mark.asyncio
@@ -619,7 +619,7 @@ async def test_sensor_dynamic_unit_resolver_returns_when_raw_missing(hass: HomeA
         cloud_session_up=True,
         live_push_healthy=True,
         async_resolve_symbol_with_unit=resolve_with_unit,
-        peek_status_label=lambda _symbol: None,
+        peek_status_label=lambda _symbol, **_kw: None,
         route_visible_for_symbol=lambda *_a, **_k: True,
     )
     descriptor = sensor_descriptor(

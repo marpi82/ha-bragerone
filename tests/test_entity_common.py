@@ -32,6 +32,7 @@ from custom_components.habragerone.entity_common import (  # noqa: E402
     async_remove_legacy_connection_devices,
     attach_route_visibility_listener,
     collect_resolver_warm_symbols,
+    collect_resolver_warm_targets,
     descriptor_current_raw_value,
     descriptor_enabled_by_default,
     descriptor_enum_map,
@@ -899,6 +900,57 @@ def test_collect_resolver_warm_symbols_skips_invalid_entries() -> None:
     assert collect_resolver_warm_symbols(items) == []
 
 
+def test_collect_resolver_warm_targets_unique_per_devid() -> None:
+    items = [
+        {"symbol": "STATUS_P5_0", "devid": "DEV1"},
+        {"symbol": "STATUS_P5_0", "devid": "DEV2"},
+        {"symbol": "STATUS_P5_0", "devid": "DEV1"},
+        {"symbol": "STATUS_P5_1"},
+        {"symbol": "PARAM_14", "devid": "DEV2", "mapping": {"channels": {"unit": ["a"]}}},
+        {"symbol": "TEMP1", "devid": "DEV1"},
+    ]
+    assert collect_resolver_warm_targets(items) == [
+        ("DEV1", "STATUS_P5_0"),
+        ("DEV2", "STATUS_P5_0"),
+        (None, "STATUS_P5_1"),
+        ("DEV2", "PARAM_14"),
+    ]
+    # Symbol view stays unique for prefetch compatibility.
+    assert collect_resolver_warm_symbols(items) == ["STATUS_P5_0", "STATUS_P5_1", "PARAM_14"]
+
+
+def test_descriptor_current_raw_value_forwards_devid_to_compose_when_supported() -> None:
+    from pybragerone.models import param_resolver as resolver_mod
+
+    original = resolver_mod.ParamResolver.compose_mapping_register_value
+    seen: list[str | None] = []
+
+    def _compose(store: object, mapping: object, *, devid: str | None = None) -> int | float | None:
+        seen.append(devid)
+        return 77
+
+    resolver_mod.ParamResolver.compose_mapping_register_value = staticmethod(_compose)
+    try:
+        descriptor = {
+            "devid": "DEV2",
+            "pool": "P4",
+            "chan": "v",
+            "idx": 59,
+            "mapping": {
+                "paths": {
+                    "value": [
+                        {"group": "P4", "number": 59, "use": "v", "convert": "_x"},
+                        {"group": "P4", "number": 60, "use": "v", "convert": "_x", "times": 65536},
+                    ],
+                },
+            },
+        }
+        assert descriptor_current_raw_value(FakeStore(flat_values={}), descriptor) == 77
+        assert seen == ["DEV2"]
+    finally:
+        resolver_mod.ParamResolver.compose_mapping_register_value = original
+
+
 @pytest.mark.asyncio
 async def test_async_remove_legacy_connection_devices_drops_empty_orphans(hass: HomeAssistant) -> None:
     """Legacy menu child devices with no entities are removed after connectivity moves."""
@@ -1097,3 +1149,36 @@ async def test_async_remove_legacy_connection_devices_keeps_populated_legacy_dev
     await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
 
     assert device_registry.async_get_device_by_identifier((DOMAIN, "DEV1:module.connection"), entry.entry_id) is not None
+
+
+def test_descriptor_current_raw_value_skips_devid_for_legacy_compose_signature() -> None:
+    """Installed py-bragerone without ``devid`` on compose keeps the two-argument call until the pin bump."""
+    from pybragerone.models import param_resolver as resolver_mod
+
+    original = resolver_mod.ParamResolver.compose_mapping_register_value
+    seen: list[tuple[object, ...]] = []
+
+    def _compose(store: object, mapping: object) -> int | float | None:
+        seen.append((store, mapping))
+        return 55
+
+    resolver_mod.ParamResolver.compose_mapping_register_value = staticmethod(_compose)
+    try:
+        descriptor = {
+            "devid": "DEV2",
+            "pool": "P4",
+            "chan": "v",
+            "idx": 59,
+            "mapping": {
+                "paths": {
+                    "value": [
+                        {"group": "P4", "number": 59, "use": "v", "convert": "_x"},
+                        {"group": "P4", "number": 60, "use": "v", "convert": "_x", "times": 65536},
+                    ],
+                },
+            },
+        }
+        assert descriptor_current_raw_value(FakeStore(flat_values={}), descriptor) == 55
+        assert len(seen) == 1
+    finally:
+        resolver_mod.ParamResolver.compose_mapping_register_value = original

@@ -168,3 +168,39 @@ async def test_bootstrap_omits_fingerprint_when_probe_fails(monkeypatch: pytest.
 
     assert CONF_UPSTREAM_ASSETS_FINGERPRINT not in payload
     assert "upstream_assets_fingerprint" not in payload[CONF_BOOTSTRAP_DEBUG]
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_forwards_module_devid_to_resolve_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every module resolves its own symbols with its devid so overlapping addresses cannot leak (#386)."""
+    calls: list[tuple[str, str | None]] = []
+
+    class _DevidResolver(_FakeResolver):
+        async def resolve_value(self, symbol: str, *, devid: str | None = None) -> SimpleNamespace:  # type: ignore[override]
+            calls.append((symbol, devid))
+            return SimpleNamespace(value=1, value_label="1")
+
+    class _TwoModuleApi(_FakeApi):
+        async def get_modules(self, object_id: int) -> list[SimpleNamespace]:
+            modules = await super().get_modules(object_id)
+            second = SimpleNamespace(**{**vars(modules[0]), "devid": "M2", "name": "Module 2", "deviceMenu": "M2"})
+            return [*modules, second]
+
+    async def _fake_probe(_api: object) -> None:
+        return None
+
+    monkeypatch.setattr(upstream_mod, "async_probe_upstream_assets_fingerprint", _fake_probe)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param"], "ParamStore", _FakeParamStore)
+    monkeypatch.setattr(sys.modules["pybragerone.models.param_resolver"], "ParamResolver", _DevidResolver)
+
+    await async_build_bootstrap_payload(
+        api=cast(Any, _TwoModuleApi()),  # type: ignore[arg-type]
+        object_id=1,
+        modules=["M1", "M2"],
+        language="en",
+        entity_filter_mode="ui",
+    )
+
+    assert ("SYM1", "M1") in calls
+    assert ("SYM1", "M2") in calls
+    assert all(devid is not None for _symbol, devid in calls)

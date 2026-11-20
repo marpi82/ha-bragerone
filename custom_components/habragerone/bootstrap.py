@@ -30,6 +30,7 @@ from .const import (
     FILTER_MODE_UI,
 )
 from .numeric_display import py_transform_to_ha
+from .resolver_compat import resolve_value_for_devid
 from .status_rules import (
     evaluate_status_value_rules,
     first_selector_address_value,
@@ -1942,7 +1943,7 @@ async def async_build_bootstrap_payload(
             is_ui_route_symbol = symbol in module_ui_route_symbols
             enabled_by_default = False
             try:
-                resolved = await resolver.resolve_value(symbol)
+                resolved = await resolve_value_for_devid(resolver, symbol, devid=devid_text)
                 resolved_value = resolved.value
                 resolved_value_label = resolved.value_label
                 # SPA ``isParameterVisible`` requires ``parameter.value !== undefined``.
