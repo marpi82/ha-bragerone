@@ -4,7 +4,7 @@ applyTo: "tests/**/*.py"
 
 # Test suite rules
 
-1. **Framework**: pytest + pytest-asyncio + `pytest-homeassistant-custom-component`; most tests are pure unit tests with `install_pybragerone_stubs()` — prefer that over booting a full HA instance unless testing real HA wiring.
+1. **Framework**: pytest + pytest-asyncio + `pytest-homeassistant`; most tests are pure unit tests with `install_pybragerone_stubs()` — prefer that over booting a full HA instance unless testing real HA wiring.
 2. **Offline**: tests must pass without network or real BragerOne credentials.
 3. **Mandatory coverage areas** when touching the write path:
    - enum label→raw and raw→label conversion, invalid enum input,

@@ -37,7 +37,7 @@ Optional Cursor pre-commit review: see `.cursor/rules/pre-commit-quality.mdc` an
 
 ## Coding standards
 
-- Target Python 3.14.2+ and Home Assistant `>=2026.3.0`.
+- Target Python 3.14.2+ and Home Assistant `>=2026.11.0`.
 - Format and lint with **Ruff**; type-check with **mypy** (strict).
 - Prefer small, focused PRs with clear commit messages.
 - Keep protocol logic in `pybragerone`; do not re-implement REST/WS/param handling here.

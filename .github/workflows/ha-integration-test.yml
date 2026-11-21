@@ -18,7 +18,7 @@ jobs:
         strategy:
             matrix:
                 home-assistant-version:
-                    - "2026.3.0"
+                    - "2026.11.0"
                     - "latest"
                     - "dev" # Latest development version
 

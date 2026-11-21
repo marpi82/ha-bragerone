@@ -9,7 +9,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
-from pytest_homeassistant_custom_component.common import MockConfigEntry, MockModule, mock_integration, mock_platform
+from pytest_homeassistant.common import MockConfigEntry, MockModule, mock_integration, mock_platform
 
 from tests.conftest import install_pybragerone_stubs
 

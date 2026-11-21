@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-try:
-    import probatio as vol
-except ImportError:  # pragma: no cover - Home Assistant < 2026.9
-    import voluptuous as vol
+import probatio as vol
 
 from tests.conftest import install_pybragerone_stubs
 
