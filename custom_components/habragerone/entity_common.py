@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, MutableMapping
-from typing import Any, cast
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -643,28 +643,10 @@ def _lookup_device_by_identifier(
 ) -> dr.DeviceEntry | None:
     """Resolve a device by identifier without using deprecated ``async_get_device``.
 
-    Prefers ``async_get_device_by_identifier`` (HA 2026.7+). On older cores, scan
-    ``async_entries_for_config_entry`` — mapping-style ``devices`` access and
-    ``async_get_device`` are hard errors under HA 2026.9+ outside a stable frame.
+    Uses ``async_get_device_by_identifier`` (required on Home Assistant >= 2026.11).
     """
-    get_by_identifier = getattr(device_registry, "async_get_device_by_identifier", None)
-    if callable(get_by_identifier):
-        found = get_by_identifier(identifier, config_entry_id)
-        return found if isinstance(found, dr.DeviceEntry) else None
-    for device in dr.async_entries_for_config_entry(device_registry, config_entry_id):
-        if identifier in device.identifiers:
-            return device
-    return None
-
-
-def _set_legacy_via_device(info: DeviceInfo, parent_identifier: tuple[str, str]) -> None:
-    """Attach deprecated ``via_device`` for HA < 2026.7.
-
-    Home Assistant 2026.9 removed ``via_device`` from the ``DeviceInfo`` TypedDict
-    (``via_device_id`` only). The key remains valid at runtime on older cores, so
-    write through a mutable mapping cast instead of a TypedDict key access.
-    """
-    cast(MutableMapping[str, Any], info)["via_device"] = parent_identifier
+    found = device_registry.async_get_device_by_identifier(identifier, config_entry_id)
+    return found if isinstance(found, dr.DeviceEntry) else None
 
 
 def device_info_from_descriptor(
@@ -683,7 +665,8 @@ def device_info_from_descriptor(
     Entities without a resolvable ``menu_key`` stay on the parent module device.
 
     Pass ``hass`` and ``config_entry_id`` so menu children can resolve the parent
-    device id (HA 2026.7+). Older cores fall back to deprecated ``via_device``.
+    device id. When the parent is missing or callers omit ``hass``, the child has
+    no via link (deprecated ``via_device`` is not written).
     """
     devid = str(descriptor.get("devid") or "")
     module_name = str(descriptor.get("module_name") or devid)
@@ -724,28 +707,23 @@ def _attach_menu_via_device(
     domain: str,
     devid: str,
 ) -> None:
-    """Link a menu child device to its internet-module parent.
+    """Link a menu child device to its internet-module parent via ``via_device_id``.
 
-    Prefers ``via_device_id`` (HA 2026.7+) when ``hass``/entry are available and the
-    parent was pre-registered. Falls back to deprecated ``via_device`` on older cores
-    or when the parent device is not registered yet (``ValueError``).
+    Requires ``hass``/entry and a pre-registered parent
+    (``async_register_module_parent_devices``). Missing parent or missing hass
+    leaves the child without a via link.
     """
-    parent_identifier = (domain, devid)
-    if hass is not None and config_entry_id is not None:
-        resolve_id = getattr(dr, "async_get_device_id_by_identifier", None)
-        if callable(resolve_id):
-            try:
-                info["via_device_id"] = resolve_id(
-                    hass,
-                    parent_identifier,
-                    config_entry_id=config_entry_id,
-                )
-            except ValueError:
-                # Parent not registered yet — keep a deprecated identifier link.
-                _set_legacy_via_device(info, parent_identifier)
-            return
-    # HA < 2026.7 or callers without hass (pure unit tests of naming/identifiers).
-    _set_legacy_via_device(info, parent_identifier)
+    if hass is None or config_entry_id is None:
+        return
+    try:
+        info["via_device_id"] = dr.async_get_device_id_by_identifier(
+            hass,
+            (domain, devid),
+            config_entry_id=config_entry_id,
+        )
+    except ValueError:
+        # Parent not registered yet — omit via link rather than write deprecated via_device.
+        return
 
 
 def module_is_reachable(runtime: BragerRuntime, devid: str) -> bool:
