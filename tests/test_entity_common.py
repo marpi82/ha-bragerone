@@ -520,11 +520,8 @@ def test_device_info_from_descriptor_group_mode_keeps_parent_without_menu_key() 
     assert "via_device_id" not in info
 
 
-def test_device_info_group_by_menu_without_hass_falls_back_to_via_device() -> None:
-    """Pure unit callers without hass keep deprecated via_device for HA < 2026.7 shim."""
-    from collections.abc import MutableMapping
-    from typing import Any, cast
-
+def test_device_info_group_by_menu_without_hass_omits_via_link() -> None:
+    """Pure unit callers without hass leave menu children without a via link."""
     descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
     descriptor.update(
         {
@@ -534,7 +531,8 @@ def test_device_info_group_by_menu_without_hass_falls_back_to_via_device() -> No
         },
     )
     info = device_info_from_descriptor(descriptor, domain=DOMAIN, grouping=DEVICE_GROUPING_BY_MENU)
-    assert cast(MutableMapping[str, Any], info).get("via_device") == (DOMAIN, "DEV9")
+    assert info["identifiers"] == {(DOMAIN, "DEV9:modules.menu.thermostats")}
+    assert "via_device" not in info
     assert "via_device_id" not in info
 
 
@@ -982,32 +980,6 @@ async def test_async_remove_legacy_connection_devices_drops_empty_orphans(hass: 
 
 
 @pytest.mark.asyncio
-async def test_async_remove_legacy_connection_devices_falls_back_without_scoped_lookup(
-    hass: HomeAssistant,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """HA < 2026.7 path scans devices when scoped lookup is absent."""
-    from homeassistant.helpers import device_registry as dr
-
-    runtime, *_rest = make_runtime()
-    entry = register_config_entry(hass, runtime=runtime, descriptors=[])
-    registry = dr.async_get(hass)
-    registry.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, "DEV1:module.connection")},
-        manufacturer="BragerOne",
-        name="Boiler — Connection with module",
-        model="Brager module",
-    )
-    monkeypatch.setattr(registry, "async_get_device_by_identifier", None, raising=False)
-
-    await async_remove_legacy_connection_devices(hass, entry, devids=["DEV1"])
-
-    legacy_id = (DOMAIN, "DEV1:module.connection")
-    assert not any(legacy_id in device.identifiers for device in dr.async_entries_for_config_entry(registry, entry.entry_id))
-
-
-@pytest.mark.asyncio
 async def test_lookup_device_by_identifier_rejects_non_device_entry(
     hass: HomeAssistant,
     monkeypatch: pytest.MonkeyPatch,
@@ -1024,11 +996,8 @@ async def test_lookup_device_by_identifier_rejects_non_device_entry(
 
 
 @pytest.mark.asyncio
-async def test_lookup_device_by_identifier_scan_misses_without_match(
-    hass: HomeAssistant,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """HA < 2026.7 scan returns None when the entry has no matching identifier."""
+async def test_lookup_device_by_identifier_misses_without_match(hass: HomeAssistant) -> None:
+    """Scoped lookup returns None when the entry has no matching identifier."""
     from homeassistant.helpers import device_registry as dr
 
     runtime, *_rest = make_runtime()
@@ -1041,7 +1010,6 @@ async def test_lookup_device_by_identifier_scan_misses_without_match(
         name="Boiler",
         model="Brager module",
     )
-    monkeypatch.setattr(registry, "async_get_device_by_identifier", None, raising=False)
 
     assert _lookup_device_by_identifier(registry, (DOMAIN, "DEV1:module.connection"), entry.entry_id) is None
     # No-op remove when the legacy connection device is absent (also covers blank devid skip).
@@ -1050,39 +1018,8 @@ async def test_lookup_device_by_identifier_scan_misses_without_match(
 
 
 @pytest.mark.asyncio
-async def test_device_info_falls_back_when_via_device_id_helper_missing(
-    hass: HomeAssistant,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """When async_get_device_id_by_identifier is unavailable, keep via_device."""
-    from collections.abc import MutableMapping
-    from typing import Any, cast
-
-    from homeassistant.helpers import device_registry as dr
-
-    runtime, *_rest = make_runtime()
-    descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
-    descriptor.update({"menu_key": "modules.menu.thermostats", "menu_group_title": "Menu"})
-    entry = register_config_entry(hass, runtime=runtime, descriptors=[descriptor])
-    monkeypatch.setattr(dr, "async_get_device_id_by_identifier", None, raising=False)
-
-    info = device_info_from_descriptor(
-        descriptor,
-        domain=DOMAIN,
-        grouping=DEVICE_GROUPING_BY_MENU,
-        hass=hass,
-        config_entry_id=entry.entry_id,
-    )
-    assert cast(MutableMapping[str, Any], info).get("via_device") == (DOMAIN, "DEV9")
-    assert "via_device_id" not in info
-
-
-@pytest.mark.asyncio
-async def test_device_info_falls_back_when_parent_device_missing(hass: HomeAssistant) -> None:
-    """Missing parent device (ValueError from helper) keeps via_device link."""
-    from collections.abc import MutableMapping
-    from typing import Any, cast
-
+async def test_device_info_omits_via_when_parent_device_missing(hass: HomeAssistant) -> None:
+    """Missing parent device (ValueError from helper) leaves no via link."""
     runtime, *_rest = make_runtime()
     descriptor = writable_parameter_descriptor(devid="DEV9", symbol="TEMP")
     descriptor.update({"menu_key": "modules.menu.thermostats", "menu_group_title": "Menu"})
@@ -1096,7 +1033,8 @@ async def test_device_info_falls_back_when_parent_device_missing(hass: HomeAssis
         hass=hass,
         config_entry_id=entry.entry_id,
     )
-    assert cast(MutableMapping[str, Any], info).get("via_device") == (DOMAIN, "DEV9")
+    assert info["identifiers"] == {(DOMAIN, "DEV9:modules.menu.thermostats")}
+    assert "via_device" not in info
     assert "via_device_id" not in info
 
 
