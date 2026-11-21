@@ -108,7 +108,7 @@ jobs:
         run: uv run --group dev bandit -r custom_components -q -ll -f json -o bandit-report.json
 
       - name: Run pip-audit
-        # HA-pinned Pillow/uv/PyJWT ignores live in scripts/run_pip_audit.sh
+        # HA-pinned advisories (if any) live in scripts/run_pip_audit.sh
         run: bash scripts/run_pip_audit.sh
 
       - name: Upload security artifacts
