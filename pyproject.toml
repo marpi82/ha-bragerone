@@ -20,7 +20,7 @@ keywords = [
   "custom-component",
 ]
 dependencies = [
-    "homeassistant>=2026.3.0",
+    "homeassistant>=2026.11.0",
     "py-bragerone==2026.11.2rc4",
 ]
 classifiers = [
@@ -77,7 +77,7 @@ test = [
   "pytest-cov>=7.0.0,<8.0.0",
   "aioresponses>=0.7.8,<0.8.0",
   "packaging>=24.1,<27.0.0",
-  "pytest-homeassistant-custom-component>=0.13.205",
+  "pytest-homeassistant>=2026.11.0",
   "diff-cover>=11.0.0,<11.1.0",
 ]
 
@@ -125,12 +125,15 @@ plugins = ["pydantic.mypy"]
 # ---------------- pytest ----------------
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-q"
+# -p no:respx: let Home Assistant install its httpx alias before respx is imported
+# (required by pytest-homeassistant).
+addopts = "-q -p no:respx"
 # or with coverage:
-# addopts = "-q --cov=custom_components.habragerone --cov-report=term-missing"
+# addopts = "-q -p no:respx --cov=custom_components.habragerone --cov-report=term-missing"
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
   "slow: potentially slower tests (network)",
   "needs_internet: tests that require internet access",
@@ -150,7 +153,7 @@ fix = ["lint", "fmt"]
 typecheck = "mypy"
 all = ["fmt", "lint", "typecheck"]
 # Security
-# HA-pinned advisories (Pillow/uv/PyJWT) live in scripts/run_pip_audit.sh —
+# HA-pinned advisories (if any) live in scripts/run_pip_audit.sh —
 # keep poe and CI on the same ignore list. Unpinned transitive/build deps
 # (filelock, setuptools) are bumped in the lockfile instead.
 bandit = { cmd = "bandit -r custom_components -q -ll" }

@@ -7,7 +7,7 @@
 [![Codecov](https://codecov.io/gh/marpi82/ha-bragerone/graph/badge.svg)](https://codecov.io/gh/marpi82/ha-bragerone)
 [![License](https://img.shields.io/github/license/marpi82/ha-bragerone)](https://github.com/marpi82/ha-bragerone/blob/main/LICENSE)
 [![Renovate](https://img.shields.io/badge/renovate-enabled-blue?logo=renovate&logoColor=white)](https://app.renovatebot.com/dashboard)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-%E2%89%A52026.3.0-blue)](https://www.home-assistant.io/)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-%E2%89%A52026.11.0-blue)](https://www.home-assistant.io/)
 
 Home Assistant custom integration for BragerOne web service.
 

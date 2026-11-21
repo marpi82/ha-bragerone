@@ -65,7 +65,7 @@ Add/maintain tests for:
 ## CI/CD & GitHub Workflows
 
 - **ci.yml**: lint, mypy, tests (pytest + Codecov upload), hassfest, security, wheel-compat, aggregate `CI` gate
-- **ha-integration-test.yml**: Docker matrix against HA `2026.3.0` / `latest` / `dev`
+- **ha-integration-test.yml**: Docker matrix against HA `2026.11.0` / `latest` / `dev`
 - **hacs.yml**: HACS validation
 
 Issue forms live in `.github/ISSUE_TEMPLATE/`; the PR body template is `.github/PULL_REQUEST_TEMPLATE.md`. Optional Copilot code review is a repo setting, not a workflow.
